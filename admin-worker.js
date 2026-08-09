@@ -343,6 +343,17 @@
 //      bei Erst-Upload VOM SERVER vergeben (kein owner aus dem Body vertraut) und in der Antwort
 //      zurückgegeben; Re-Upload schickt ihn zurück. Einsehbar später nur über dav-restricted-get/
 //      -delete mit Login, siehe oben.)
+//   POST { action: "kb-extern-start", token }                     -> { aktion:{name,offen,artikel[]} } | 400 | 404 | 410 | 429
+//   POST { action: "kb-extern-anmelden", token, vorname, nachname, jahrgang, passwort? }
+//     -> { status:"neu" | "passwort" | "offen" | "ok", bestellung? } | 400 | 403 | 404 | 410 | 429
+//   POST { action: "kb-extern-speichern", token, vorname, nachname, jahrgang, passwort?, neuesPasswort?, positionen[], kommentar }
+//     -> { ok:true, letzteAenderung, positionen } | 400 | 403 | 404 | 409 | 410 | 429 | 502
+//     (Kleiderbestellung ohne Vereinskonto: Spieler bestellen über einen Link mit 64-stelligem
+//      Zufallstoken, der je Bestellaktion erzeugt und widerrufen wird. Schlüssel der Bestellung ist
+//      Vorname+Nachname+Geburtsjahr, geschützt durch ein selbst vergebenes Passwort (PBKDF2 wie die
+//      Konten). Der Handler baut GENAU EINEN Eintrag serverseitig zusammen und setzt quelle IMMER
+//      hart auf "extern" — dav-save wäre hier falsch, es vertraut dem Aufrufer die ganze Datei an.
+//      Die Menge kommt immer aus dem Katalog, nie aus dem Body. Details am Handler-Block am Dateiende.)
 //   POST { action: "fahrtenbuch-belege-list", app:"fahrtenbuch", fahrtId } + Bearer
 //     -> { belege:[{submittedAt,amount,desc,name,files:[{fileName,fileMime}]}] }
 //     (Login + userMayAccessTool("fahrtenbuch") wie dav-load; KEIN Ownership-Check der konkreten
@@ -1281,6 +1292,19 @@ export default {
         return handleSchulsportFreigabeLesen(request, body, env, authHeader, corsHeaders);
       case "schulsport-freigabe-senden":
         return handleSchulsportFreigabeSenden(request, body, env, authHeader, corsHeaders);
+      // Kleiderbestellung: Spieler ohne Vereinskonto bestellen ueber einen Link
+      // mit Zufallstoken. Gleiche Bauform wie die beiden Aktionen darueber --
+      // getVerifiedSession wird bewusst NICHT aufgerufen, der Ausweis ist der
+      // Token IN der Bestellaktion. Sie antworten deshalb nie 401, sondern 400
+      // (Form), 403 (falsches Passwort), 404 (unbekannt), 409 (geschlossen),
+      // 410 (widerrufen) oder 429 (Zaehlwerk); daran erkennt man in der
+      // Live-Probe, dass sie wirklich vor jeder Sitzungspruefung liegen.
+      case "kb-extern-start":
+        return handleKbExternStart(request, body, env, authHeader, corsHeaders);
+      case "kb-extern-anmelden":
+        return handleKbExternAnmelden(request, body, env, authHeader, corsHeaders);
+      case "kb-extern-speichern":
+        return handleKbExternSpeichern(request, body, env, authHeader, corsHeaders);
       case "livekit-token":
         return handleLivekitToken(request, body, env, authHeader, corsHeaders);
       case "livekit-kick":
@@ -12305,4 +12329,382 @@ async function handleAktivitaetAuswertung(request, body, env, authHeader, corsHe
   // sieht eine abgeschnittene Auswertung aus wie eine vollstaendige.
   const rest = namen.length > block.length ? namen.length - block.length : 0;
   return json({ monat, nutzer, rest, blockgroesse: PUNKTE_AUSWERTUNG_MAX_NUTZER }, 200, corsHeaders);
+}
+
+// ================================================================
+// Kleiderbestellung: Bestellungen von aussen, ohne Vereinskonto
+// (seit 2026-08-09)
+// ================================================================
+//
+// Spieler haben kein Konto in der Tools-Uebersicht, sollen ihre Kleidergroesse
+// aber selbst bestellen. Ein Administrierender erzeugt dafuer in der App je
+// Bestellaktion einen Link mit 64-stelligem Zufallstoken (als QR-Code zum
+// Zeigen oder zum Verschicken). Wer ihn oeffnet, weist sich mit Vorname,
+// Nachname und Geburtsjahr aus und schuetzt seine Bestellung beim ersten
+// Absenden mit einem selbst gewaehlten Passwort; zum spaeteren Aendern wird es
+// wieder verlangt.
+//
+// ⚠️ Der Schreibweg laeuft BEWUSST nicht ueber dav-save. Das vertraut dem
+// Aufrufer die GANZE Datei an -- ein Link ist aber eine schwaechere
+// Vertrauensstufe als ein Login, und jeder Link-Inhaber koennte damit die
+// Bestellungen aller anderen ueberschreiben oder loeschen.
+// handleKbExternSpeichern baut stattdessen GENAU EINEN Eintrag serverseitig aus
+// einzelnen, gecappten und gegen den echten Katalog geprueften Feldern zusammen
+// und fasst nichts anderes im Dokument an. Gleiche Bauform wie
+// handleFahrtenbuchExternSubmit und handleSchulsportFreigabeSenden, siehe auch
+// den Abschnitt "Login-lose Schreib-Endpunkte" in E:\kleiderbestellung\CLAUDE.md.
+
+const KB_EXTERN_APP = "kleiderbestellung";
+const KB_EXTERN_IP_ZAEHLER = new Map();
+// ⚠️ Bewusst hoch und mit einer EIGENEN Map (nicht der von schulsport): eine
+// ganze Mannschaft steht beim Scannen des QR-Codes im selben WLAN und teilt
+// sich damit eine IP. Bei 60 Aufrufen je Stunde waeren nach 20 Spielern à
+// start+anmelden+speichern alle weiteren ausgesperrt -- und zwar mitten in der
+// Trainingseinheit, in der es gerade laeuft. Die eigentliche Bremse gegen
+// Ausprobieren ist die 800-ms-Verzoegerung je Fehlschlag plus PBKDF2.
+const KB_EXTERN_MAX_PRO_STUNDE = 400;
+const KB_EXTERN_PW_MIN = 4;
+const KB_EXTERN_PW_MAX = 100;
+const KB_EXTERN_MAX_POSITIONEN = 60;
+const KB_EXTERN_KOMMENTAR_MAX = 500;
+
+function kbExternIpBremse(request) {
+  const ip = String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
+  if (!ip) return true;
+  const jetzt = Date.now();
+  const eintrag = KB_EXTERN_IP_ZAEHLER.get(ip);
+  if (!eintrag || jetzt - eintrag.start > 3600000) {
+    KB_EXTERN_IP_ZAEHLER.set(ip, { start: jetzt, n: 1 });
+    // Aufraeumen, damit die Map in einem langlebigen Isolate nicht waechst.
+    if (KB_EXTERN_IP_ZAEHLER.size > 500) {
+      for (const [k, v] of KB_EXTERN_IP_ZAEHLER) {
+        if (jetzt - v.start > 3600000) KB_EXTERN_IP_ZAEHLER.delete(k);
+      }
+    }
+    return true;
+  }
+  eintrag.n++;
+  return eintrag.n <= KB_EXTERN_MAX_PRO_STUNDE;
+}
+
+// Verzoegerung nach jedem Fehlschlag, gleiche Linie wie handleLogin und
+// requireFahrtenbuchExternCode: sie macht das Durchprobieren von Namen,
+// Jahrgaengen und Passwoertern teuer, ohne den normalen Weg zu bremsen.
+function kbExternBremse() {
+  return new Promise((resolve) => setTimeout(resolve, 800));
+}
+
+function kbExternNamensteil(s) {
+  return String(s == null ? "" : s)
+    .toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+// Der Schluessel, unter dem eine externe Bestellung in aktion.bestellungen liegt.
+//
+// ⚠️ Das fuehrende "extern:" ist keine Kosmetik: USERNAME_RE erlaubt keinen
+// Doppelpunkt, ein von aussen gebildeter Schluessel kann deshalb NIE auf die
+// Bestellung eines echten Kontos zeigen. Die Pruefung auf quelle === "extern"
+// in kbExternEintrag kommt als zweite, davon unabhaengige Schranke dazu --
+// dieselbe Ueberlegung wie beim quelle-Filter der Fahrtenbuch-Idempotenz.
+//
+// ⚠️ Der Name wird normalisiert, das Geburtsjahr NICHT. "Müller", "Mueller" und
+// "MÜLLER " sind derselbe Mensch und muessen auf dieselbe Bestellung fuehren --
+// sonst legt sich jemand mit einer anderen Schreibweise unbemerkt eine zweite
+// an und die erste ist fuer ihn dann passwortgeschuetzt verschlossen.
+function kbExternSchluessel(vorname, nachname, jahrgang) {
+  return "extern:" + kbExternNamensteil(vorname) + "." + kbExternNamensteil(nachname) + "." + String(jahrgang);
+}
+
+// Vorname, Nachname und Geburtsjahr aus dem Koerper, oder null.
+function kbExternIdent(body) {
+  const vorname = capStr(body && body.vorname, 60);
+  const nachname = capStr(body && body.nachname, 60);
+  const jahrgang = capStr(body && body.jahrgang, 4);
+  if (!vorname || !nachname) return null;
+  if (!/^(19|20)\d{2}$/.test(jahrgang)) return null;
+  if (Number(jahrgang) > new Date().getUTCFullYear()) return null;
+  // ⚠️ Ein Name, von dem nach dem Normalisieren nichts uebrig bleibt (nur
+  // Satzzeichen oder Emoji), ergaebe den Schluessel "extern:..<jahr>" -- unter
+  // dem landeten dann ALLE solchen Eingaben desselben Jahrgangs zusammen, und
+  // der Erste haette das Passwort fuer die Bestellung des Naechsten.
+  if (!kbExternNamensteil(vorname) || !kbExternNamensteil(nachname)) return null;
+  return { vorname, nachname, jahrgang, schluessel: kbExternSchluessel(vorname, nachname, jahrgang) };
+}
+
+// Die Bestellaktion, deren externer Link auf diesen Token lautet.
+// Vergleich timing-sicher, nicht mit === (wie handleSchulsportFreigabeLesen).
+async function kbExternAktionZuToken(doc, token) {
+  const aktionen = (doc && Array.isArray(doc.aktionen)) ? doc.aktionen : [];
+  for (const a of aktionen) {
+    const t = a && a.extern && a.extern.token;
+    if (typeof t !== "string" || !t) continue;
+    if (await staticPasswordEquals(token, t)) return a;
+  }
+  return null;
+}
+
+// Liefert einen Bestelleintrag NUR, wenn er wirklich von aussen stammt.
+// hasOwnProperty statt direktem Zugriff, damit ein Schluessel wie "__proto__"
+// nicht den Prototyp trifft -- hier zwar durch das "extern:"-Praefix ohnehin
+// unmoeglich, aber die Regel gilt an jeder Stelle gleich.
+function kbExternEintrag(aktion, schluessel) {
+  const alle = (aktion && aktion.bestellungen && typeof aktion.bestellungen === "object") ? aktion.bestellungen : {};
+  if (!Object.prototype.hasOwnProperty.call(alle, schluessel)) return null;
+  const b = alle[schluessel];
+  if (!b || typeof b !== "object") return null;
+  if (b.quelle !== "extern") return null;
+  return b;
+}
+
+// Was der externe Client von seiner eigenen Bestellung zurueckbekommt --
+// bewusst eine Positivliste. Der gespeicherte Passwort-Hash verlaesst den
+// Worker damit auch dann nie, wenn dem Eintrag spaeter Felder hinzukommen.
+function kbExternOeffentlicheBestellung(b) {
+  return {
+    positionen: (Array.isArray(b.positionen) ? b.positionen : []).map((p) => ({
+      artikelId: String((p && p.artikelId) || ""),
+      groesse: String((p && p.groesse) || ""),
+      menge: Number(p && p.menge) > 0 ? Number(p.menge) : 1
+    })),
+    kommentar: String(b.kommentar || ""),
+    letzteAenderung: String(b.letzteAenderung || "")
+  };
+}
+
+// Token pruefen und die zugehoerige Bestellaktion holen. Liefert entweder
+// { aktion, doc, token } oder { fehler: Response }.
+async function kbExternAktionLaden(request, body, authHeader, corsHeaders) {
+  // 1. Formpruefung zuerst -- die billigste Bremse, ohne jeden Datei-Zugriff.
+  const token = String((body && body.token) || "");
+  if (!/^[0-9a-f]{64}$/.test(token)) {
+    return { fehler: json({ error: "Ungültiger Link" }, 400, corsHeaders) };
+  }
+  // 2. Zaehlwerk je IP.
+  if (!kbExternIpBremse(request)) {
+    return { fehler: json({ error: "Zu viele Versuche — bitte später noch einmal probieren." }, 429, corsHeaders) };
+  }
+
+  const doc = await readJson(DAV_APPS[KB_EXTERN_APP], authHeader, null);
+  const aktion = await kbExternAktionZuToken(doc, token);
+  if (!aktion) {
+    await kbExternBremse();
+    return { fehler: json({ error: "Dieser Link ist nicht gültig." }, 404, corsHeaders) };
+  }
+  if (aktion.extern && aktion.extern.widerrufen) {
+    return { fehler: json({ error: "Dieser Link wurde zurückgezogen." }, 410, corsHeaders) };
+  }
+  return { aktion, doc, token };
+}
+
+// ---------- kb-extern-start (OHNE Login) ----------
+// Was hinter dem Link steht: Name der Bestellaktion und ihr Katalog.
+//
+// ⚠️ Hier verlaesst KEINE Bestellung und KEIN Name den Worker. Wer den Link
+// hat, sieht die Artikel -- nicht, wer schon bestellt hat.
+async function handleKbExternStart(request, body, env, authHeader, corsHeaders) {
+  const geladen = await kbExternAktionLaden(request, body, authHeader, corsHeaders);
+  if (geladen.fehler) return geladen.fehler;
+  const aktion = geladen.aktion;
+
+  return json({
+    aktion: {
+      name: String(aktion.name || ""),
+      offen: aktion.offen !== false,
+      artikel: (Array.isArray(aktion.artikel) ? aktion.artikel : [])
+        .filter((a) => a && a.aktiv !== false)
+        .map((a) => ({
+          id: String(a.id || ""),
+          name: String(a.name || ""),
+          groessen: (Array.isArray(a.groessen) ? a.groessen : []).slice(0, 60).map((g) => String(g)),
+          menge: Number(a.standardMenge) > 0 ? Number(a.standardMenge) : 1
+        }))
+    }
+  }, 200, corsHeaders);
+}
+
+// ---------- kb-extern-anmelden (OHNE Login) ----------
+// Vier moegliche Antworten:
+//   { status: "neu" }            noch keine Bestellung -- leeres Formular
+//   { status: "passwort" }       es gibt eine, das Passwort fehlt noch
+//   { status: "ok", bestellung } Passwort stimmt, Bestellung zum Aendern
+//   { status: "offen", bestellung }
+//       es gibt eine, aber ohne Passwort -- weil ein Bearbeiter es
+//       zurueckgesetzt hat ("vergessen"). Sie wird geladen und beim naechsten
+//       Speichern muss ein neues vergeben werden.
+//
+// ⚠️ Dass "neu" und "passwort" unterscheidbar sind, verraet einem Fremden mit
+// geratenem Namen und Jahrgang, DASS jemand bestellt hat -- nicht was. Das ist
+// der Preis dafuer, dass der Weg ohne Konto ueberhaupt funktioniert: ohne diese
+// Auskunft wuesste der Besteller selbst nicht, ob er neu anlegt oder aendert.
+// Der Inhalt bleibt hinter dem Passwort.
+async function handleKbExternAnmelden(request, body, env, authHeader, corsHeaders) {
+  const geladen = await kbExternAktionLaden(request, body, authHeader, corsHeaders);
+  if (geladen.fehler) return geladen.fehler;
+
+  const ident = kbExternIdent(body);
+  if (!ident) return json({ error: "Bitte Vorname, Nachname und Geburtsjahr angeben." }, 400, corsHeaders);
+
+  const vorhanden = kbExternEintrag(geladen.aktion, ident.schluessel);
+  if (!vorhanden) return json({ status: "neu" }, 200, corsHeaders);
+
+  const pw = vorhanden.pw;
+  const hatPasswort = !!(pw && pw.hash && pw.salt);
+  if (!hatPasswort) {
+    return json({ status: "offen", bestellung: kbExternOeffentlicheBestellung(vorhanden) }, 200, corsHeaders);
+  }
+
+  const passwort = typeof (body && body.passwort) === "string" ? body.passwort : "";
+  if (!passwort) return json({ status: "passwort" }, 200, corsHeaders);
+
+  const ok = await verifyPassword(passwort, pw.salt, pw.iterations || PBKDF2_ITERATIONS, pw.hash);
+  if (!ok) {
+    await kbExternBremse();
+    return json({ error: "Falsches Passwort." }, 403, corsHeaders);
+  }
+  return json({ status: "ok", bestellung: kbExternOeffentlicheBestellung(vorhanden) }, 200, corsHeaders);
+}
+
+// Baut die Positionen serverseitig aus dem Katalog DIESER Aktion.
+//
+// ⚠️ Die Menge kommt IMMER aus dem Katalog, nie aus dem Koerper. Dass der
+// Verein die Menge je Artikel vorgibt und nicht der Besteller, ist eine
+// Produktentscheidung dieser App (siehe E:\kleiderbestellung\CLAUDE.md) -- ueber
+// einen login-losen Endpunkt darf sie erst recht nicht verhandelbar sein.
+//
+// ⚠️ Artikel und Groesse werden gegen den echten Katalog geprueft. Ein
+// erfundener Artikel, einer aus einer ANDEREN Bestellaktion oder eine Groesse,
+// die es nicht gibt, faellt heraus -- sonst stuende eine Geisterposition in der
+// Liste, die an den Lieferanten geht.
+function kbExternPositionen(aktion, roh) {
+  const liste = Array.isArray(roh) ? roh.slice(0, KB_EXTERN_MAX_POSITIONEN) : [];
+  const artikel = Array.isArray(aktion.artikel) ? aktion.artikel : [];
+  const positionen = [];
+  const gesehen = new Set();
+  for (const p of liste) {
+    if (!p || typeof p !== "object") continue;
+    const artikelId = String(p.artikelId || "");
+    const a = artikel.find((x) => x && x.id === artikelId);
+    if (!a || a.aktiv === false) continue;
+    // Je Artikel hoechstens eine Zeile -- zwei Groessen desselben Hoodies waeren
+    // in der Lieferantenliste zwei Stueck, obwohl eines vorgesehen ist.
+    if (gesehen.has(artikelId)) continue;
+    const groesse = String(p.groesse || "");
+    if (!Array.isArray(a.groessen) || !a.groessen.includes(groesse)) continue;
+    gesehen.add(artikelId);
+    positionen.push({
+      artikelId,
+      groesse,
+      menge: Number(a.standardMenge) > 0 ? Number(a.standardMenge) : 1
+    });
+  }
+  return positionen;
+}
+
+// ---------- kb-extern-speichern (OHNE Login) ----------
+async function handleKbExternSpeichern(request, body, env, authHeader, corsHeaders) {
+  const geladen = await kbExternAktionLaden(request, body, authHeader, corsHeaders);
+  if (geladen.fehler) return geladen.fehler;
+  if (geladen.aktion.offen === false) {
+    return json({ error: "Diese Bestellaktion ist geschlossen — Änderungen sind nicht mehr möglich." }, 409, corsHeaders);
+  }
+
+  const ident = kbExternIdent(body);
+  if (!ident) return json({ error: "Bitte Vorname, Nachname und Geburtsjahr angeben." }, 400, corsHeaders);
+
+  const vorhanden = kbExternEintrag(geladen.aktion, ident.schluessel);
+  const altesPw = (vorhanden && vorhanden.pw && vorhanden.pw.hash && vorhanden.pw.salt) ? vorhanden.pw : null;
+
+  // Wer eine bestehende Bestellung aendert, muss ihr Passwort kennen. Wer neu
+  // ist -- oder dessen Passwort ein Bearbeiter zurueckgesetzt hat -- vergibt eines.
+  let pwFeld;
+  if (altesPw) {
+    const ok = await verifyPassword(
+      String((body && body.passwort) || ""),
+      altesPw.salt, altesPw.iterations || PBKDF2_ITERATIONS, altesPw.hash
+    );
+    if (!ok) {
+      await kbExternBremse();
+      return json({ error: "Falsches Passwort." }, 403, corsHeaders);
+    }
+    pwFeld = altesPw;
+  } else {
+    const neu = typeof (body && body.neuesPasswort) === "string" ? body.neuesPasswort : "";
+    if (neu.length < KB_EXTERN_PW_MIN) {
+      return json({ error: `Bitte ein Passwort mit mindestens ${KB_EXTERN_PW_MIN} Zeichen vergeben.` }, 400, corsHeaders);
+    }
+    if (neu.length > KB_EXTERN_PW_MAX) {
+      return json({ error: "Das Passwort ist zu lang." }, 400, corsHeaders);
+    }
+    pwFeld = await hashNewPassword(neu);
+  }
+
+  const positionen = kbExternPositionen(geladen.aktion, body && body.positionen);
+  const kommentar = capStr(body && body.kommentar, KB_EXTERN_KOMMENTAR_MAX);
+  if (!positionen.length && !kommentar) {
+    return json({ error: "Bitte mindestens eine Größe auswählen." }, 400, corsHeaders);
+  }
+
+  const url = DAV_APPS[KB_EXTERN_APP];
+  // ⚠️ MIT If-Match und drei Versuchen: an derselben Datei arbeiten gleichzeitig
+  // die eingeloggten Bearbeiter ueber dav-save. Eine gerade abgegebene
+  // Bestellung darf davon nicht ueberschrieben werden -- und umgekehrt darf
+  // dieser Handler den Katalog eines Bearbeiters nicht zurueckrollen.
+  for (let versuch = 1; versuch <= 3; versuch++) {
+    jsonCache.delete(url);
+    const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc = (raw && typeof raw === "object") ? raw : null;
+
+    // Alles am frisch gelesenen Stand erneut pruefen: zwischen dem ersten Lesen
+    // und hier kann der Link widerrufen oder die Aktion geschlossen worden sein.
+    const aktion = await kbExternAktionZuToken(doc, geladen.token);
+    if (!aktion) return json({ error: "Dieser Link ist nicht gültig." }, 404, corsHeaders);
+    if (aktion.extern && aktion.extern.widerrufen) {
+      return json({ error: "Dieser Link wurde zurückgezogen." }, 410, corsHeaders);
+    }
+    if (aktion.offen === false) {
+      return json({ error: "Diese Bestellaktion ist geschlossen — Änderungen sind nicht mehr möglich." }, 409, corsHeaders);
+    }
+    if (!aktion.bestellungen || typeof aktion.bestellungen !== "object") aktion.bestellungen = {};
+
+    // ⚠️ Das Passwort wurde oben gegen den ERSTEN Lesestand geprueft. Steht dort
+    // jetzt ein anderes (ein Bearbeiter hat zurueckgesetzt, jemand hat die
+    // Bestellung geloescht und neu angelegt), gilt diese Pruefung nicht mehr --
+    // dann lieber abbrechen als mit einer Berechtigung schreiben, die einem
+    // ueberholten Stand galt.
+    const jetzt = kbExternEintrag(aktion, ident.schluessel);
+    const jetztHash = (jetzt && jetzt.pw && jetzt.pw.hash) ? jetzt.pw.hash : null;
+    if (jetztHash !== (altesPw ? altesPw.hash : null)) {
+      return json({ error: "Die Bestellung wurde zwischenzeitlich geändert. Bitte die Seite neu laden." }, 409, corsHeaders);
+    }
+
+    // Aus dem frischen Katalog neu bauen -- ein Bearbeiter kann einen Artikel
+    // inzwischen deaktiviert oder eine Groesse gestrichen haben.
+    const frischePositionen = kbExternPositionen(aktion, body && body.positionen);
+    const zeitpunkt = new Date().toISOString();
+    aktion.bestellungen[ident.schluessel] = {
+      vorname: ident.vorname,
+      nachname: ident.nachname,
+      jahrgang: ident.jahrgang,
+      quelle: "extern",
+      pw: pwFeld,
+      positionen: frischePositionen,
+      kommentar,
+      letzteAenderung: zeitpunkt
+    };
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, letzteAenderung: zeitpunkt, positionen: frischePositionen }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 3) continue;
+      if (e instanceof ConflictError) {
+        return json({ error: "Gerade hat jemand anderes gespeichert. Bitte noch einmal absenden.", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Die Bestellung konnte nicht gespeichert werden." }, 502, corsHeaders);
+    }
+  }
 }
