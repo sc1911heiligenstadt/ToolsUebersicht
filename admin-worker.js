@@ -8658,13 +8658,6 @@ function mayActOnFotoauftragTeam(mannschaft, user) {
   return meineMannschaften.has(mannschaft);
 }
 
-// Escaping für Freitext in word/document.xml-Textknoten -- & < > sind dort
-// die einzigen zwingend zu escapenden Zeichen (anders als in HTML/escapeHtml
-// braucht es kein &quot;/&#39;, da hier keine Attributwerte befüllt werden).
-function escapeXmlText(str) {
-  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 // Lädt eine vom Client aus Freitext erzeugte .docx-Datei (siehe buildSpielberichtDocxBlob
 // in app.js) in denselben Nextcloud-Ordner, der auch die Fotos enthält -- landet damit
 // automatisch im selben Freigabelink, ohne eigene neue Freigabe. Fixer Dateiname
