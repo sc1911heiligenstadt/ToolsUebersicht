@@ -451,7 +451,7 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
-    version: "1.1",
+    version: "1.2",
     groups: [
       {
         title: "Werkzeug Spieltagscrew",
@@ -463,7 +463,12 @@ const APP_CHANGELOG = [
           "Sieben Tage vor dem Spieltag meldet sich die App bei allen, die noch keinen Posten haben — aber nur, wenn wirklich etwas frei ist. Am Vortag bekommt jeder Eingetragene seine eigene Erinnerung mit Posten und Uhrzeit.",
           "Zu jedem Spieltag lässt sich ein Aushang drucken: alle Posten mit Namen und Uhrzeiten, für das Kassenhäuschen oder das Schwarze Brett."
         ]
-      },
+      }
+    ]
+  },
+  {
+    version: "1.1",
+    groups: [
       {
         title: "Neuigkeiten räumen sich selbst auf",
         items: [
