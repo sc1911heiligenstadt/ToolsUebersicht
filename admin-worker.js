@@ -1315,10 +1315,13 @@ export default {
         return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
       // Vereinsverwaltung: Nachweise zur Nachwuchs-Anmeldung (Geburtsurkunde,
       // Spielerpass, Abmeldung). Das PUT laeuft OHNE Login -- Eltern haben kein
-      // Vereinskonto, gleiche Bauform wie fahrtenbuch-extern-fuehrerschein-put
-      // darueber. Die drei lesenden/loeschenden Wege verlangen eine Sitzung.
+      // Vereinskonto. ⚠️ Anders als bei fahrtenbuch-extern-* gibt es hier auch
+      // KEINEN Zugriffscode und keinen Token; die Schranken sind ein Zaehlwerk
+      // je IP und der aus den ersten Bytes bestimmte Dateityp (siehe den Block
+      // bei VV_NACHWEIS_IP_ZAEHLER). request wird dafuer mitgegeben.
+      // Die drei lesenden/loeschenden Wege verlangen eine Sitzung.
       case "vv-nachweis-put":
-        return handleVvNachweisPut(body, env, authHeader, corsHeaders);
+        return handleVvNachweisPut(request, body, env, authHeader, corsHeaders);
       case "vv-nachweis-liste":
         return handleVvNachweisListe(request, body, env, authHeader, corsHeaders);
       case "vv-nachweis-get":
@@ -9445,6 +9448,81 @@ const VV_ANTRAG_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 
 const VV_NACHWEIS_OWNER_RE = /^[0-9a-f]{32}$/;
 
+// ⚠️ vv-nachweis-put ist der einzige Schreibweg des Gateways, der WEDER eine
+// Sitzung NOCH einen Zugriffscode NOCH einen Token verlangt -- Eltern haben
+// nichts davon, und einen Token gaebe es erst nach dem Absenden, waehrend die
+// Anlagen davor hochgeladen werden. Der Kommentar an der Aktionsweiche berief
+// sich auf "gleiche Bauform wie fahrtenbuch-extern-fuehrerschein-put"; die ruft
+// aber requireFahrtenbuchExternCode() als erste Zeile. Was hier stattdessen
+// bremst, sind die beiden Schranken darunter: ein Zaehlwerk je IP und der
+// Dateityp aus den ersten Bytes. Ohne sie war der Endpunkt fuer jeden, der die
+// Worker-Adresse kennt, ein unbegrenzter Ablageplatz fuer beliebige Dateien.
+const VV_NACHWEIS_IP_ZAEHLER = new Map();
+// Eine Familie laedt zwei bis drei Anlagen plus Passbild hoch, oft mit einem
+// zweiten Anlauf, wenn das Foto unscharf war. 40 je Stunde lassen das bequem zu
+// und decken auch den Fall ab, dass mehrere Familien im selben Netz sitzen
+// (Elternabend). Bewusst niedriger als bei der Kleiderbestellung: dort scannt
+// eine ganze Mannschaft gleichzeitig, hier meldet eine Familie ein Kind an.
+const VV_NACHWEIS_MAX_PRO_STUNDE = 40;
+
+function vvNachweisIpBremse(request) {
+  const ip = String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
+  if (!ip) return true;
+  const jetzt = Date.now();
+  const eintrag = VV_NACHWEIS_IP_ZAEHLER.get(ip);
+  if (!eintrag || jetzt - eintrag.start > 3600000) {
+    VV_NACHWEIS_IP_ZAEHLER.set(ip, { start: jetzt, n: 1 });
+    // Aufraeumen, damit die Map in einem langlebigen Isolate nicht waechst.
+    if (VV_NACHWEIS_IP_ZAEHLER.size > 500) {
+      for (const [k, v] of VV_NACHWEIS_IP_ZAEHLER) {
+        if (jetzt - v.start > 3600000) VV_NACHWEIS_IP_ZAEHLER.delete(k);
+      }
+    }
+    return true;
+  }
+  eintrag.n++;
+  return eintrag.n <= VV_NACHWEIS_MAX_PRO_STUNDE;
+}
+
+// Erlaubt sind genau die Formate, in denen eine Geburtsurkunde, ein Spielerpass
+// oder ein Passbild tatsaechlich ankommt: abfotografiert oder gescannt. Der Typ
+// kommt IMMER aus den ersten Bytes, nie aus body.contentType -- sonst landet
+// eine umbenannte Datei unter einem erfundenen Typ in der Ablage und wird von
+// handleVvNachweisGet spaeter genau so wieder ausgeliefert. Gleiche Linie wie
+// erkenneMedientyp() bei den Neuigkeiten und die PDF-Pruefung in
+// handleVvAntragPdfPut zwanzig Zeilen weiter unten.
+//
+// ⚠️ Bewusst NICHT erkenneMedientyp() wiederverwendet: die klassiert alles mit
+// "ftyp" an Byte 4 als video/mp4 -- und genau diese Signatur hat auch ein
+// iPhone-HEIC. Ein Passbild vom iPhone lieferte dort also "video/mp4" und ein
+// echtes Video kaeme als Nachweis durch. Hier wird die Marke an Byte 8 gelesen.
+const VV_NACHWEIS_HEIF_MARKEN = new Set([
+  "heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1"
+]);
+
+// Genau die Rueckgabewerte von erkenneNachweisTyp -- der Filter beim Ausliefern
+// haengt daran. Wer dort ein Format ergaenzt, ergaenzt es hier mit.
+const VV_NACHWEIS_TYPEN = new Set([
+  "image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"
+]);
+
+function erkenneNachweisTyp(b) {
+  if (!b || b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return "application/pdf";
+  // RIFF....WEBP
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "image/webp";
+  // ISO-BMFF: Groessenfeld, dann "ftyp", dann die Marke -- nur die HEIF-Bilder
+  // gelten, mp4/m4v fallen durch.
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    const marke = String.fromCharCode(b[8], b[9], b[10], b[11]).toLowerCase();
+    if (VV_NACHWEIS_HEIF_MARKEN.has(marke)) return "image/heic";
+  }
+  return null;
+}
+
 // Wer die Nachweise sehen darf. Der Gateway kennt die Rollen der
 // Vereinsverwaltung nicht -- die liegen in deren D1 -- und benutzt
 // deshalb die naechstliegende Entsprechung: das Bearbeiten-Recht auf der
@@ -9462,7 +9540,13 @@ function vvNachweisPfad(owner, slot) {
   return VV_NACHWEIS_DIR + "/" + owner + "/" + slot;
 }
 
-async function handleVvNachweisPut(body, env, authHeader, corsHeaders) {
+async function handleVvNachweisPut(request, body, env, authHeader, corsHeaders) {
+  // Zaehlwerk VOR jeder anderen Pruefung: es ist die einzige Schranke, die
+  // ueberhaupt zaehlt, wie oft jemand hier anklopft.
+  if (!vvNachweisIpBremse(request)) {
+    return json({ error: "Zu viele Uploads. Bitte spaeter erneut versuchen." }, 429, corsHeaders);
+  }
+
   const slot = String(body.slot || "");
   if (!VV_NACHWEIS_SLOTS.has(slot)) {
     return json({ error: "Unbekannte Art des Nachweises" }, 400, corsHeaders);
@@ -9486,8 +9570,12 @@ async function handleVvNachweisPut(body, env, authHeader, corsHeaders) {
   if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
   if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
 
-  let ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
-  if (!ctype || ctype.length > 200) ctype = "application/octet-stream";
+  // ⚠️ body.contentType wird NICHT mehr uebernommen -- der Typ kommt aus den
+  // ersten Bytes. Was hier nicht erkannt wird, kommt nicht in die Ablage.
+  const ctype = erkenneNachweisTyp(bytes);
+  if (!ctype) {
+    return json({ error: "Nur Fotos (JPEG, PNG, HEIC, WebP) oder PDF-Dateien" }, 400, corsHeaders);
+  }
 
   const dir = VV_NACHWEIS_DIR + "/" + owner;
   const fileUrl = vvNachweisPfad(owner, slot);
@@ -9543,9 +9631,16 @@ async function handleVvNachweisGet(request, body, env, authHeader, corsHeaders) 
   if (resp.status === 404) return json({ error: "Nachweis nicht gefunden" }, 404, corsHeaders);
   if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
 
-  // Rohe Bytes mit dem Typ von Nextcloud, wie dav-restricted-get.
+  // Rohe Bytes, aber nicht blind mit dem Typ von Nextcloud: bis zur
+  // Byte-Pruefung im PUT konnte dort ein vom Client behaupteter Typ liegen
+  // (auch text/html). Der Altbestand faellt deshalb auf octet-stream, und die
+  // beiden Kopfzeilen darunter halten auch den Fall ab, dass jemand die Datei
+  // einmal direkt im Browser oeffnet statt ueber den Blob-Weg der Verwaltung.
+  const gemeldet = String(resp.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
   const kopf = new Headers(corsHeaders);
-  kopf.set("Content-Type", resp.headers.get("Content-Type") || "application/octet-stream");
+  kopf.set("Content-Type", VV_NACHWEIS_TYPEN.has(gemeldet) ? gemeldet : "application/octet-stream");
+  kopf.set("X-Content-Type-Options", "nosniff");
+  kopf.set("Content-Disposition", "attachment");
   return new Response(resp.body, { status: 200, headers: kopf });
 }
 
