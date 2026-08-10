@@ -444,6 +444,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
   "http://localhost:8811", // Ausbildungsplan (Dev-Server)
   "http://localhost:8812", // Schulsport (Dev-Server)
+  "http://localhost:8813", // Spieltagscrew (Dev-Server)
   // AgeLan haengt sonst an keinem Gateway (eigenes Firebase); seit dem Passwort-Gate
   // vor dem Streamplan ruft sie verify-action-password hier auf.
   "http://localhost:8791", // AgeLan (Dev-Server)
@@ -896,6 +897,29 @@ const LIZENZ_OPTIONEN = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
 const TRAINER_GROUP_NAME = "Trainer";
 
 export default {
+  // Naechtlicher Lauf der Spieltagscrew (seit 2026-08-10). Der ZWEITE bewusste
+  // Bruch mit der Flottenentscheidung gegen Cron-Trigger -- der erste steht im
+  // Vereinsverwaltungs-Worker fuer die naechtliche Sicherung. Begruendung ist
+  // dieselbe Bauart: eine Erinnerung, die nur laeuft, wenn jemand die App
+  // oeffnet, ist keine. Wer sieben Tage vor dem Heimspiel noch keinen Posten
+  // hat, macht die App gerade NICHT auf.
+  //
+  // ⚠️ Der Zeitplan selbst steht NICHT in dieser Datei, sondern in der
+  // Cloudflare-Konfiguration (Dashboard → Worker → Triggers → Cron). Ein
+  // Script-Upload ueber deploy-worker.ps1 loescht ihn nicht, legt ihn aber auch
+  // nicht an: fehlt er, laeuft diese Funktion nie und niemand merkt es. Genau
+  // dagegen schreibt scLaufVermerken() eine sichtbare Zeile in den
+  // Verwaltungs-Tab der App.
+  //
+  // Es gibt hier keine Sitzung und keinen Nutzer-Token -- der Auth-Header wird
+  // wie im fetch-Zweig aus den Worker-Secrets gebaut.
+  async scheduled(event, env, ctx) {
+    const noetig = ["NEXTCLOUD_URL", "NEXTCLOUD_USERNAME", "NEXTCLOUD_PASSWORD", "NEXTCLOUD_NUTZER_URL"];
+    if (noetig.some((name) => !env[name])) return;
+    const authHeader = "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD);
+    ctx.waitUntil(scNaechtlicherLauf(env, authHeader, ctx));
+  },
+
   // ctx (seit 2026-08-03): nur fuer ctx.waitUntil beim Push-Versand. Ohne den
   // dritten Parameter wartet der Nutzer auf die Zustellung an bis zu 30
   // Empfaenger, obwohl seine eigentliche Handlung laengst gespeichert ist.
@@ -1189,6 +1213,23 @@ export default {
         return handleVaDateiLoeschen(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgaben-uebergabe":
         return handleVaUebergabe(request, body, env, authHeader, corsHeaders);
+      // ---- Spieltagscrew (Handler am Dateiende) ----
+      case "spieltagscrew-load":
+        return handleScLoad(request, env, authHeader, corsHeaders);
+      case "spieltagscrew-eintragen":
+        return handleScEintragen(request, body, env, authHeader, corsHeaders, ctx);
+      case "spieltagscrew-austragen":
+        return handleScAustragen(request, body, env, authHeader, corsHeaders, ctx);
+      case "spieltagscrew-spieltag-speichern":
+        return handleScSpieltagSpeichern(request, body, env, authHeader, corsHeaders);
+      case "spieltagscrew-spieltag-loeschen":
+        return handleScSpieltagLoeschen(request, body, env, authHeader, corsHeaders);
+      case "spieltagscrew-katalog-speichern":
+        return handleScKatalogSpeichern(request, body, env, authHeader, corsHeaders);
+      case "spieltagscrew-einstellungen-speichern":
+        return handleScEinstellungenSpeichern(request, body, env, authHeader, corsHeaders);
+      case "spieltagscrew-erinnern":
+        return handleScErinnern(request, body, env, authHeader, corsHeaders, ctx);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -10625,6 +10666,8 @@ const PUSH_ANLAESSE = [
     label: "Raumnutzung — fertige Anträge und ihr weiterer Weg" },
   { id: "schulsport", titel: "Schulsport", ziel: "/schulsport/",
     label: "Schulsport — Termine, die auf meine Rückmeldung warten" },
+  { id: "spieltagscrew", titel: "Spieltagscrew", ziel: "/spieltagscrew/",
+    label: "Spieltagscrew — offene Posten und Erinnerung an meinen Dienst" },
   // Ziel ist die Uebersicht selbst (wie "unterschriften") -- die Antwort steht
   // im Tab "Feedback & Hilfe", nicht in einer der verlinkten Apps. Deshalb traegt
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
@@ -11778,7 +11821,8 @@ const PUNKTE_APP_PRAEFIXE = [
   ["get-materialcontainer", "materialliste"],
   ["set-materialcontainer", "materialliste"],
   ["beleg-eingang", "budget"],
-  ["schulsport", "schulsport"]
+  ["schulsport", "schulsport"],
+  ["spieltagscrew", "spieltagscrew"]
 ];
 
 // Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht
@@ -12853,5 +12897,674 @@ async function handleKbExternSpeichern(request, body, env, authHeader, corsHeade
       }
       return json({ error: "Die Bestellung konnte nicht gespeichert werden." }, 502, corsHeaders);
     }
+  }
+}
+
+// ============================================================================
+// Spieltagscrew — wer übernimmt bei den Heimspielen welchen Posten
+// ============================================================================
+//
+// Geschlossener Block am Dateiende, wie die Kleiderbestellung darüber: am
+// Stück wieder herauslösbar.
+//
+// "spieltagscrew" steht mit Absicht NICHT in DAV_APPS. Es gibt damit keinen
+// generischen dav-load/dav-save-Weg auf diese Datei — jeder Zugriff läuft
+// über die Aktionen hier. Vier Zusagen dieser App lassen sich clientseitig
+// nicht halten, und ein dav-save, das die ganze Datei entgegennimmt, wäre die
+// offene Hintertür an allen vieren vorbei:
+//
+//   1. Ein voller Posten nimmt niemanden mehr an.
+//   2. Eine Person steht je Spieltag auf höchstens einem Posten.
+//   3. Wer sich einträgt, trägt sich selbst ein — fremde Namen darf nur
+//      setzen, wer administriert.
+//   4. Der Verlauf hält fest, wer wen ein- und ausgetragen hat.
+//
+// Ohne DAV_APPS-Eintrag braucht es auch keinen in
+// WRITE_REQUIRES_EDIT_PERMISSION: dav-save läuft für diese App ohnehin in
+// "Unbekannte App".
+const SPIELTAGSCREW_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spieltagscrew/spieltagscrew.json";
+
+const SC_MAX_SPIELTAGE = 500;
+const SC_MAX_JOBS = 40;            // je Spieltag und im Katalog
+const SC_MAX_ANZAHL = 50;          // Personen je Posten
+const SC_MAX_VERLAUF = 400;        // je Spieltag
+const SC_MAX_NAME = 80;
+const SC_MAX_BESCHREIBUNG = 200;
+const SC_MAX_GEGNER = 120;
+const SC_MAX_NOTIZ = 500;
+const SC_MIN_MINUTEN = -600;
+const SC_MAX_MINUTEN = 600;
+const SC_WETTBEWERBE = ["punktspiel", "pokal", "testspiel"];
+const SC_MANNSCHAFTEN = ["erste"];
+const SC_ERINNERUNG_TAGE_MAX = 60;
+
+class ScFehler extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "ScFehler";
+    this.status = status || 400;
+  }
+}
+
+function scAntwortFehler(e, corsHeaders) {
+  if (e instanceof ScFehler) return json({ error: e.message }, e.status, corsHeaders);
+  if (e instanceof ConflictError) return json({ error: "Gleichzeitige Änderung — bitte erneut versuchen" }, 409, corsHeaders);
+  return json({ error: "Speicherfehler: " + (e && e.message ? e.message : "unbekannt") }, 502, corsHeaders);
+}
+
+// Jede Aktion verlangt eingeloggtes Personal MIT Sichtbarkeit auf das Tool.
+// Spielerkonten sind wie überall in diesem Worker ausgeschlossen.
+async function scSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (session.art === USER_ART_SPIELER) {
+    return { fehler: json({ error: "Kein Zugriff auf die Spieltagscrew" }, 403, corsHeaders) };
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!(await userMayAccessTool("spieltagscrew", session, env, authHeader, Promise.resolve(config)))) {
+    return { fehler: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
+  }
+  const canEdit = await resolveEditPermission("spieltagscrew", session, env, authHeader, Promise.resolve(config));
+  const canAdmin = await resolveAdminPermission("spieltagscrew", session, env, authHeader, Promise.resolve(config));
+  return { session, config, canEdit, canAdmin, fehler: null };
+}
+
+// Schreibende Aktionen zusätzlich hinter dem Bearbeiten-Recht. "Sehen" heißt
+// in dieser App wirklich nur sehen — auch der Selbsteintrag ist ein
+// Schreibvorgang und braucht die Stufe (Flottenregel vom 2026-07-24).
+function scVerlangeEdit(ctx) {
+  if (!ctx.canEdit) throw new ScFehler("Dafür fehlt dir das Bearbeiten-Recht", 403);
+}
+
+function scVerlangeAdmin(ctx) {
+  if (!ctx.canAdmin) throw new ScFehler("Dafür fehlt dir das Administrieren-Recht", 403);
+}
+
+function scEinstellungenLeer() {
+  return { erinnerungTage: 7, terminerinnerung: true, lagemeldung: true };
+}
+
+function scLeer() {
+  return { version: 1, jobKatalog: [], spieltage: [], einstellungen: scEinstellungenLeer(), lauf: null };
+}
+
+function scNormalisiere(doc) {
+  doc.version = doc.version || 1;
+  if (!Array.isArray(doc.jobKatalog)) doc.jobKatalog = [];
+  if (!Array.isArray(doc.spieltage)) doc.spieltage = [];
+  if (!doc.einstellungen || typeof doc.einstellungen !== "object") doc.einstellungen = scEinstellungenLeer();
+  doc.spieltage.forEach((s) => {
+    if (!Array.isArray(s.jobs)) s.jobs = [];
+    if (!Array.isArray(s.verlauf)) s.verlauf = [];
+    s.jobs.forEach((j) => { if (!Array.isArray(j.besetzung)) j.besetzung = []; });
+  });
+  return doc;
+}
+
+// Read-modify-write mit If-Match und drei Versuchen — gleiches Muster wie
+// vaMutiere. fn bekommt das Dokument, ändert es an Ort und Stelle und gibt
+// zurück, was der Client als Antwort sehen soll.
+async function scMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(SPIELTAGSCREW_URL, authHeader, scLeer());
+    scNormalisiere(doc);
+    const ergebnis = fn(doc) || {};
+    try {
+      await writeJson(SPIELTAGSCREW_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new ScFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+// ---------- Datum und Zeit ----------
+
+// "Heute" in Europe/Berlin als ISO-Tag. sv-SE liefert genau YYYY-MM-DD.
+// Serverseitig wäre ein bloßes new Date() reines UTC — ein Spieltag am Sonntag
+// wäre dann ab 01:00 Ortszeit am Montag noch "heute".
+function scHeuteBerlin() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+function scTagPlus(tage) {
+  return new Date(Date.now() + tage * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+// Ein Spieltag zählt bis zum Ende seines Kalendertages als kommend — am
+// Spieltag selbst soll sich noch jemand eintragen können. Dieselbe Grenze
+// prüft der Client in istVergangen().
+function scIstVergangen(s) {
+  return String(s.datum || "") < scHeuteBerlin();
+}
+
+function scDatum(roh) {
+  const s = capStr(roh, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function scUhrzeit(roh) {
+  const s = capStr(roh, 5);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : "";
+}
+
+function scMinuten(roh, vorgabe) {
+  const n = Math.round(Number(roh));
+  if (!Number.isFinite(n)) return vorgabe;
+  return Math.max(SC_MIN_MINUTEN, Math.min(SC_MAX_MINUTEN, n));
+}
+
+// Uhrzeit aus Anstoß plus Minutenversatz. Spiegelt zeitVersetzt() im Client;
+// negativ heißt "vor dem Anpfiff". Läuft der Wert über Mitternacht, wird sauber
+// umgeschlagen statt 25:30 auszugeben.
+function scZeitVersetzt(anstoss, min) {
+  const teile = String(anstoss || "15:00").split(":");
+  const basis = (Number(teile[0]) || 0) * 60 + (Number(teile[1]) || 0);
+  const roh = basis + (Number(min) || 0);
+  const imTag = ((roh % 1440) + 1440) % 1440;
+  return String(Math.floor(imTag / 60)).padStart(2, "0") + ":" + String(imTag % 60).padStart(2, "0");
+}
+
+// ---------- Säuberung ----------
+
+// Jobs werden IMMER serverseitig neu zusammengesetzt. Der Client schickt nur
+// die Felder unten; besetzung, id und katalogId bestimmt der Worker — sonst
+// könnte ein Aufrufer sich über ein mitgeschicktes besetzung-Feld selbst (oder
+// Fremde) auf jeden Posten setzen.
+function scJobAusEingabe(roh, bestand) {
+  const name = capStr(roh && roh.name, SC_MAX_NAME).trim();
+  if (!name) throw new ScFehler("Jeder Posten braucht einen Namen", 400);
+  return {
+    id: (bestand && bestand.id) || crypto.randomUUID(),
+    katalogId: (bestand && bestand.katalogId) || capStr(roh && roh.katalogId, 60) || "",
+    name,
+    beschreibung: capStr(roh && roh.beschreibung, SC_MAX_BESCHREIBUNG).trim(),
+    anzahl: Math.max(1, Math.min(SC_MAX_ANZAHL, Math.round(Number(roh && roh.anzahl)) || 1)),
+    vonMin: scMinuten(roh && roh.vonMin, -90),
+    bisMin: scMinuten(roh && roh.bisMin, 0),
+    besetzung: (bestand && Array.isArray(bestand.besetzung)) ? bestand.besetzung : []
+  };
+}
+
+// Eine Kopie des Katalogs in den Spieltag. Bewusst eine Kopie und keine
+// Referenz: eine spätere Änderung am Katalog darf bestehende und bereits
+// besetzte Spieltage nicht umschreiben.
+function scJobsAusKatalog(katalog) {
+  return katalog.map((k) => ({
+    id: crypto.randomUUID(),
+    katalogId: k.id || "",
+    name: k.name,
+    beschreibung: k.beschreibung || "",
+    anzahl: k.anzahl,
+    vonMin: k.vonMin,
+    bisMin: k.bisMin,
+    besetzung: []
+  }));
+}
+
+function scSpieltagHolen(doc, id) {
+  const s = doc.spieltage.find((x) => x && x.id === String(id || ""));
+  if (!s) throw new ScFehler("Spieltag nicht gefunden", 404);
+  return s;
+}
+
+function scJobHolen(s, jobId) {
+  const j = (s.jobs || []).find((x) => x && x.id === String(jobId || ""));
+  if (!j) throw new ScFehler("Posten nicht gefunden", 404);
+  return j;
+}
+
+function scVerlaufSchreiben(s, eintrag) {
+  s.verlauf.push(eintrag);
+  if (s.verlauf.length > SC_MAX_VERLAUF) s.verlauf = s.verlauf.slice(-SC_MAX_VERLAUF);
+}
+
+// Wer an diesem Spieltag schon irgendwo steht — und wo. Das ist die Zusage
+// "ein Posten pro Person und Spieltag", und sie fällt hier, nicht im Client.
+function scPostenVon(s, username) {
+  return (s.jobs || []).find((j) => (j.besetzung || []).some((b) => b && b.username === username)) || null;
+}
+
+// Wessen Name eingetragen wird. Der eigene kommt IMMER aus dem Token; ein
+// fremder Name im Körper ist ausschließlich mit Administrieren erlaubt. Ohne
+// diese Schranke könnte jeder Bearbeiter beliebige Leute auf Posten setzen und
+// wieder herunterwerfen.
+function scZielUser(ctx, roh) {
+  const gewuenscht = normalizeUsername(String(roh || ""));
+  const selbst = ctx.session.username;
+  if (!gewuenscht || gewuenscht === normalizeUsername(selbst)) return selbst;
+  if (!ctx.canAdmin) throw new ScFehler("Andere eintragen darf nur, wer die Spieltagscrew administriert", 403);
+  return gewuenscht;
+}
+
+// ---------- Laden ----------
+
+async function handleScLoad(request, env, authHeader, corsHeaders) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+
+  const doc = scNormalisiere(await readJson(SPIELTAGSCREW_URL, authHeader, scLeer()));
+
+  // Anzeigenamen aus nutzer.json (steckt in der Sitzung, kostet keinen
+  // zusätzlichen Read). Bewusst nicht im Eintrag gespeichert: nach einer
+  // Umbenennung soll ein alter Eintrag nicht den früheren Namen zeigen.
+  const namen = Object.create(null);
+  const merke = (u) => {
+    if (u && !namen[u]) namen[u] = aufgabenAnzeigeName(ctx.session.usersDoc, u);
+  };
+  doc.spieltage.forEach((s) => (s.jobs || []).forEach((j) => (j.besetzung || []).forEach((b) => {
+    if (!b) return;
+    merke(b.username);
+    merke(b.von);
+  })));
+  // Der eigene Name IMMER — sonst steht in der Kopfzeile der Anmeldename,
+  // solange man selbst noch auf keinem Posten steht.
+  merke(ctx.session.username);
+
+  return json({
+    jobKatalog: doc.jobKatalog,
+    spieltage: doc.spieltage,
+    einstellungen: doc.einstellungen,
+    // Der Lauf-Status ist eine Betriebsangabe und geht nur an die Verwaltung.
+    lauf: ctx.canAdmin ? (doc.lauf || null) : null,
+    namen,
+    me: {
+      username: ctx.session.username, isAdmin: !!ctx.session.isAdmin,
+      canEdit: ctx.canEdit, canAdmin: ctx.canAdmin
+    }
+  }, 200, corsHeaders);
+}
+
+// ---------- Ein- und Austragen ----------
+
+async function handleScEintragen(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeEdit(ctx);
+    const ziel = scZielUser(ctx, body.username);
+    const fremd = ziel !== ctx.session.username;
+
+    const ergebnis = await scMutiere(authHeader, (doc) => {
+      const s = scSpieltagHolen(doc, body.spieltagId);
+      if (scIstVergangen(s)) throw new ScFehler("Dieser Spieltag liegt zurück — die Besetzung lässt sich nicht mehr ändern", 400);
+      const job = scJobHolen(s, body.jobId);
+
+      const schon = scPostenVon(s, ziel);
+      if (schon) {
+        throw new ScFehler(schon.id === job.id
+          ? "Auf diesem Posten steht die Person bereits"
+          : `An diesem Spieltag ist schon der Posten "${schon.name}" übernommen — mehr als einer geht nicht`, 409);
+      }
+      if (job.besetzung.length >= (Number(job.anzahl) || 0)) {
+        throw new ScFehler("Dieser Posten ist bereits vollständig besetzt", 409);
+      }
+
+      job.besetzung.push({ username: ziel, am: new Date().toISOString(), von: ctx.session.username });
+      scVerlaufSchreiben(s, {
+        am: new Date().toISOString(), von: ctx.session.username,
+        was: fremd ? "gesetzt" : "eingetragen", wen: ziel, jobId: job.id, jobName: job.name
+      });
+      return { spieltagId: s.id, jobId: job.id };
+    });
+
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleScAustragen(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeEdit(ctx);
+    const ziel = scZielUser(ctx, body.username);
+    const fremd = ziel !== ctx.session.username;
+
+    // Der Versand steht AUSSERHALB von scMutiere(): dessen Callback läuft bei
+    // einem If-Match-Konflikt bis zu dreimal, die Nachricht ginge sonst
+    // mehrfach raus. Deshalb reicht das Closure die Meldung zurück.
+    const { pushText, ...ergebnis } = await scMutiere(authHeader, (doc) => {
+      const s = scSpieltagHolen(doc, body.spieltagId);
+      if (scIstVergangen(s)) throw new ScFehler("Dieser Spieltag liegt zurück — die Besetzung lässt sich nicht mehr ändern", 400);
+      const job = scJobHolen(s, body.jobId);
+
+      const vorher = job.besetzung.length;
+      job.besetzung = job.besetzung.filter((b) => !(b && b.username === ziel));
+      if (job.besetzung.length === vorher) throw new ScFehler("Auf diesem Posten steht die Person nicht", 404);
+
+      scVerlaufSchreiben(s, {
+        am: new Date().toISOString(), von: ctx.session.username,
+        was: fremd ? "entfernt" : "ausgetragen", wen: ziel, jobId: job.id, jobName: job.name
+      });
+      // Nur ein Selbst-Austrag ist eine Nachricht wert: setzt die Verwaltung
+      // selbst jemanden ab, weiß sie es ohnehin.
+      return { spieltagId: s.id, jobId: job.id, pushText: fremd ? "" : "Ein Posten an einem Heimspieltag ist wieder frei geworden" };
+    });
+
+    if (pushText) {
+      // Empfänger sind die Administrierenden — ein kurzfristig frei gewordener
+      // Posten fällt sonst niemandem auf. Der Text nennt weder Namen noch
+      // Spieltag: er steht auf dem Sperrbildschirm.
+      const admins = await scAdminEmpfaenger(env, authHeader, ctx.session.usersDoc, ctx.session.username);
+      if (admins.length) pushSenden(env, authHeader, execCtx, admins, "spieltagscrew", pushText);
+    }
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Spieltage (Administrieren) ----------
+
+async function handleScSpieltagSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeAdmin(ctx);
+    const roh = body.spieltag || {};
+    const datum = scDatum(roh.datum);
+    const anstoss = scUhrzeit(roh.anstoss);
+    const gegner = capStr(roh.gegner, SC_MAX_GEGNER).trim();
+    if (!datum) throw new ScFehler("Bitte ein gültiges Datum angeben", 400);
+    if (!anstoss) throw new ScFehler("Bitte eine gültige Anstoßzeit angeben", 400);
+    if (!gegner) throw new ScFehler("Bitte den Gegner angeben", 400);
+
+    const kopf = {
+      datum, anstoss, gegner,
+      wettbewerb: SC_WETTBEWERBE.includes(String(roh.wettbewerb)) ? String(roh.wettbewerb) : "punktspiel",
+      mannschaft: SC_MANNSCHAFTEN.includes(String(roh.mannschaft)) ? String(roh.mannschaft) : "erste",
+      notiz: capStr(roh.notiz, SC_MAX_NOTIZ).trim()
+    };
+
+    const ergebnis = await scMutiere(authHeader, (doc) => {
+      const id = capStr(roh.id, 60);
+      let s;
+      if (id) {
+        s = scSpieltagHolen(doc, id);
+        Object.assign(s, kopf);
+      } else {
+        if (doc.spieltage.length >= SC_MAX_SPIELTAGE) throw new ScFehler("Es sind zu viele Spieltage angelegt", 400);
+        s = Object.assign({
+          id: crypto.randomUUID(), erstelltAm: new Date().toISOString(), erstelltVon: ctx.session.username,
+          jobs: scJobsAusKatalog(doc.jobKatalog), verlauf: []
+        }, kopf);
+        doc.spieltage.push(s);
+      }
+
+      // Die Postenliste ist OPTIONAL. Fehlt sie, bleibt sie unberührt — sonst
+      // löschte ein Kopf-Speichern ohne jobs-Feld alle Posten samt Besetzung.
+      // Ist sie da, wird über die Job-Id zusammengeführt.
+      if (Array.isArray(roh.jobs)) {
+        if (roh.jobs.length > SC_MAX_JOBS) throw new ScFehler("Zu viele Posten an einem Spieltag", 400);
+        const alt = s.jobs || [];
+        const neu = roh.jobs.map((j) => scJobAusEingabe(j, alt.find((a) => a.id === capStr(j && j.id, 60)) || null));
+        // Ein Posten, auf dem noch jemand steht, darf nicht mitsamt Besetzung
+        // verschwinden — sonst fällt eine Zusage still unter den Tisch.
+        const behalten = new Set(neu.map((j) => j.id));
+        const verlorene = alt.filter((a) => !behalten.has(a.id) && (a.besetzung || []).length);
+        if (verlorene.length) {
+          throw new ScFehler(`Auf "${verlorene[0].name}" steht noch jemand — bitte zuerst austragen`, 409);
+        }
+        // Eine gesenkte Personenzahl wirkt NICHT rückwirkend: wer schon
+        // zugesagt hat, bleibt stehen. Die Zahl steigt dann eben mit.
+        neu.forEach((j) => { if (j.besetzung.length > j.anzahl) j.anzahl = j.besetzung.length; });
+        s.jobs = neu;
+      }
+      return { id: s.id };
+    });
+
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleScSpieltagLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeAdmin(ctx);
+    const ergebnis = await scMutiere(authHeader, (doc) => {
+      const s = scSpieltagHolen(doc, body.id);
+      doc.spieltage = doc.spieltage.filter((x) => x.id !== s.id);
+      return { geloescht: s.id };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Job-Katalog (Administrieren) ----------
+
+async function handleScKatalogSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeAdmin(ctx);
+    const roh = Array.isArray(body.jobKatalog) ? body.jobKatalog : [];
+    if (roh.length > SC_MAX_JOBS) throw new ScFehler("Zu viele Posten im Katalog", 400);
+
+    const ergebnis = await scMutiere(authHeader, (doc) => {
+      const alt = doc.jobKatalog || [];
+      doc.jobKatalog = roh.map((j, i) => {
+        const bestand = alt.find((a) => a.id === capStr(j && j.id, 60)) || null;
+        const gebaut = scJobAusEingabe(j, bestand);
+        // Der Katalog ist eine Vorlage und trägt selbst keine Besetzung.
+        delete gebaut.besetzung;
+        delete gebaut.katalogId;
+        gebaut.sortierung = i;
+        gebaut.aktiv = true;
+        return gebaut;
+      });
+      // Bestehende Spieltage bleiben ausdrücklich unberührt — sie tragen ihre
+      // eigene Kopie. Genau dafür ist der Katalog eine Vorlage.
+      return { anzahl: doc.jobKatalog.length };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Einstellungen (Administrieren) ----------
+
+async function handleScEinstellungenSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeAdmin(ctx);
+    const roh = body.einstellungen || {};
+    const tage = Math.round(Number(roh.erinnerungTage));
+    if (!(tage >= 1 && tage <= SC_ERINNERUNG_TAGE_MAX)) {
+      throw new ScFehler("Die Frist muss zwischen 1 und " + SC_ERINNERUNG_TAGE_MAX + " Tagen liegen", 400);
+    }
+    const ergebnis = await scMutiere(authHeader, (doc) => {
+      doc.einstellungen = {
+        erinnerungTage: tage,
+        terminerinnerung: roh.terminerinnerung !== false,
+        lagemeldung: roh.lagemeldung !== false
+      };
+      return { einstellungen: doc.einstellungen };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Erinnerung von Hand (Administrieren) ----------
+
+// Dieselbe Auswahl-Logik wie der nächtliche Lauf, nur sofort und mit sichtbarem
+// Ergebnis. Damit lässt sich der Automatiklauf gegenprüfen, ohne bis zum
+// nächsten Morgen zu warten — und ein stiller Fehlschlag um 4 Uhr nachts fällt
+// sonst niemandem auf.
+async function handleScErinnern(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await scSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    scVerlangeAdmin(ctx);
+    const bericht = await scAufrufVerschicken(env, authHeader, execCtx, {
+      nurSpieltagId: capStr(body.spieltagId, 60),
+      ausloeser: ctx.session.username
+    });
+    return json({ ok: true, ...bericht }, 200, corsHeaders);
+  } catch (e) {
+    return scAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Empfängerkreise ----------
+
+// Nur die Administrierenden. pushEmpfaengerMitRecht liefert Bearbeiter UND
+// Administrierende zusammen; für die Lagemeldung ist das zu weit.
+async function scAdminEmpfaenger(env, authHeader, usersDoc, ausser) {
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, "spieltagscrew") || {};
+  const gruppen = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  const users = (usersDoc && usersDoc.users) || {};
+  const weg = normalizeUsername(String(ausser || ""));
+  const out = [];
+  for (const schluessel of Object.keys(users)) {
+    const u = users[schluessel];
+    if (!u || u.archiviert || !istPersonal(u)) continue;
+    const name = normalizeUsername(u.username || schluessel);
+    if (weg && name === weg) continue;
+    if (u.isAdmin) { out.push(name); continue; }
+    const meine = getUserGroupIds(usersDoc, schluessel);
+    if (gruppen.some((g) => meine.indexOf(g) !== -1)) out.push(name);
+  }
+  return out;
+}
+
+// ---------- Der eigentliche Erinnerungslauf ----------
+
+// Wird von zwei Stellen gerufen: von Hand über spieltagscrew-erinnern und
+// nächtlich aus scheduled(). Beide teilen sich diese Funktion, damit die
+// Auswahl nicht auseinanderläuft — eine zweite Kopie wäre genau die Art Code,
+// die man nie wieder anfasst und die dann etwas anderes tut.
+//
+// optionen.nurSpieltagId — nur diesen einen Spieltag (Hand-Auslösung)
+// optionen.nurFrist      — nur die Spieltage genau an der eingestellten Frist
+// optionen.mitTermin     — zusätzlich die Terminerinnerung für morgen
+// optionen.ausloeser     — bekommt selbst keine Nachricht
+async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
+  const opt = optionen || {};
+  const doc = scNormalisiere(await readJson(SPIELTAGSCREW_URL, authHeader, scLeer()));
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const tage = Math.max(1, Math.min(SC_ERINNERUNG_TAGE_MAX, Number(doc.einstellungen.erinnerungTage) || 7));
+
+  const zielTag = scTagPlus(tage);
+  const morgen = scTagPlus(1);
+  const heute = scHeuteBerlin();
+
+  // Von Hand zählt der gewählte Spieltag (oder alle kommenden), nächtlich genau
+  // die Spieltage an der Frist. Sonst meldete sich die App jede Nacht erneut
+  // für dasselbe Spiel.
+  const kandidaten = doc.spieltage.filter((s) => {
+    if (String(s.datum || "") < heute) return false;
+    if (opt.nurSpieltagId) return s.id === opt.nurSpieltagId;
+    if (opt.nurFrist) return String(s.datum) === zielTag;
+    return true;
+  });
+
+  const bearbeiter = await pushEmpfaengerMitRecht("spieltagscrew", usersDoc, env, authHeader, opt.ausloeser || "");
+  const admins = doc.einstellungen.lagemeldung !== false
+    ? await scAdminEmpfaenger(env, authHeader, usersDoc, opt.ausloeser || "")
+    : [];
+
+  let gesendet = 0;
+  let mitLuecke = 0;
+
+  for (const s of kandidaten) {
+    const frei = (s.jobs || []).reduce((n, j) => n + Math.max(0, (Number(j.anzahl) || 0) - (j.besetzung || []).length), 0);
+    if (frei <= 0) continue;
+    mitLuecke++;
+
+    // Wer an diesem Spieltag schon einen Posten hat, bekommt den Aufruf NICHT.
+    // Sonst ist die Nachricht nach drei Spieltagen weggewischt und trifft
+    // ausgerechnet den nicht mehr, der noch fehlt.
+    const drin = new Set();
+    (s.jobs || []).forEach((j) => (j.besetzung || []).forEach((b) => {
+      if (b && b.username) drin.add(normalizeUsername(b.username));
+    }));
+    const offen = bearbeiter.filter((u) => !drin.has(u));
+    if (offen.length) {
+      pushSenden(env, authHeader, execCtx, offen, "spieltagscrew",
+        "Beim nächsten Heimspiel sind noch " + frei + (frei === 1 ? " Posten" : " Posten") + " unbesetzt");
+      gesendet += offen.length;
+    }
+  }
+
+  // Lagemeldung an die Verwaltung — auch als Entwarnung, wenn alles besetzt
+  // ist. Nur beim nächtlichen Lauf: von Hand ausgelöst steht das Ergebnis
+  // ohnehin sofort auf dem Bildschirm.
+  if (opt.nurFrist && admins.length) {
+    const anDerFrist = doc.spieltage.filter((s) => String(s.datum) === zielTag);
+    if (anDerFrist.length) {
+      const freiGesamt = anDerFrist.reduce((n, s) =>
+        n + (s.jobs || []).reduce((m, j) => m + Math.max(0, (Number(j.anzahl) || 0) - (j.besetzung || []).length), 0), 0);
+      pushSenden(env, authHeader, execCtx, admins, "spieltagscrew",
+        freiGesamt > 0
+          ? "In " + tage + " Tagen ist Heimspiel — " + freiGesamt + " Posten sind noch frei"
+          : "In " + tage + " Tagen ist Heimspiel — alle Posten sind besetzt");
+      gesendet += admins.length;
+    }
+  }
+
+  // Terminerinnerung an die Eingetragenen: anderer Zweck als der Aufruf — nicht
+  // werben, sondern erinnern. Deshalb geht sie NUR an die, die einen Posten
+  // haben, und nennt Posten und ausgerechnete Uhrzeit.
+  let erinnert = 0;
+  if (opt.mitTermin && doc.einstellungen.terminerinnerung !== false) {
+    for (const s of doc.spieltage.filter((x) => String(x.datum) === morgen)) {
+      for (const j of (s.jobs || [])) {
+        for (const b of (j.besetzung || [])) {
+          if (!b || !b.username) continue;
+          pushSenden(env, authHeader, execCtx, [b.username], "spieltagscrew",
+            "Morgen " + scZeitVersetzt(s.anstoss, j.vonMin) + " Uhr: " + j.name + " beim Heimspiel");
+          erinnert++;
+        }
+      }
+    }
+  }
+
+  return { spieltage: mitLuecke, gesendet, erinnert, geprueft: kandidaten.length };
+}
+
+// Schreibt fest, dass und mit welchem Ergebnis der Lauf gearbeitet hat. Ohne
+// diese Spur fällt ein stiller Fehlschlag um 4 Uhr nachts niemandem auf — der
+// Verwaltungs-Tab zeigt die Zeile an.
+async function scLaufVermerken(authHeader, bericht, fehler) {
+  try {
+    await scMutiere(authHeader, (doc) => {
+      doc.lauf = {
+        zuletztAm: new Date().toISOString(),
+        ergebnis: fehler
+          ? "Fehlgeschlagen: " + capStr(fehler, 200)
+          : bericht.spieltage + " Spieltag(e) mit freien Posten, " + bericht.erinnert + " Terminerinnerung(en)",
+        gesendet: (bericht.gesendet || 0) + (bericht.erinnert || 0)
+      };
+      return {};
+    });
+  } catch (_) {
+    // Der Vermerk ist Diagnose, kein Selbstzweck: scheitert er, sind die
+    // Nachrichten trotzdem raus.
+  }
+}
+
+// Einstieg für den nächtlichen Lauf. Wirft nie — ein Fehler landete sonst nur
+// in einem Cloudflare-Protokoll, das niemand liest.
+async function scNaechtlicherLauf(env, authHeader, execCtx) {
+  try {
+    const bericht = await scAufrufVerschicken(env, authHeader, execCtx, { nurFrist: true, mitTermin: true });
+    await scLaufVermerken(authHeader, bericht, null);
+  } catch (e) {
+    await scLaufVermerken(authHeader, { spieltage: 0, gesendet: 0, erinnert: 0 },
+      (e && e.message) ? e.message : "unbekannt");
   }
 }

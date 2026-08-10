@@ -364,6 +364,16 @@ const TOOLS = [
     devices: ["mobile", "desktop"],
     mail: true,
     push: true
+  },
+  {
+    id: "spieltagscrew",
+    name: "Spieltagscrew",
+    description: "Wer übernimmt bei den Heimspielen der 1. Mannschaft welchen Posten: Kassenhäuschen, Ordnungsdienst, Grill, Sprecher, Auf- und Abbau. Die Posten werden einmal als Katalog gepflegt und jedem Heimspieltag als eigene Kopie mitgegeben, dort mit benötigter Personenzahl und einem Zeitfenster relativ zum Anstoß. Wer helfen kann, trägt sich selbst ein; frei gebliebene Posten melden sich rechtzeitig von selbst aufs Handy, und zu jedem Spieltag lässt sich ein Aushang mit Namen und Uhrzeiten drucken.",
+    url: "https://sc1911heiligenstadt.github.io/spieltagscrew/",
+    icon: "🦺",
+    category: "Verein",
+    devices: ["mobile", "desktop"],
+    push: true
   }
 ];
 
@@ -443,6 +453,17 @@ const APP_CHANGELOG = [
   {
     version: "1.1",
     groups: [
+      {
+        title: "Werkzeug Spieltagscrew",
+        items: [
+          "Wer bei den Heimspielen der 1. Mannschaft welchen Posten übernimmt, steht jetzt an einer Stelle — Kassenhäuschen, Ordnungsdienst, Grill, Sprecher, Auf- und Abbau.",
+          "Die Posten werden einmal als Katalog gepflegt und jedem Spieltag als eigene Kopie mitgegeben. Beim Derby lassen sich dort vier Ordner statt zwei eintragen, ohne dass sich am Katalog etwas ändert — und eine spätere Änderung am Katalog fasst bereits besetzte Spieltage nicht an.",
+          "Die Zeiten stehen relativ zum Anstoß. Bei einem Spiel um 13:00 Uhr steht am Kassenhäuschen automatisch eine andere Uhrzeit als bei einem um 15:00 Uhr.",
+          "Wer helfen kann, trägt sich selbst ein. Ein voller Posten nimmt niemanden mehr an, und je Spieltag übernimmt jede Person höchstens einen Posten.",
+          "Sieben Tage vor dem Spieltag meldet sich die App bei allen, die noch keinen Posten haben — aber nur, wenn wirklich etwas frei ist. Am Vortag bekommt jeder Eingetragene seine eigene Erinnerung mit Posten und Uhrzeit.",
+          "Zu jedem Spieltag lässt sich ein Aushang drucken: alle Posten mit Namen und Uhrzeiten, für das Kassenhäuschen oder das Schwarze Brett."
+        ]
+      },
       {
         title: "Neuigkeiten räumen sich selbst auf",
         items: [
@@ -537,7 +558,7 @@ const APP_CHANGELOG = [
           "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel nennt das geeignete Gerät — Handy, Laptop oder beides.",
           "Die Werkzeuge lassen sich innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger — seit 1.5 über den Knopf „Anordnen“ über den Kacheln. Die eigene Reihenfolge hängt am Konto und gilt auf jedem Gerät.",
           "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Die Handlung landet dort also im Postfach eines Empfängers und nicht nur in einer Liste.",
-          "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport und der externe Fahrtenbuch-Link.",
+          "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport, Spieltagscrew und der externe Fahrtenbuch-Link.",
           "Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
           "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung.",
           "Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",
