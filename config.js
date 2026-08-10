@@ -345,6 +345,14 @@ const TOOLS = [
     icon: "🦺",
     category: "Verein",
     push: true
+  },
+  {
+    id: "spielstatistik",
+    name: "Spielstatistik",
+    description: "Einsätze, Minuten, Tore und Karten der Mannschaften — Saison für Saison. Ein Spiel wird einmal erfasst: Startelf und Bank, Wechsel mit Minute, Tore mit Schütze, Karten und der Grund, warum jemand fehlte. Daraus rechnet die App die gewohnte Tabelle aus Spieltagen und Spielern samt allen Summen, die Vereinsbilanz über die Jahre hinweg und den fertigen Spielbericht als Word-Datei mit Aufstellungsgrafik. Löst die bisherigen Excel-Dateien ab.",
+    url: "https://sc1911heiligenstadt.github.io/spielstatistik/",
+    icon: "📊",
+    category: "Verein"
   }
 ];
 
@@ -357,7 +365,10 @@ const TOOLS = [
 const KRITISCHE_TOOLS = [
   "trainercheckliste", "sc1911-anmeldung", "vereinsbudget", "geschaeftsstelle",
   "spielertool-test", "personalkosten", "kadermanager", "digitaler-stempel",
-  "personalakte", "dokumentenvorlagen", "vereinsverwaltung"
+  "personalakte", "dokumentenvorlagen", "vereinsverwaltung",
+  // spielstatistik: hält je Spiel fest, warum jemand fehlte — darunter „verletzt"
+  // und „krank". Gesundheitsangaben über erwachsene Spieler, deshalb hier.
+  "spielstatistik"
 ];
 
 // Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab

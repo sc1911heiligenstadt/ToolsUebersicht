@@ -445,6 +445,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8811", // Ausbildungsplan (Dev-Server)
   "http://localhost:8812", // Schulsport (Dev-Server)
   "http://localhost:8813", // Spieltagscrew (Dev-Server)
+  "http://localhost:8814", // Spielstatistik (Dev-Server)
   // AgeLan haengt sonst an keinem Gateway (eigenes Firebase); seit dem Passwort-Gate
   // vor dem Streamplan ruft sie verify-action-password hier auf.
   "http://localhost:8791", // AgeLan (Dev-Server)
@@ -482,7 +483,8 @@ const DAV_APPS = {
   "abwesenheitskalender": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Abwesenheitskalender/abwesenheitskalender.json",
   "dokumentenvorlagen": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Dokumentenvorlagen/dokumentenvorlagen.json",
   "ausbildungsplan":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ausbildungsplan/ausbildungsplan.json",
-  "schulsport":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Schulsport/schulsport.json"
+  "schulsport":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Schulsport/schulsport.json",
+  "spielstatistik":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielstatistik/spielstatistik.json"
 };
 
 // Archivdatei des Schulsport-Planers: abgeschlossene Schuljahre wandern hierhin,
@@ -559,7 +561,12 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   // Ohne diesen Set-Eintrag koennte jeder Uebungsleiter per generischem dav-save
   // die gesamte Planung UND fremde Nachweisdaten ueberschreiben; ein Nachweis
   // soll sich aber nicht von anderer Seite aendern lassen.
-  "schulsport"
+  "schulsport",
+  // spielstatistik (neu 2026-08-10): eine einzige Datei traegt Einsaetze, Minuten,
+  // Tore und Karten mehrerer Saisons. Ein versehentliches dav-save eines Nur-Sehers
+  // wuerde die komplette Vereinshistorie ueberschreiben -- Merge gibt es nicht,
+  // nur Last-Write-Wins. Schreiben deshalb strikt an das Bearbeiten-Recht.
+  "spielstatistik"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
