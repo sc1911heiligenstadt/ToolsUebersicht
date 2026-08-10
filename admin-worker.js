@@ -12360,6 +12360,9 @@ const KB_EXTERN_PW_MIN = 4;
 const KB_EXTERN_PW_MAX = 100;
 const KB_EXTERN_MAX_POSITIONEN = 60;
 const KB_EXTERN_KOMMENTAR_MAX = 500;
+// Deckel fuer selbst gewaehlte Mengen (nur bei Artikeln mit Standardmenge 0
+// relevant) -- ohne ihn stuende eine Phantasiezahl in der Lieferantenliste.
+const KB_EXTERN_MENGE_MAX = 99;
 
 function kbExternIpBremse(request) {
   const ip = String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
@@ -12512,7 +12515,9 @@ async function handleKbExternStart(request, body, env, authHeader, corsHeaders) 
           id: String(a.id || ""),
           name: String(a.name || ""),
           groessen: (Array.isArray(a.groessen) ? a.groessen : []).slice(0, 60).map((g) => String(g)),
-          menge: Number(a.standardMenge) > 0 ? Number(a.standardMenge) : 1
+          // 0 = Menge frei waehlbar (der Client macht das Feld dann editierbar),
+          // siehe kbExternKatalogMenge/kbExternPositionen.
+          menge: kbExternKatalogMenge(a)
         }))
     }
   }, 200, corsHeaders);
@@ -12560,12 +12565,27 @@ async function handleKbExternAnmelden(request, body, env, authHeader, corsHeader
   return json({ status: "ok", bestellung: kbExternOeffentlicheBestellung(vorhanden) }, 200, corsHeaders);
 }
 
+// Die im Katalog vorgegebene Menge eines Artikels. 0 ist seit 08/2026 ein
+// eigener, gewollter Wert: die Menge ist NICHT vorgegeben, der Besteller
+// waehlt sie selbst. Fehlend/leer/kaputt faellt wie bisher auf 1 zurueck --
+// nur eine AUSDRUECKLICHE 0 gibt die Menge frei (Number(null) und Number("")
+// sind beide 0, das darf nicht als Freigabe durchgehen).
+function kbExternKatalogMenge(a) {
+  const roh = a ? a.standardMenge : undefined;
+  if (roh === null || roh === undefined || String(roh).trim() === "") return 1;
+  const m = Math.floor(Number(roh));
+  if (m === 0) return 0;
+  return Number.isFinite(m) && m > 0 ? m : 1;
+}
+
 // Baut die Positionen serverseitig aus dem Katalog DIESER Aktion.
 //
-// ⚠️ Die Menge kommt IMMER aus dem Katalog, nie aus dem Koerper. Dass der
-// Verein die Menge je Artikel vorgibt und nicht der Besteller, ist eine
-// Produktentscheidung dieser App (siehe E:\kleiderbestellung\CLAUDE.md) -- ueber
-// einen login-losen Endpunkt darf sie erst recht nicht verhandelbar sein.
+// ⚠️ Die Menge kommt aus dem Katalog, nie aus dem Koerper -- mit GENAU EINER
+// Ausnahme: steht die Standardmenge im Katalog auf 0, hat der Verein die Menge
+// fuer diesen Artikel ausdruecklich freigegeben (Michel-Vorgabe 2026-08-10),
+// dann zaehlt die Angabe des Bestellers (ganze Zahl >= 1, gedeckelt). Fuer alle
+// anderen Artikel bleibt die Vorgabe des Vereins unverhandelbar -- ueber einen
+// login-losen Endpunkt erst recht.
 //
 // ⚠️ Artikel und Groesse werden gegen den echten Katalog geprueft. Ein
 // erfundener Artikel, einer aus einer ANDEREN Bestellaktion oder eine Groesse,
@@ -12586,12 +12606,18 @@ function kbExternPositionen(aktion, roh) {
     if (gesehen.has(artikelId)) continue;
     const groesse = String(p.groesse || "");
     if (!Array.isArray(a.groessen) || !a.groessen.includes(groesse)) continue;
+    const katalogMenge = kbExternKatalogMenge(a);
+    let menge = katalogMenge;
+    if (katalogMenge === 0) {
+      menge = Math.floor(Number(p.menge));
+      // Ohne brauchbare Menge faellt die Zeile heraus statt mit 0 oder NaN in
+      // der Lieferantenliste zu stehen -- dieselbe Semantik wie im Client
+      // ("keine Menge = nicht bestellt").
+      if (!Number.isFinite(menge) || menge < 1) continue;
+      if (menge > KB_EXTERN_MENGE_MAX) menge = KB_EXTERN_MENGE_MAX;
+    }
     gesehen.add(artikelId);
-    positionen.push({
-      artikelId,
-      groesse,
-      menge: Number(a.standardMenge) > 0 ? Number(a.standardMenge) : 1
-    });
+    positionen.push({ artikelId, groesse, menge });
   }
   return positionen;
 }
