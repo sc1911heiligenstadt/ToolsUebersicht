@@ -6419,13 +6419,16 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   const tspReservierungen = Array.isArray(testspielplanerDoc.reservierungen) ? testspielplanerDoc.reservierungen : [];
   const testspielplanerAngefragt = tspReservierungen.filter((r) => r.status === "angefragt").length;
 
-  // "Zuletzt aktiv"-Listen für das Dropdown im Admin-Dashboard — dieselben
-  // bereits geladenen Datenquellen, nur nach Datum sortiert statt gezählt.
-  // trainervertragEingereichtAm() spiegelt E:\Trainerdaten\app.js::_eingereichtAm
-  // (unterschriftAm seit 1.5, davor nur erstelltAm als Näherung). signaturVorhanden ist
-  // das Flag seit dem Auslagern der Unterschriften aus der JSON; signatureDataUrl bleibt
-  // als Fallback für noch nicht migrierte Alt-Einträge (deploy-reihenfolge-unabhängig).
-  const trainervertragEingereichtAm = (t) => t.unterschriftAm || ((t.signaturVorhanden || t.signatureDataUrl) ? t.erstelltAm : null);
+  // "Zuletzt angemeldet"-Liste im Admin-Dashboard — dieselbe bereits geladene
+  // nutzer.json, nur nach lastLoginAt sortiert statt gezählt.
+  //
+  // ⚠️ Die drei Schwesterlisten (Trainervertrag/Trainerkodex/Jugendschutzkonzept)
+  // sind am 2026-08-10 mit dem Dropdown im Dashboard entfallen (Michel-Vorgabe:
+  // statt vier kurzer Listen eine längere Anmeldeliste) und wurden hier ersatzlos
+  // entfernt -- sie hatten danach keinen Leser mehr. Wer sie zurückholt, findet
+  // sie samt trainervertragEingereichtAm() in E:\_worker-archiv\ (Stände bis
+  // landingpage-20260810-*.js). Die Parität zu Trainerdatens _eingereichtAm hängt
+  // seitdem allein an buildTrainerdatenSummary() weiter unten in dieser Datei.
   const topRecent = (entries, limit) => entries
     .filter((e) => e.at)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)))
@@ -6435,16 +6438,10 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
       return { username: e.username, vorname: (u && u.vorname) || "", nachname: (u && u.nachname) || "", at: e.at };
     });
 
-  const recentLogins = topRecent(users.map((u) => ({ username: u.username, at: u.lastLoginAt })), 5);
-  const recentTrainervertrag = topRecent(vertragspflichtigeUsernames.map((uname) => ({
-    username: uname, at: trainerdatenByUsername.has(uname) ? trainervertragEingereichtAm(trainerdatenByUsername.get(uname)) : null
-  })), 5);
-  const recentTrainerkodex = topRecent(trainerUsernames.map((uname) => ({
-    username: uname, at: trainerdatenByUsername.has(uname) ? trainerdatenByUsername.get(uname).kodexBestaetigtAm : null
-  })), 5);
-  const recentJugendschutz = topRecent(trainerUsernames.map((uname) => ({
-    username: uname, at: trainerdatenByUsername.has(uname) ? trainerdatenByUsername.get(uname).jugendschutzBestaetigtAm : null
-  })), 5);
+  // users ist bereits auf Personal gefiltert (siehe oben) -- die Liste zeigt also
+  // wie bisher keine Spielerkonten. Bei ~200 davon bestünde sie sonst schnell nur
+  // aus ihnen, und gemeint sind die Kolleginnen und Kollegen.
+  const recentLogins = topRecent(users.map((u) => ({ username: u.username, at: u.lastLoginAt })), 10);
 
   const feedbackEntries = Array.isArray(feedbackDoc.entries) ? feedbackDoc.entries : [];
   const feedbackOffen = feedbackEntries.filter((f) => !f.done).length;
@@ -6486,10 +6483,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     materialbedarfOpen: materialbedarfOffen,
     busplanOpen: busplanOffen,
     testspielplanerAngefragt,
-    recentLogins,
-    recentTrainervertrag,
-    recentTrainerkodex,
-    recentJugendschutz
+    recentLogins
   }, 200, corsHeaders);
 }
 

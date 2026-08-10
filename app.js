@@ -5249,8 +5249,6 @@ function setupWhatsappLink() {
 // btn-admin-dashboard-refresh) statt in init()/afterAuthChange() wie die
 // immer sichtbaren Einstellungen-Panels — spart den Worker-Call für Admins,
 // die die Ansicht nie öffnen.
-let adminStatsState = null; // letzte get-admin-stats-Antwort, für den Dropdown-Wechsel ohne Refetch
-
 async function loadAndRenderAdminStats() {
   const errorEl = document.getElementById("admin-dashboard-error");
   const contentEl = document.getElementById("admin-dashboard-content");
@@ -5258,7 +5256,6 @@ async function loadAndRenderAdminStats() {
   contentEl.style.display = "none";
   try {
     const data = await callWorker("get-admin-stats", {});
-    adminStatsState = data;
     renderAdminStats(data);
     contentEl.style.display = "block";
   } catch (e) {
@@ -5294,7 +5291,7 @@ function renderAdminStats(data) {
   // Fallback "–", solange der Worker das Feld noch nicht liefert (alter Deploy).
   document.getElementById("stat-testspielplaner").textContent = data.testspielplanerAngefragt == null ? "–" : String(data.testspielplanerAngefragt);
 
-  renderRecentActivity();
+  renderRecentActivity(data);
 }
 
 function fmtDateTime(iso) {
@@ -5304,13 +5301,19 @@ function fmtDateTime(iso) {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function renderRecentActivity() {
+// Seit 2026-08-10 nur noch die Anmeldungen (Michel-Vorgabe): das Dropdown mit den
+// vier Listen ist weg, dafür sind es zehn statt fünf Einträge. Die Länge bestimmt
+// der Worker -- hier wird ungekürzt gerendert, was ankommt (ein alter Worker
+// liefert eben noch fünf, kein Fehlerfall).
+//
+// Die frühere Modulvariable adminStatsState ist damit ebenfalls entfallen: sie hielt
+// die letzte Antwort nur fest, damit ein Dropdown-Wechsel ohne neuen Worker-Aufruf
+// umschalten konnte. Ohne Dropdown gibt es nichts umzuschalten, und die Antwort
+// kommt als Parameter aus renderAdminStats().
+function renderRecentActivity(data) {
   const list = document.getElementById("admin-dashboard-recent-list");
   if (!list) return;
-  const select = document.getElementById("admin-dashboard-recent-select");
-  const kind = select ? select.value : "logins";
-  const key = kind === "trainervertrag" ? "recentTrainervertrag" : kind === "trainerkodex" ? "recentTrainerkodex" : kind === "jugendschutz" ? "recentJugendschutz" : "recentLogins";
-  const entries = (adminStatsState && Array.isArray(adminStatsState[key])) ? adminStatsState[key] : [];
+  const entries = (data && Array.isArray(data.recentLogins)) ? data.recentLogins : [];
   if (entries.length === 0) {
     list.innerHTML = '<li class="muted">Keine Daten vorhanden.</li>';
     return;
@@ -5585,9 +5588,6 @@ function setupTabs() {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); statTileActions[id](); }
     });
   });
-
-  const recentSelect = document.getElementById("admin-dashboard-recent-select");
-  if (recentSelect) recentSelect.addEventListener("change", renderRecentActivity);
 }
 
 function renderHeaderUser() {

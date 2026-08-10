@@ -451,6 +451,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.4",
+    groups: [
+      {
+        title: "Admin-Dashboard: längere Liste der letzten Anmeldungen",
+        items: [
+          "Die Karte „Zuletzt aktiv“ heißt jetzt „Zuletzt angemeldet“ und zeigt die zehn jüngsten Anmeldungen statt fünf.",
+          "Das Auswahlfeld darüber ist weg. Die drei anderen Listen (Trainervertrag zuletzt eingereicht, Trainerkodex und Jugendschutzkonzept zuletzt bestätigt) entfallen damit — den Stand dazu zeigen weiterhin die Quoten-Kacheln oben und die Personalakte."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.3",
     groups: [
       {
