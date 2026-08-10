@@ -12509,6 +12509,10 @@ async function handleKbExternStart(request, body, env, authHeader, corsHeaders) 
     aktion: {
       name: String(aktion.name || ""),
       offen: aktion.offen !== false,
+      // Freitext der Verwaltung fuer die Bestellenden (z.B. Kostenregelung) --
+      // gehoert zu dem, was der Link sehen darf. Gekuerzt, damit ein
+      // Riesentext nicht jede Antwort aufblaeht.
+      hinweis: capStr(aktion.hinweis, 1000),
       artikel: (Array.isArray(aktion.artikel) ? aktion.artikel : [])
         .filter((a) => a && a.aktiv !== false)
         .map((a) => ({
