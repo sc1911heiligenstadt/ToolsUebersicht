@@ -1423,10 +1423,8 @@ function renderToolGrid() {
       if (t.newTab) { card.target = "_blank"; card.rel = "noopener"; }
       card.dataset.toolId = t.id;
       card.innerHTML = `
-        <div class="tool-card-badges">
-          <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
-          ${deviceIcons(t.devices)}
-        </div>
+        <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
+        <div class="tool-card-badges">${deviceIcons(t.devices)}</div>
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         ${t.id === "trainerdaten" && trainerdatenStatus ? (

@@ -451,6 +451,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.3",
+    groups: [
+      {
+        title: "Greifpunkt zum Verschieben steht jetzt vorne",
+        items: [
+          "Beim Anordnen sitzt der Greifpunkt ⠿ dort, wo man hingreift: in der Kachelansicht oben links, in der Listenansicht ganz am Anfang der Zeile. Vorher stand er am rechten Ende, hinter Beschreibung und Symbolen.",
+          "An der Bedienung ändert sich sonst nichts — die Geräte-Symbole bleiben rechts, und der Greifpunkt erscheint weiterhin nur, solange „Anordnen“ eingeschaltet ist."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.2",
     groups: [
       {

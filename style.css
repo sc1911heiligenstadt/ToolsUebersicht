@@ -1385,9 +1385,17 @@ main { flex: 1; min-width: 0; }
    dauerhaft auf jeder Kachel und jeder Fehlgriff daneben verschob etwas, ohne dass
    jemand das vorhatte -- die Karte ist ein Link, kein Werkzeugkasten. Bewusst
    display:none statt Sichtbarkeit oder Deckkraft: ein unsichtbarer Greifpunkt bliebe
-   greifbar. */
+   greifbar.
+
+   Er steht seit 2026-08-10 VORNE (Michel-Vorgabe): in der Kachel oben links, in der
+   Zeile ganz am Anfang -- dort, wo die Hand hingreift, und nicht hinter dem Inhalt.
+   Dafuer ist er aus .tool-card-badges herausgeloest und ein eigenes erstes Kind der
+   Karte; die Geraete-Symbole bleiben rechts. */
 .tool-drag-handle {
   display: none;
+  position: absolute;
+  top: 14px;
+  left: 16px;
   font-size: 16px;
   line-height: 1;
   color: var(--muted);
@@ -1398,6 +1406,13 @@ main { flex: 1; min-width: 0; }
 }
 .tool-drag-handle:active { cursor: grabbing; }
 #tool-groups.anordnen .tool-drag-handle { display: inline-block; }
+/* ⚠️ Der Greifpunkt liegt in der Kachel ABSOLUT -- ohne diese Einrueckung laege er auf
+   dem Tool-Symbol, das im Fluss an derselben Ecke beginnt (siehe
+   [[feedback-absolut-positioniert-kollidiert]]). Bewusst nur ein padding am Symbol
+   statt eines Kartenrandes: das verschiebt eine Zeile zur Seite und aendert KEINE
+   Kachelhoehe, das Umschalten in den Anordnen-Modus laesst das Raster also stehen.
+   In der Liste laeuft er im Fluss mit und braucht das nicht. */
+#tool-groups.anordnen .tool-grid:not(.als-liste) .tool-card .tool-icon { padding-left: 26px; }
 /* Im Anordnen-Modus fuehrt kein Klick mehr ins Werkzeug (app.js faengt ihn ab) --
    das muss man sehen, bevor man klickt. Der gestrichelte Rahmen liegt als outline
    INNEN (outline-offset negativ) und aendert deshalb keine einzige Kachelgroesse. */
@@ -1485,6 +1500,15 @@ main { flex: 1; min-width: 0; }
   top: auto;
   right: auto;
   order: 99;
+}
+/* Der Greifpunkt dagegen ganz nach VORNE. Er braucht kein eigenes `order`: er ist das
+   erste Kind im Markup und behaelt die Vorgabe 0, waehrend alles, was nach hinten
+   gehoert, sich per order 97-99 dahinter einreiht. */
+.tool-grid.als-liste .tool-drag-handle {
+  position: static;
+  top: auto;
+  left: auto;
+  align-self: center;
 }
 .tool-grid.als-liste .tool-hinweis-badges {
   margin-top: 0;
