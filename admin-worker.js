@@ -1025,8 +1025,10 @@ export default {
     switch (body.action) {
       case "bootstrap-admin":
         return handleBootstrapAdmin(body, env, authHeader, corsHeaders);
+      // request wird mitgegeben fuer das Fehlversuch-Zaehlwerk (siehe
+      // pwBremseOffen/pwBremseFehlschlag) — es braucht die aufrufende IP.
       case "login":
-        return handleLogin(body, env, authHeader, corsHeaders);
+        return handleLogin(request, body, env, authHeader, corsHeaders);
       case "set-password":
         return handleSetPassword(body, env, authHeader, corsHeaders);
       // Spieler-Registrierung: -info/-abschliessen bewusst OHNE Auth (der Spieler
@@ -1252,8 +1254,11 @@ export default {
         return handleArchiveTrainer(request, body, env, authHeader, corsHeaders);
       case "reactivate-trainer":
         return handleReactivateTrainer(request, body, env, authHeader, corsHeaders);
+      // request fuer das Fehlversuch-Zaehlwerk, wie bei "login". ⚠️ Der
+      // Beleg-Upload-Worker ruft diese Aktion per Service Binding auf und hat
+      // keine Client-IP -- dort greift die Bremse bewusst nicht.
       case "verify-action-password":
-        return handleVerifyActionPassword(body, env, corsHeaders);
+        return handleVerifyActionPassword(request, body, env, corsHeaders);
       case "beleg-eingang-notify":
         return handleBelegEingangNotify(body, env, corsHeaders);
       case "dav-load":
@@ -1434,8 +1439,14 @@ async function handleBootstrapAdmin(body, env, authHeader, corsHeaders) {
   return json({ token, username, isAdmin: true, groupIds: [], realIsAdmin: true, viewAsGroupId: null }, 200, corsHeaders);
 }
 
-async function handleLogin(body, env, authHeader, corsHeaders) {
+async function handleLogin(request, body, env, authHeader, corsHeaders) {
   const password = String(body.password || "");
+  // ⚠️ Zaehlwerk VOR dem Lesen von nutzer.json: sonst kostet jeder Rateversuch
+  // einen Nextcloud-Read, und resolveLoginUser liest bei einer E-Mail-Eingabe
+  // zusaetzlich die Trainerdaten. Gezaehlt wird nur unten, beim Fehlschlag.
+  if (!pwBremseOffen(LOGIN_FEHL_ZAEHLER, LOGIN_FEHL_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Fehlversuche. Bitte spaeter erneut versuchen." }, 429, corsHeaders);
+  }
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   // Nutzername, jede übliche Schreibvariante davon ODER die E-Mail-Adresse --
   // siehe resolveLoginUser. Der Token wird unverändert auf user.username
@@ -1466,6 +1477,12 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
     // zweistufigen Login-Flow auch den Nutzername-Schritt (login mit leerem
     // Passwort bei bestehendem Konto) — 0,8s einmal pro Anmeldung ist bewusst
     // in Kauf genommen.
+    //
+    // ⚠️ Das Zaehlwerk zaehlt diesen Schritt bewusst NICHT mit: er gehoert zum
+    // normalen Ablauf jeder einzelnen Anmeldung, und ein leeres Passwort bringt
+    // einen Ratenden ohnehin nie durch. Wuerde er mitzaehlen, waere ein
+    // Vereinsheim-WLAN nach dreissig regulaeren Anmeldungen gesperrt.
+    if (password !== "") pwBremseFehlschlag(LOGIN_FEHL_ZAEHLER, request);
     await new Promise((resolve) => setTimeout(resolve, 800));
     return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
   }
@@ -6793,6 +6810,80 @@ async function handleReactivateTrainer(request, body, env, authHeader, corsHeade
   return json({ ok: true, username }, 200, corsHeaders);
 }
 
+// ---------- Bremse gegen das Durchprobieren von Passwörtern ----------
+//
+// ⚠️ Die 800-ms-Verzögerung nach einem Fehlversuch, die bei handleLogin und
+// handleVerifyActionPassword seit jeher steht, bremst NUR sequenziell. Cloudflare
+// skaliert waagerecht: wer 100 Anfragen gleichzeitig stellt, wartet trotzdem nur
+// einmal 800 ms. Beim Konto-Login kostet ein Versuch immerhin PBKDF2 mit 100k
+// Iterationen — verify-action-password vergleicht dagegen zwei SHA-256-Digests
+// und ist damit praktisch gratis, während dahinter unter anderem der Zugang zur
+// kompletten Vereinsbudget-Seite hängt. Deshalb hier zusätzlich ein Zählwerk.
+//
+// ⚠️ Gezählt werden AUSSCHLIESSLICH Fehlversuche (deshalb zwei Funktionen statt
+// einer): ein Zählwerk über alle Aufrufe spränte einer Geschäftsstelle ins
+// Gesicht, die sich zehnmal am Tag richtig anmeldet. Wer das Passwort weiß,
+// merkt von der Bremse nie etwas.
+//
+// ⚠️ Isolate-lokal wie SCHULSPORT_IP_ZAEHLER und KB_EXTERN_IP_ZAEHLER — ein
+// kalter Isolate fängt bei null an. Das ist eine Bremse, keine Sperre, und
+// gehört genau so in die akzeptierten Limitierungen.
+//
+// ⚠️ Ohne CF-Connecting-IP wird nicht gezählt (fail-open, wie die drei anderen
+// Bremsen). Das trifft absichtlich den Worker-zu-Worker-Aufruf des
+// Beleg-Upload-Workers: der baut seinen Request selbst und hat gar keine
+// Client-IP — er würde sonst als eine einzige Quelle alle Helfer gemeinsam
+// aussperren.
+//
+// TODO beim nächsten Anfassen: schulsportIpBremse, kbExternIpBremse und
+// vvNachweisIpBremse sind bis auf Map und Deckel derselbe Code. Sie hier
+// mitzuziehen wäre ein Eingriff in drei live laufende Pfade ohne Anlass —
+// wer eine davon ohnehin ändert, führt sie mit diesen beiden zusammen.
+const LOGIN_FEHL_ZAEHLER = new Map();
+const AKTIONS_PW_FEHL_ZAEHLER = new Map();
+// Ein Konto-Login mit falschem Passwort ist ein Vertipper; dreißig davon in einer
+// Stunde aus demselben Netz sind es nicht mehr. Der erste Schritt des zweistufigen
+// Anmeldeflusses (login mit leerem Passwort, nur um den nächsten Screen zu
+// bestimmen) zählt bewusst NICHT mit — sonst verbrauchte jede normale Anmeldung
+// einen Versuch und ein Vereinsheim-WLAN wäre nach dreißig Anmeldungen dicht.
+const LOGIN_FEHL_MAX_PRO_STUNDE = 30;
+// Knapper, weil ein Aktions-Passwort je Seitenaufruf genau einmal geprüft und
+// danach in sessionStorage gemerkt wird. Zwanzig Fehlversuche je Stunde deckt
+// jeden Vertipper ab und macht systematisches Raten aussichtslos.
+const AKTIONS_PW_FEHL_MAX_PRO_STUNDE = 20;
+
+function bremseIp(request) {
+  return String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
+}
+
+// Darf dieser Aufrufer es überhaupt noch versuchen? Zählt selbst NICHT hoch.
+function pwBremseOffen(zaehler, max, request) {
+  const ip = bremseIp(request);
+  if (!ip) return true;
+  const eintrag = zaehler.get(ip);
+  if (!eintrag || Date.now() - eintrag.start > 3600000) return true;
+  return eintrag.n < max;
+}
+
+// Nach einem Fehlversuch aufrufen, nie nach einem erfolgreichen.
+function pwBremseFehlschlag(zaehler, request) {
+  const ip = bremseIp(request);
+  if (!ip) return;
+  const jetzt = Date.now();
+  const eintrag = zaehler.get(ip);
+  if (!eintrag || jetzt - eintrag.start > 3600000) {
+    zaehler.set(ip, { start: jetzt, n: 1 });
+    // Aufraeumen, damit die Map in einem langlebigen Isolate nicht waechst.
+    if (zaehler.size > 500) {
+      for (const [k, v] of zaehler) {
+        if (jetzt - v.start > 3600000) zaehler.delete(k);
+      }
+    }
+    return;
+  }
+  eintrag.n++;
+}
+
 // ---------- Aktionen: Aktions-Passwörter der Tool-Apps ----------
 
 // Serverseitige Prüfung der früher im Client hartkodierten Aktions-Passwörter
@@ -6813,7 +6904,13 @@ const ACTION_PASSWORD_SECRETS = {
   "agelan-zugang": "PW_AGELAN" // AgeLan: Zugang zur ganzen Seite (Streamplan), Passwort verteilt Michel über Discord
 };
 
-async function handleVerifyActionPassword(body, env, corsHeaders) {
+async function handleVerifyActionPassword(request, body, env, corsHeaders) {
+  // Zaehlwerk VOR dem Vergleich: sonst kostet jeder Rateversuch den Server
+  // weiterhin einen vollen Durchlauf.
+  if (!pwBremseOffen(AKTIONS_PW_FEHL_ZAEHLER, AKTIONS_PW_FEHL_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Fehlversuche. Bitte spaeter erneut versuchen." }, 429, corsHeaders);
+  }
+
   const scope = String(body.scope || "");
   const secretName = getOwn(ACTION_PASSWORD_SECRETS, scope);
   if (!secretName) return json({ error: "Unbekannter Passwort-Scope" }, 400, corsHeaders);
@@ -6823,6 +6920,9 @@ async function handleVerifyActionPassword(body, env, corsHeaders) {
   const ok = await staticPasswordEquals(String(body.password || ""), env[secretName]);
   if (!ok) {
     // Bremse gegen Durchprobieren — die Aktion ist ohne Login erreichbar.
+    // Die 800 ms wirken nur sequenziell, das Zaehlwerk auch gegen parallele
+    // Versuche; beides zusammen, keins ersetzt das andere.
+    pwBremseFehlschlag(AKTIONS_PW_FEHL_ZAEHLER, request);
     await new Promise((resolve) => setTimeout(resolve, 800));
     return json({ error: "Falsches Passwort" }, 403, corsHeaders);
   }
