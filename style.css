@@ -1373,14 +1373,6 @@ main { flex: 1; min-width: 0; }
 .tool-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); }
 .tool-card.dragging { opacity: 0.5; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2); transform: none; cursor: grabbing; }
 .tool-card .tool-icon { font-size: 28px; }
-.tool-card-badges {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 /* ⚠️ Der Greifpunkt ist NUR im Anordnen-Modus da (seit 2026-08-07). Vorher stand er
    dauerhaft auf jeder Kachel und jeder Fehlgriff daneben verschob etwas, ohne dass
    jemand das vorhatte -- die Karte ist ein Link, kein Werkzeugkasten. Bewusst
@@ -1389,8 +1381,8 @@ main { flex: 1; min-width: 0; }
 
    Er steht seit 2026-08-10 VORNE (Michel-Vorgabe): in der Kachel oben links, in der
    Zeile ganz am Anfang -- dort, wo die Hand hingreift, und nicht hinter dem Inhalt.
-   Dafuer ist er aus .tool-card-badges herausgeloest und ein eigenes erstes Kind der
-   Karte; die Geraete-Symbole bleiben rechts. */
+   Er ist ein eigenes erstes Kind der Karte. (Rechts oben stand bis 2026-08-10 der
+   Wrapper .tool-card-badges mit den Geraete-Symbolen; beide sind entfallen.) */
 .tool-drag-handle {
   display: none;
   position: absolute;
@@ -1422,11 +1414,6 @@ main { flex: 1; min-width: 0; }
   outline-offset: -2px;
 }
 #tool-groups.anordnen .tool-card:hover { transform: none; box-shadow: var(--shadow); }
-.tool-devices {
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: 1px;
-}
 .tool-card h3 { font-size: 16px; color: var(--blue); }
 .tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
 /* Hinweis-Symbole unten links auf der Kachel: Briefumschlag (Flag mail:true) und
@@ -1494,14 +1481,7 @@ main { flex: 1; min-width: 0; }
 @media (max-width: 560px) {
   .tool-grid.als-liste .tool-card p { display: none; }
 }
-/* Statt oben rechts absolut: in der Zeile mitlaufend ganz hinten. */
-.tool-grid.als-liste .tool-card-badges {
-  position: static;
-  top: auto;
-  right: auto;
-  order: 99;
-}
-/* Der Greifpunkt dagegen ganz nach VORNE. Er braucht kein eigenes `order`: er ist das
+/* Der Greifpunkt ganz nach VORNE. Er braucht kein eigenes `order`: er ist das
    erste Kind im Markup und behaelt die Vorgabe 0, waehrend alles, was nach hinten
    gehoert, sich per order 97-99 dahinter einreiht. */
 .tool-grid.als-liste .tool-drag-handle {

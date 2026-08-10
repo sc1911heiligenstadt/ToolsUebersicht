@@ -14,6 +14,11 @@ const WHATSAPP_CONTACT = "491778587294";
 // nur noch Pflegeaufwand ohne Anzeige bedeutet. Die einzige Versionsangabe der
 // Übersicht steht im Info-Tab (APP_VERSION + APP_CHANGELOG unten).
 //
+// Aus demselben Grund gibt es seit 2026-08-10 auch kein Feld `devices` mehr
+// (Michel-Vorgabe): die 📱/💻-Symbole oben rechts auf der Kachel sind entfallen,
+// damit war das Feld Pflegeaufwand ohne Anzeige. Soll je wieder ein Gerätehinweis
+// erscheinen, kommen Feld UND Anzeige zusammen zurück, nicht das Feld allein.
+//
 // Optionales Flag `mail: true` -> Briefumschlag-Symbol unten links auf der Kachel
 // (siehe renderToolGrid() in app.js). Es markiert Werkzeuge, die im Betrieb
 // tatsächlich E-Mails nach außen verschicken -- damit vor dem Klick sichtbar ist,
@@ -46,8 +51,7 @@ const TOOLS = [
     description: "Trainer-Stammdaten erfassen, Trainerverträge automatisch als Word-Dokument erzeugen und digital unterschreiben, dazu Führerschein, Führungszeugnis und Trainerlizenz zentral hochladen und verwalten.",
     url: "https://sc1911heiligenstadt.github.io/Trainerdaten/",
     icon: "📝",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "vereinsverwaltung",
@@ -55,8 +59,7 @@ const TOOLS = [
     description: "Mitglieder, Beiträge und Vereinsfinanzen an einer Stelle — mit Sparten, Haushalten und Beitragsklassen. Löst den GLS Vereinsmeister ab. Abteilungsleitungen sehen ausschließlich ihre eigene Sparte, ohne Bankdaten.",
     url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/",
     icon: "👥",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     // Eigene Kachel für den öffentlichen Teil der Vereinsverwaltung -- dasselbe
@@ -69,8 +72,7 @@ const TOOLS = [
     description: "Aufnahmeantrag zum Ausfüllen und Unterschreiben am Handy — ohne Anmeldung, ohne Ausdruck. Der Antrag geht an die Geschäftsstelle; über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand.",
     url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/antrag.html",
     icon: "🙋",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     // Zweite öffentliche Kachel der Vereinsverwaltung, neben
@@ -87,8 +89,7 @@ const TOOLS = [
     description: "Neue Jugendspieler in einem Durchgang anmelden: Aufnahmeantrag nach § 4 und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband, unterschrieben am Handy. Nachweise wie Geburtsurkunde oder Spielerpass lassen sich als Foto mitschicken.",
     url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/nachwuchs.html",
     icon: "⚽",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "vereinsaufgaben",
@@ -97,7 +98,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/Vereinsaufgaben/",
     icon: "🗂️",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     mail: true,
     push: true
   },
@@ -107,8 +107,7 @@ const TOOLS = [
     description: "Digitale Checkliste für Trainerzu- und -abgang im Nachwuchsbereich.",
     url: "https://sc1911heiligenstadt.github.io/TrainerCheckliste/",
     icon: "📋",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "materialliste",
@@ -116,8 +115,7 @@ const TOOLS = [
     description: "Vereinsmaterial (Trikots, Bälle, Leibchen) pro Mannschaft verwalten.",
     url: "https://sc1911heiligenstadt.github.io/Materialliste/",
     icon: "🎽",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "sc1911-anmeldung",
@@ -125,8 +123,7 @@ const TOOLS = [
     description: "Digitales Anmeldesystem für Trainerversammlungen beim 1. SC 1911 Heiligenstadt.",
     url: "https://sc1911heiligenstadt.github.io/sc1911-anmeldung/verwaltung.html",
     icon: "🗳️",
-    category: "Verein",
-    devices: ["desktop"]
+    category: "Verein"
   },
   {
     id: "vereinsbudget",
@@ -134,8 +131,7 @@ const TOOLS = [
     description: "Budgetübersicht, Einnahmen/Ausgaben und Belegverwaltung für den Kassierer.",
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
     icon: "💶",
-    category: "Verein",
-    devices: ["desktop"]
+    category: "Verein"
   },
   {
     id: "beleg-eingang",
@@ -144,7 +140,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
     icon: "🧾",
     category: "Verein",
-    devices: ["mobile"],
     mail: true
   },
   {
@@ -153,8 +148,7 @@ const TOOLS = [
     description: "Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung.",
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
     icon: "📋",
-    category: "Verein",
-    devices: ["desktop"]
+    category: "Verein"
   },
   {
     id: "spielertool-test",
@@ -162,8 +156,7 @@ const TOOLS = [
     description: "Bewertung und Förderung von Nachwuchsspielern im Vereinsbetrieb.",
     url: "https://sc1911heiligenstadt.github.io/spielertool-test/",
     icon: "⚽",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "vereinskalender",
@@ -172,7 +165,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     mail: true,
     push: true
   },
@@ -182,8 +174,7 @@ const TOOLS = [
     description: "Belegungsplan für Trainingsplätze und Halle — wer nutzt wann welchen Platz.",
     url: "https://sc1911heiligenstadt.github.io/platzbelegung/",
     icon: "🏟️",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "spielersichtung",
@@ -191,8 +182,7 @@ const TOOLS = [
     description: "Sichtung und Bewertung von Nachwuchsspielern für Kader- und Förderentscheidungen.",
     url: "https://sc1911heiligenstadt.github.io/spielersichtung/",
     icon: "🔍",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "personalkosten",
@@ -200,8 +190,7 @@ const TOOLS = [
     description: "Personalkosten / Aufwandsentschädigungen der Mannschaften planen und auswerten (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/Personalkosten/",
     icon: "💶",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "kadermanager",
@@ -209,8 +198,7 @@ const TOOLS = [
     description: "Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung/Taktikboard, Spielberichte, Urlaub/Krank, Umfragen und Mannschaftskasse je Mannschaft.",
     url: "https://sc1911heiligenstadt.github.io/kadermanager/",
     icon: "⚽",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "busplan",
@@ -218,8 +206,7 @@ const TOOLS = [
     description: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/busplan/",
     icon: "🚌",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "digitaler-stempel",
@@ -227,8 +214,7 @@ const TOOLS = [
     description: "PDF- und Word-Dokumente digital stempeln (Position, Größe, Drehung und Deckkraft frei wählbar) — jede Stempelung wird mit Nutzer und Zeitpunkt archiviert (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/digitaler-stempel/",
     icon: "🖋️",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "kleiderbestellung",
@@ -236,8 +222,7 @@ const TOOLS = [
     description: "Trainer:innen bestellen Vereinskleidung/-ausrüstung mit ihrer Größe aus einem Artikelkatalog; Admin verwaltet Katalog und Bestellfenster und exportiert eine Lieferanten-Bestellliste.",
     url: "https://sc1911heiligenstadt.github.io/kleiderbestellung/",
     icon: "👕",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "fahrtenbuch",
@@ -245,8 +230,7 @@ const TOOLS = [
     description: "Digitale Fahrer-Checkliste für Vereinsfahrzeuge: Fahrt mit Fahrzeug-/Fahrtdaten und Sicherheits-Checklisten erfassen, Mängel mit Fotos hochladen, unterschreiben.",
     url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/",
     icon: "🚐",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "fahrtenbuch-extern",
@@ -255,7 +239,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/extern.html",
     icon: "🔗",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     push: true
   },
   {
@@ -264,8 +247,7 @@ const TOOLS = [
     description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett, Der Maulwurf als Verräterspiel und Depot-Duell als Börsenspiel mit Spielgeld (beide auch solo gegen KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
     url: "https://sc1911heiligenstadt.github.io/spiele/",
     icon: "🎮",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "materialbedarf",
@@ -274,7 +256,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/materialbedarf/",
     icon: "🛒",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     push: true
   },
   {
@@ -284,7 +265,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/raumnutzung/",
     icon: "🏛️",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     mail: true,
     push: true
   },
@@ -295,7 +275,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/testspielplaner/",
     icon: "🆚",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     push: true
   },
   {
@@ -304,8 +283,7 @@ const TOOLS = [
     description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten, Führerschein, Personalkosten und Kadermanager-Rolle auf einen Blick, inkl. Archivieren/Reaktivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/personalakte/",
     icon: "🗂️",
-    category: "Verein",
-    devices: ["desktop"]
+    category: "Verein"
   },
   {
     id: "fotoauftraege",
@@ -314,7 +292,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fotoauftraege/",
     icon: "📸",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     push: true
   },
   {
@@ -323,8 +300,7 @@ const TOOLS = [
     description: "Übersicht, wer wann abwesend ist (Urlaub, Krankheit, Fortbildung u.a.) — jede:r Berechtigte trägt eigene Abwesenheiten ein, alle mit Tool-Zugriff sehen die komplette Übersicht.",
     url: "https://sc1911heiligenstadt.github.io/abwesenheitskalender/",
     icon: "🧳",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "besprechung",
@@ -333,7 +309,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/besprechung/",
     icon: "🎙️",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     newTab: true
   },
   {
@@ -342,8 +317,7 @@ const TOOLS = [
     description: "Word-Vorlagen (Trainervertrag, Anfragen, Bescheinigungen) mit Platzhaltern zentral verwalten und in einem Rutsch für viele Empfänger befüllen — Daten aus dem Trainerprofil oder, mit der Stufe „Administrieren“ für Trainerdaten, inkl. Adresse und Bankverbindung; Ausgabe als Word-Dokumente, originalgetreue PDFs über ein beiliegendes Skript (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/dokumentenvorlagen/",
     icon: "📄",
-    category: "Verein",
-    devices: ["desktop"]
+    category: "Verein"
   },
   {
     id: "ausbildungsplan",
@@ -351,8 +325,7 @@ const TOOLS = [
     description: "Trainingsschwerpunkte und passende Übungen für jede Altersklasse von den Bambini bis zur U23, auf Grundlage der Trainingsphilosophie Deutschland — dazu der Spieltag als Leistungsnachweis: nach dem Spiel wird je Mannschaft auf einer Ampel bewertet, wie weit das Erlernte bereits umgesetzt wird. Die Auswertung folgt wahlweise der Mannschaft oder dem Geburtsjahrgang, sodass sich die Entwicklung einer Kohorte über mehrere Jahre und Altersstufen hinweg verfolgen lässt.",
     url: "https://sc1911heiligenstadt.github.io/ausbildungsplan/",
     icon: "🎯",
-    category: "Verein",
-    devices: ["mobile", "desktop"]
+    category: "Verein"
   },
   {
     id: "schulsport",
@@ -361,7 +334,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/schulsport/",
     icon: "🏫",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     mail: true,
     push: true
   },
@@ -372,7 +344,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/spieltagscrew/",
     icon: "🦺",
     category: "Verein",
-    devices: ["mobile", "desktop"],
     push: true
   }
 ];
@@ -450,6 +421,18 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.5",
+    groups: [
+      {
+        title: "Handy- und Laptop-Symbole auf den Kacheln entfallen",
+        items: [
+          "Die kleinen 📱/💻-Symbole oben rechts auf jeder Kachel sind weg — in der Kachel- wie in der Listenansicht. Praktisch alle Werkzeuge lassen sich ohnehin an beiden Geräten bedienen; das Symbolpaar stand auf fast jeder Kachel gleich und sagte damit nichts mehr.",
+          "An der Bedienung ändert sich nichts. Der Greifpunkt ⠿ zum Verschieben, die Statushinweise und die Symbole für E-Mail ✉️ und Handy-Nachricht 🔔 bleiben unverändert."
+        ]
+      }
+    ]
+  },
   {
     version: "1.4",
     groups: [

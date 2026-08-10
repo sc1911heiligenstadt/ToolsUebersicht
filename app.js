@@ -1378,16 +1378,6 @@ function setupAnsichtLeiste() {
   });
 }
 
-// Baut die Endgeräte-Icons (📱/💻) für eine Tool-Karte aus t.devices (["mobile","desktop"]).
-function deviceIcons(devices) {
-  if (!devices || !devices.length) return "";
-  const icons = { mobile: "📱", desktop: "💻" };
-  const labels = { mobile: "Handy", desktop: "Laptop" };
-  const symbols = devices.map((d) => icons[d] || "").join("");
-  const title = devices.map((d) => labels[d] || d).join(" & ");
-  return `<span class="tool-devices" title="Geeignet für: ${title}">${symbols}</span>`;
-}
-
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   // ⚠️ Waehrend eine Karte am Finger haengt, nicht neu bauen: die Statusabfragen
@@ -1424,7 +1414,6 @@ function renderToolGrid() {
       card.dataset.toolId = t.id;
       card.innerHTML = `
         <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
-        <div class="tool-card-badges">${deviceIcons(t.devices)}</div>
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         ${t.id === "trainerdaten" && trainerdatenStatus ? (
