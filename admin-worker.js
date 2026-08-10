@@ -219,7 +219,7 @@
 //     die dritte Stufe "Administrieren" (App-interne Admin-Funktionen, schließt Bearbeiten ein — resolveEditPermission
 //     wertet adminGroupIds mit); provisionGroupIds steuert das Auto-Provisioning: Mitglieder dieser Gruppen
 //     bekommen automatisch einen Eintrag im Tool.)
-//   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news NUR an Angemeldete (optionaler Bearer-Token am GET, seit 2026-07-25), sonst news: null
+//   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news NUR an Angemeldete (optionaler Bearer-Token am GET, seit 2026-07-25), sonst news: null; Meldungen älter als 14 Tage (NEWS_MAX_ALTER_TAGE, ab dem Meldungsdatum) filtert der GET aus und löscht sie im Hintergrund samt Medien-Dateien und Reaktionen (seit 2026-08-10)
 //   POST { action: "toggle-news-reaction", newsId, emoji } (jeder eingeloggte Nutzer) -> { newsId, counts, mine, namen }
 //     (setzt/wechselt/entfernt die EINE Reaktion des Nutzers auf eine Meldung; Emoji strikt gegen NEWS_REACTION_EMOJIS
 //     validiert, Nutzername aus der Session; Ablage in neuigkeiten-reaktionen.json getrennt von den News)
@@ -703,6 +703,10 @@ const DOKUMENTE_MAX_GESAMT = 2000;
 const NEUIGKEITEN_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + "/neuigkeiten";
 const NEWS_MAX_MEDIEN = 4;
 const NEWS_MAX_VIDEO_URL = 500;
+// Nach so vielen Kalendertagen (Europe/Berlin, gerechnet ab dem DATUM der
+// Meldung) verschwindet eine Neuigkeit automatisch -- siehe
+// newsAbgelaufeneBereinigen weiter unten.
+const NEWS_MAX_ALTER_TAGE = 14;
 
 // Erlaubte Formate. Der Typ wird IMMER aus den ersten Bytes bestimmt, nie aus der
 // Angabe des Clients -- eine umbenannte .exe soll nicht als "image/png" landen und
@@ -950,6 +954,19 @@ export default {
       // archiviertes Konto soll die Meldungen nicht bis zum Token-Ablauf weiterlesen.
       // Kostet nichts, usersDoc wird für bootstrapAvailable ohnehin gelesen.
       const angemeldet = tokenOk && !!sessionUserFromDoc(payload, usersDoc);
+      // Abgelaufene Meldungen (Datum aelter als NEWS_MAX_ALTER_TAGE) verlassen den
+      // Worker nie mehr -- und ihr Fund stoesst HINTER der Antwort die eigentliche
+      // Loeschung an (ctx.waitUntil, samt Medien-Dateien und Reaktionen). Der
+      // Filter laeuft bewusst auch fuer anonyme Besucher: die Landingpage ist die
+      // Startseite der Flotte, ihre GETs sind der verlaesslichste Takt, den dieser
+      // Worker ohne Cron-Trigger hat.
+      const grenzeAblauf = newsAblaufGrenze();
+      const frischeNews = Array.isArray(config.news)
+        ? config.news.filter((n) => !newsAbgelaufen(n, grenzeAblauf))
+        : null;
+      if (frischeNews && frischeNews.length !== config.news.length && ctx && typeof ctx.waitUntil === "function") {
+        ctx.waitUntil(newsAbgelaufeneBereinigen(env, authHeader));
+      }
       // newsReactions: reine Zähler je Meldung+Emoji. newsReactionNames: dieselbe
       // Aufteilung mit den Anzeigenamen für den Tooltip — beides NUR an Angemeldete,
       // der anonyme Besucher bekommt bei beiden {}. Die eigene Wahl holt sich der
@@ -957,7 +974,7 @@ export default {
       // reactionsDoc und usersDoc stehen oben schon.
       return json({
         tools: config.tools,
-        news: (angemeldet && Array.isArray(config.news)) ? config.news : null,
+        news: (angemeldet && frischeNews) ? frischeNews : null,
         newsReactions: angemeldet ? newsReactionCounts(reactionsDoc) : {},
         newsReactionNames: angemeldet ? newsReactionNames(reactionsDoc, usersDoc) : {},
         bootstrapAvailable: Object.keys(usersDoc.users).length === 0
@@ -5571,11 +5588,118 @@ async function handleVaUebergabe(request, body, env, authHeader, corsHeaders) {
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
+// ---------- Neuigkeiten: automatische Loeschung nach 14 Tagen ----------
+//
+// Michel-Vorgabe 2026-08-10: Meldungen verschwinden NEWS_MAX_ALTER_TAGE Tage nach
+// ihrem Datum von selbst. Der Worker hat keinen Cron-Trigger (und soll keinen
+// bekommen: ein per API konfigurierter Schedule stuende in keiner Repo-Datei und
+// ginge bei einem spaeteren Deploy lautlos verloren) -- als Takt dienen die GETs
+// der Landingpage, des meistaufgerufenen Pfads der Flotte. Der GET filtert
+// Abgelaufene IMMER aus seiner Antwort (die Zusage haengt also nicht am Gelingen
+// eines Schreiblaufs) und stoesst die Loeschung in ctx.waitUntil an; der Besucher
+// wartet auf nichts.
+//
+// "Abgelaufen" heisst: das Datum DER MELDUNG (das Datumsfeld im Formular) liegt
+// mehr als NEWS_MAX_ALTER_TAGE Kalendertage in Europe/Berlin zurueck. Ein Datum
+// in der Zukunft laeuft nie ab; ein fehlendes oder kaputtes Datum loescht NICHTS
+// (fail-safe Richtung Behalten -- save-news normiert ohnehin jedes Datum).
+
+function newsAblaufGrenze() {
+  // ISO-Datum in Berlin, verglichen als String -- gleiche Technik wie beim
+  // Testspielplaner-Fenster. "abgelaufen" = Datum VOR (heute - 14 Tage).
+  return new Date(Date.now() - NEWS_MAX_ALTER_TAGE * 86400000)
+    .toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+function newsAbgelaufen(n, grenze) {
+  const date = String((n && n.date) || "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date < grenze;
+}
+
+// Entfernt abgelaufene Meldungen aus sichtbarkeit.json und raeumt danach deren
+// Medien-Dateien und Reaktionen ab. Laeuft im Hintergrund hinter dem GET; jeder
+// Fehlschlag ist bewusst still, denn der naechste GET wiederholt den Lauf -- ein
+// Fehler fuer den Besucher waere hier der falsche Ort.
+async function newsAbgelaufeneBereinigen(env, authHeader) {
+  try {
+    const grenze = newsAblaufGrenze();
+    let entfernte = null;
+    let verbliebene = null;
+    // Konflikt-Wiederholung wie bei toggle-news-reaction: read-modify-write mit
+    // If-Match, damit ein zeitgleicher Admin-Save (save-news/save-visibility)
+    // nicht ueberschrieben wird. Alle fremden Schluessel der Datei (tools,
+    // materialcontainer, ...) bleiben unangetastet.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: config, rev } = await readJsonWithRev(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+      if (!Array.isArray(config.news)) return;
+      const frisch = config.news.filter((n) => !newsAbgelaufen(n, grenze));
+      if (frisch.length === config.news.length) return; // ein anderes Isolate war schneller
+      const weg = config.news.filter((n) => newsAbgelaufen(n, grenze));
+      config.news = frisch;
+      try {
+        await writeJson(env.NEXTCLOUD_URL, authHeader, config, rev || undefined);
+        entfernte = weg;
+        verbliebene = frisch;
+        break;
+      } catch (e) {
+        if (e instanceof ConflictError && attempt < 2) continue;
+        return;
+      }
+    }
+    if (!entfernte) return;
+
+    // Medien-Bytes ERST NACH dem erfolgreichen Write loeschen -- andersherum
+    // zeigte eine noch gespeicherte Meldung auf geloeschte Dateien. Eine Datei-Id
+    // kann in einer verbliebenen Meldung erneut referenziert sein (Bearbeiten
+    // kopiert die medien-Objekte samt Id): die bleibt dann liegen. Ein
+    // fehlgeschlagenes DELETE ebenso -- ohne Referenz ist die Datei ueber
+    // news-datei-get ohnehin unerreichbar (gleiche Linie wie beim Upload-Abbruch).
+    const nochReferenziert = new Set();
+    for (const n of verbliebene) {
+      for (const m of (n && Array.isArray(n.medien) ? n.medien : [])) {
+        if (m && m.id) nochReferenziert.add(String(m.id));
+      }
+    }
+    for (const n of entfernte) {
+      for (const m of (n && Array.isArray(n.medien) ? n.medien : [])) {
+        const mid = String((m && m.id) || "");
+        if (!FILE_ID_RE.test(mid) || nochReferenziert.has(mid)) continue;
+        try { await fetch(NEUIGKEITEN_DIR + "/" + mid, { method: "DELETE", headers: { Authorization: authHeader } }); } catch (_) {}
+      }
+    }
+
+    // Reaktionen der geloeschten Meldungen mitnehmen, sonst sammeln sich in
+    // neuigkeiten-reaktionen.json verwaiste Eintraege mit jeder abgelaufenen
+    // Meldung. hasOwnProperty-Filter: nur ECHTE eigene Schluessel loeschen.
+    const ids = entfernte.map((n) => String((n && n.id) || "")).filter(Boolean);
+    if (!ids.length) return;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: doc, rev } = await readJsonWithRev(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} });
+      if (!doc.byNews || typeof doc.byNews !== "object") return;
+      const treffer = ids.filter((id) => Object.prototype.hasOwnProperty.call(doc.byNews, id));
+      if (!treffer.length) return;
+      for (const id of treffer) delete doc.byNews[id];
+      try {
+        await writeJson(NEWS_REACTIONS_URL, authHeader, doc, rev || undefined);
+        return;
+      } catch (e) {
+        if (e instanceof ConflictError && attempt < 2) continue;
+        return;
+      }
+    }
+  } catch (_) {
+    // still: Hintergrundlauf ohne Adressat -- der naechste GET versucht es erneut
+  }
+}
+
 // Speichert die Neuigkeiten (Array) im news-Key von sichtbarkeit.json. Admin-only,
 // read-modify-write (erhält tools). Jede Meldung wird serverseitig validiert/normiert:
 // Titel Pflicht, Typ auf erlaubte Werte, Datum auf YYYY-MM-DD (sonst heute), Längen
 // gekappt, id vergeben falls fehlend. So kann ein manipulierter Client keine kaputten
-// Daten ablegen. Der öffentliche GET liest news 1:1 wieder aus (alle Besucher).
+// Daten ablegen. Der GET liefert news nur an Angemeldete und filtert Abgelaufene
+// (siehe newsAbgelaufeneBereinigen oben). Hier wird bewusst NICHT gefiltert: ein
+// Admin, der eine alt datierte Meldung speichert, soll sie nicht kommentarlos
+// verschluckt sehen -- ausliefern wird sie der GET ohnehin nie.
 async function handleSaveNews(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);

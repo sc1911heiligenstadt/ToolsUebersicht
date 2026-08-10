@@ -441,6 +441,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.1",
+    groups: [
+      {
+        title: "Neuigkeiten räumen sich selbst auf",
+        items: [
+          "Meldungen verschwinden 14 Tage nach ihrem Datum automatisch — samt angehängter Bilder und Videos und der Reaktionen darauf. Alte Meldungen müssen nicht mehr von Hand gelöscht werden.",
+          "Die 14 Tage zählen ab dem Datum, das an der Meldung steht. Wer eine Meldung länger stehen lassen will, setzt ihr Datum einfach neu — dann läuft die Frist von vorn."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0",
     groups: [
       {

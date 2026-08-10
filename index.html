@@ -477,7 +477,7 @@
     <!-- Neuigkeiten-Verwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-news-panel" style="display:none;">
       <summary>Neuigkeiten</summary>
-      <p class="muted" style="margin-bottom:14px;">Meldungen erscheinen oben auf der Übersicht — für alle Besucher sichtbar, neueste zuerst. Änderungen gelten sofort.</p>
+      <p class="muted" style="margin-bottom:14px;">Meldungen erscheinen oben auf der Übersicht — für alle angemeldeten Nutzer sichtbar, neueste zuerst. Änderungen gelten sofort. Meldungen, deren Datum älter als 14 Tage ist, werden automatisch gelöscht — samt angehängter Bilder, Videos und Reaktionen.</p>
       <div id="news-admin-list"></div>
       <form id="news-form" class="form-grid" style="margin-top:16px; align-items:flex-end;">
         <input type="hidden" id="news-edit-id" value="" />
@@ -1287,7 +1287,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.85"></script>
+<script src="config.js?v=1.86"></script>
 <script src="app.js?v=1.69"></script>
 </body>
 </html>
