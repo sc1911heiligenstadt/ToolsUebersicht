@@ -6970,6 +6970,115 @@ function setupMannschaftenPanel() {
   });
 }
 
+// ---------- Der einmalige Umschreib-Lauf (seit 2026-08-12) ----------
+//
+// ⚠️ Der Client blättert BLOCKWEISE durch die Werkzeuge (der Worker nimmt
+// höchstens vier je Aufruf an). Ein Lauf über alle 24 in einem Request wäre ein
+// Rundlauf mit bis zu 72 Nextcloud-Zugriffen — die Bauform, an der ein Worker
+// stirbt. Was der Worker nicht genommen hat, meldet er als `rest`.
+let umschreibVorschauGesehen = false;
+
+async function umschreibLauf(modus) {
+  const status = document.getElementById("umschreib-status");
+  const ziel = document.getElementById("umschreib-ergebnis");
+  const knoepfe = ["btn-umschreib-vorschau", "btn-umschreib-start", "btn-umschreib-zurueck"]
+    .map((id) => document.getElementById(id));
+  knoepfe.forEach((b) => { if (b) b.disabled = true; });
+  ziel.innerHTML = "";
+  status.textContent = "Wird gelesen …";
+
+  const alle = [];
+  const ergebnisse = [];
+  let mehrdeutig = [];
+  try {
+    // ⚠️ Der Listen-Aufruf verarbeitet KEINE App. Würde er die erste
+    // mitnehmen und ihr Ergebnis verwerfen, käme sie im nächsten Durchgang ein
+    // zweites Mal dran — und ihre Sicherung würde mit dem bereits geänderten
+    // Stand überschrieben. Genau für diese eine Datei wäre der Rückweg dann weg.
+    const liste = await callWorker("mannschaften-umschreiben", { modus, nurListe: true });
+    alle.push(...(liste.alleApps || []));
+    mehrdeutig = liste.mehrdeutig || [];
+
+    let offen = alle.slice();
+    let runde = 0;
+    while (offen.length && runde < 40) {
+      runde++;
+      const paket = offen.slice(0, 4);
+      const res = await callWorker("mannschaften-umschreiben", { modus, apps: paket });
+      (res.ergebnisse || []).forEach((e) => ergebnisse.push(e));
+      offen = offen.slice(paket.length);
+      status.textContent = "Werkzeug " + ergebnisse.length + " von " + alle.length + " …";
+    }
+  } catch (e) {
+    status.textContent = "";
+    ziel.innerHTML = '<p class="muted" style="color:#c0392b;">' + escapeHtml(e.message) + "</p>";
+    knoepfe.forEach((b) => { if (b) b.disabled = false; });
+    document.getElementById("btn-umschreib-start").disabled = !umschreibVorschauGesehen;
+    return;
+  }
+
+  const mitTreffern = ergebnisse.filter((e) => (e.gesamt || 0) > 0 || e.fehler || e.zurueckgespielt);
+  const summe = ergebnisse.reduce((a, e) => a + (e.gesamt || 0), 0);
+
+  let html = "";
+  if (mehrdeutig.length) {
+    // Nicht verschweigen: diese Schreibweisen bleiben stehen, und zwar
+    // absichtlich — der Lauf sieht danach sonst vollständig aus, ist es aber nicht.
+    html += '<p class="muted" style="color:#c0392b;"><strong>' + mehrdeutig.length +
+      " Schreibweise(n) zeigen auf mehrere Mannschaften und werden NICHT angefasst:</strong> " +
+      mehrdeutig.map((m) => escapeHtml(m.ziele.join(" / "))).join(", ") +
+      ". Bitte oben bei den Mannschaften eindeutig machen.</p>";
+  }
+  if (!mitTreffern.length) {
+    html += '<p class="muted">Nichts gefunden. In den Daten steht keine der hinterlegten alten Schreibweisen.</p>';
+  } else {
+    html += mitTreffern.map((e) => {
+      const zeilen = Object.keys(e.treffer || {}).map((k) =>
+        "<li>" + escapeHtml(k) + ' <span class="muted">(' + e.treffer[k] + "×)</span></li>").join("");
+      return '<div class="umschreib-app"><strong>' + escapeHtml(e.app) + "</strong> " +
+        (e.zurueckgespielt ? '<span class="muted">— Sicherung zurückgespielt</span>' : "") +
+        (e.geschrieben ? '<span class="muted">— geschrieben</span>' : "") +
+        (e.hinweis ? '<span class="muted">— ' + escapeHtml(e.hinweis) + "</span>" : "") +
+        (e.fehler ? '<span style="color:#c0392b;"> — ' + escapeHtml(e.fehler) + "</span>" : "") +
+        (zeilen ? "<ul>" + zeilen + "</ul>" : "") + "</div>";
+    }).join("");
+  }
+  ziel.innerHTML = html;
+
+  status.textContent = modus === "vorschau"
+    ? summe + " Stelle(n) in " + mitTreffern.length + " Werkzeug(en) würden geändert. Es wurde nichts gespeichert."
+    : (modus === "zurueck"
+        ? "Zurückspielen durch."
+        : summe + " Stelle(n) geändert. Von jeder angefassten Datei liegt eine Sicherung daneben.");
+
+  knoepfe.forEach((b) => { if (b) b.disabled = false; });
+  if (modus === "vorschau") umschreibVorschauGesehen = summe > 0;
+  // ⚠️ Nach dem echten Lauf wieder sperren: eine zweite Runde auf denselben
+  // Daten überschriebe die Sicherung mit dem bereits geänderten Stand — und
+  // damit wäre der Rückweg weg.
+  if (modus !== "vorschau") umschreibVorschauGesehen = false;
+  document.getElementById("btn-umschreib-start").disabled = !umschreibVorschauGesehen;
+}
+
+function setupUmschreibPanel() {
+  const vor = document.getElementById("btn-umschreib-vorschau");
+  if (!vor) return;
+  vor.addEventListener("click", () => umschreibLauf("vorschau"));
+  document.getElementById("btn-umschreib-start").addEventListener("click", () => {
+    if (!window.confirm(
+      "Jetzt wirklich in die Daten aller Werkzeuge schreiben?\n\n" +
+      "Von jeder Datei wird vorher eine Sicherung daneben gelegt, und " +
+      "\"Zurückspielen\" holt sie zurück. Trotzdem: erst die Vorschau gelesen?")) return;
+    umschreibLauf("schreiben");
+  });
+  document.getElementById("btn-umschreib-zurueck").addEventListener("click", () => {
+    if (!window.confirm(
+      "Die Sicherungen wieder einspielen?\n\n" +
+      "Alles, was seit dem Umschreiben in den Werkzeugen geändert wurde, geht dabei verloren.")) return;
+    umschreibLauf("zurueck");
+  });
+}
+
 // ---------- Materialcontainer-Code ----------
 
 // Der Code wird bewusst erst beim Oeffnen des Fensters geholt und nirgends
@@ -8617,6 +8726,7 @@ async function init() {
   setupAuthForms();
   setupKontoFoto();
   setupMannschaftenPanel();
+  setupUmschreibPanel();
   setupPunktePanel();
   setupWhatsappLink();
   setupWikiFrage();

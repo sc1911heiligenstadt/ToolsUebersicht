@@ -2037,3 +2037,17 @@ nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
 }
 .mannschaft-person select { flex: 1 1 200px; min-width: 0; }
 .mannschaft-person .mannschaft-person-rolle { flex: 0 1 160px; }
+/* Der einmalige Umschreib-Lauf (seit 2026-08-12). Zugeklappt und abgesetzt --
+   er fasst die echten Datendateien aller Werkzeuge an, das soll man sehen. */
+.mannschaft-umschreiben {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 16px;
+}
+.mannschaft-umschreiben > summary { cursor: pointer; font-weight: 600; }
+.umschreib-app { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.umschreib-app:first-child { border-top: none; }
+/* Lange Namenspaare (alt -> neu) sollen umbrechen statt den Kasten zu sprengen. */
+.umschreib-app ul { margin: 6px 0 0 18px; padding: 0; }
+.umschreib-app li { line-height: 1.5; overflow-wrap: anywhere; }

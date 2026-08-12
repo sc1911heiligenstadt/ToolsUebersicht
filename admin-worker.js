@@ -1432,6 +1432,11 @@ export default {
         return handleMannschaftenSaison(request, body, env, authHeader, corsHeaders);
       case "mannschaften-vorschlag":
         return handleMannschaftenVorschlag(request, env, authHeader, corsHeaders);
+      // Der einmalige Umschreib-Lauf ueber die Datendateien der Flotte. Drei
+      // Modi: vorschau (schreibt nichts), schreiben (sichert vorher), zurueck
+      // (spielt die Sicherung wieder ein).
+      case "mannschaften-umschreiben":
+        return handleMannschaftenUmschreiben(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -14692,4 +14697,272 @@ function mannschaftVorschlagFelder(key, schreibweisen) {
     verdaechtig: !istMannschaft,
     grund: istMannschaft ? "" : "Passt in kein Mannschaftsmuster -- moeglicherweise eine Aufgabe oder Rolle statt einer Mannschaft."
   };
+}
+
+// ---------- Der einmalige Umschreib-Lauf (seit 2026-08-12) ----------
+//
+// Michel-Entscheidung: die alten Schreibweisen werden EINMAL in allen
+// Datendateien ersetzt, statt sie dauerhaft beim Anzeigen zu uebersetzen.
+// Danach steht ueberall der Kurzname, und die Alias-Listen sind nur noch
+// Dokumentation.
+//
+// Der Lauf ist bewusst GENERISCH: er geht rekursiv durch das JSON jeder App und
+// ersetzt jeden String, der als GANZES einer bekannten alten Schreibweise
+// entspricht. Kein Teilstring-Ersatz -- ein Freitext "Treffpunkt hinter der
+// B-Junioren-Kabine" darf nicht zu "Treffpunkt hinter der B2-Kabine" werden.
+// Der Vergleich laeuft ueber mannschaftNorm, trifft also auch Schreibvarianten
+// mit anderer Zeichensetzung.
+//
+// ⚠️ Zwei Schranken, die nicht wegfallen duerfen:
+//
+//   1. VORSCHAU ZUERST. Der Modus "vorschau" schreibt nichts und liefert je App
+//      und je Fundstelle, was sich aendern wuerde. Michel-Vorgabe vom
+//      2026-08-12: die Zuordnung wird vorgelegt, bevor irgendetwas geschrieben
+//      wird -- was beim Raten falsch liegt, stuende danach in 20 Apps.
+//
+//   2. SICHERUNG MIT RUECKWEG. Vor dem ersten Schreiben in eine App wird die
+//      unveraenderte Datei nebenan abgelegt, und "zurueck" spielt sie wieder
+//      ein. Eine Sicherung ohne geprueften Rueckweg ist keine Sicherung.
+//
+// ⚠️ Blockweise, hoechstens MANNSCHAFT_UMSCHREIB_MAX_APPS je Aufruf. Ein Lauf
+// ueber alle 24 Apps in einem Request waere ein Rundlauf mit bis zu 72
+// Nextcloud-Zugriffen -- die Bauform, an der ein Worker stirbt.
+
+const MANNSCHAFT_UMSCHREIB_MAX_APPS = 4;
+// Reissleine gegen einen Denkfehler in der Alias-Pflege: traegt jemand aus
+// Versehen ein sehr kurzes oder sehr haeufiges Wort als Alias ein ("D", "Team"),
+// faende der Lauf es in hunderten Feldern. Ueber dieser Zahl bricht er die App
+// ab und meldet es, statt zu schreiben.
+const MANNSCHAFT_UMSCHREIB_MAX_TREFFER = 2000;
+
+function mannschaftSicherungsUrl(url) {
+  return url.replace(/\.json$/, "") + ".vor-mannschaften-umbau.json";
+}
+
+// alte Schreibweise (normalisiert) -> Kurzname. Gebaut aus den Aliasen UND aus
+// den Kurznamen selbst: so wird ein bereits richtiger Wert nie angefasst, und
+// der Langname trifft ebenfalls.
+//
+// ⚠️ Ein Alias, der auf ZWEI Mannschaften zeigt, wird ausgelassen und gemeldet.
+// Raten waere hier der teuerste Fehler des ganzen Vorhabens.
+// ⚠️ ZWEI Durchgaenge, und die Reihenfolge ist bindend.
+//
+// Erst die Kurznamen, dann Langnamen und Aliase. Grund: mannschaftNorm schneidet
+// „junioren"/„jugend", Klammerzusaetze und Trennzeichen weg -- „B-Junioren 2 (K)"
+// und „B2" haben damit DIESELBE Normalform. Wuerde man den eigenen Kurznamen als
+// Quelle ueberspringen (der naheliegende Guard), verschwaende genau der Alias,
+// wegen dem der Lauf gebaut ist. Und liesse man beide gleichrangig laufen, waere
+// der Kurzname mit einem fremden Alias „mehrdeutig" und floege ganz heraus.
+//
+// Der Kurzname gewinnt deshalb immer und ist gegen Ueberschreiben gesperrt; eine
+// Kollision zwischen ZWEI Aliasen bleibt mehrdeutig und wird gemeldet statt
+// geraten -- Raten waere hier der teuerste Fehler des ganzen Vorhabens.
+function mannschaftUmschreibTabelle(doc, saison) {
+  const tabelle = Object.create(null);
+  const fest = Object.create(null);      // von einem Kurznamen belegt
+  const mehrdeutig = Object.create(null);
+  const teams = mannschaftenSaisonTeams(doc, saison);
+
+  teams.forEach(function (t) {
+    if (!t || !t.kurz) return;
+    const k = mannschaftNorm(t.kurz);
+    if (!k) return;
+    tabelle[k] = String(t.kurz);
+    fest[k] = true;
+  });
+
+  teams.forEach(function (t) {
+    if (!t || !t.kurz) return;
+    const ziel = String(t.kurz);
+    [t.lang].concat(Array.isArray(t.aliase) ? t.aliase : []).forEach(function (q) {
+      const k = mannschaftNorm(q);
+      if (!k) return;
+      if (fest[k]) return;               // ein Kurzname steht schon darauf
+      if (tabelle[k] && tabelle[k] !== ziel) {
+        mehrdeutig[k] = (mehrdeutig[k] || [tabelle[k]]).concat([ziel]);
+        return;
+      }
+      tabelle[k] = ziel;
+    });
+  });
+
+  // Mehrdeutige fliegen ganz raus -- lieber unveraendert lassen als falsch.
+  Object.keys(mehrdeutig).forEach(function (k) { delete tabelle[k]; });
+  return { tabelle: tabelle, mehrdeutig: mehrdeutig };
+}
+
+// Rekursiv durch das JSON. Gibt die Zahl der Ersetzungen zurueck und traegt in
+// `funde` ein, was womit ersetzt wurde.
+function mannschaftUmschreibKnoten(knoten, tabelle, funde, zaehler) {
+  if (zaehler.n > MANNSCHAFT_UMSCHREIB_MAX_TREFFER) return knoten;
+  if (typeof knoten === "string") {
+    const k = mannschaftNorm(knoten);
+    if (!k) return knoten;
+    const ziel = Object.prototype.hasOwnProperty.call(tabelle, k) ? tabelle[k] : null;
+    if (!ziel || ziel === knoten) return knoten;
+    const schluessel = knoten + " → " + ziel;
+    funde[schluessel] = (funde[schluessel] || 0) + 1;
+    zaehler.n++;
+    return ziel;
+  }
+  if (Array.isArray(knoten)) {
+    for (let i = 0; i < knoten.length; i++) {
+      knoten[i] = mannschaftUmschreibKnoten(knoten[i], tabelle, funde, zaehler);
+    }
+    return knoten;
+  }
+  if (knoten && typeof knoten === "object") {
+    Object.keys(knoten).forEach(function (key) {
+      // ⚠️ Nur WERTE, nie Schluessel. Ein umbenannter Schluessel wuerde die
+      // Struktur der App aendern, und kein Client rechnet damit.
+      knoten[key] = mannschaftUmschreibKnoten(knoten[key], tabelle, funde, zaehler);
+    });
+    return knoten;
+  }
+  return knoten;
+}
+
+async function handleMannschaftenUmschreiben(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
+
+  const modus = capStr(body && body.modus, 20);
+  if (["vorschau", "schreiben", "zurueck"].indexOf(modus) < 0) {
+    return json({ error: "Unbekannter Vorgang" }, 400, corsHeaders);
+  }
+
+  const doc = await readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+  const saison = capStr(doc.aktuelleSaison, 10);
+  if (!saison) return json({ error: "Es gibt noch keine laufende Saison" }, 400, corsHeaders);
+
+  const { tabelle, mehrdeutig } = mannschaftUmschreibTabelle(doc, saison);
+  if (modus !== "zurueck" && !Object.keys(tabelle).length) {
+    return json({
+      error: "Keine alten Schreibweisen hinterlegt. Trage sie an den Mannschaften unter " +
+             "Frühere Schreibweisen ein, sonst weiß der Lauf nicht, was wohin gehört."
+    }, 400, corsHeaders);
+  }
+
+  // Der Client kennt die App-Liste nicht vorab und holt sie mit einem eigenen,
+  // schmalen Aufruf. ⚠️ Bewusst OHNE eine App mitzuverarbeiten: der naheliegende
+  // Weg (erste App mitschicken und ihr Ergebnis wegwerfen) haette im Schreibmodus
+  // genau eine Datei zweimal angefasst -- und der zweite Durchgang haette ihre
+  // Sicherung mit dem bereits geaenderten Stand ueberschrieben. Damit waere der
+  // Rueckweg genau fuer die Datei weg, die als erste drankommt.
+  if (body && body.nurListe) {
+    return json({
+      modus: modus, saison: saison, nurListe: true,
+      alleApps: Object.keys(DAV_APPS),
+      mehrdeutig: Object.keys(mehrdeutig).map(function (k) {
+        return { normalisiert: k, ziele: mehrdeutig[k] };
+      }),
+      ergebnisse: []
+    }, 200, corsHeaders);
+  }
+
+  // Nur bekannte App-Ids, und nur so viele je Aufruf, wie ein Worker vertraegt.
+  const gewuenscht = Array.isArray(body && body.apps) ? body.apps : [];
+  const apps = gewuenscht
+    .map(function (a) { return capStr(a, 40); })
+    .filter(function (a) { return Object.prototype.hasOwnProperty.call(DAV_APPS, a); })
+    .slice(0, MANNSCHAFT_UMSCHREIB_MAX_APPS);
+  if (!apps.length) return json({ error: "Keine gültige App angegeben" }, 400, corsHeaders);
+
+  const ergebnisse = [];
+  for (const app of apps) {
+    const url = DAV_APPS[app];
+    const sicherung = mannschaftSicherungsUrl(url);
+
+    if (modus === "zurueck") {
+      // Rueckweg: die Sicherung wieder einspielen. Fehlt sie, wird NICHTS
+      // angefasst -- ein leeres Dokument ueber die echten Daten zu schreiben
+      // waere der Schaden, vor dem die Sicherung schuetzen soll.
+      let gesichert = null;
+      try {
+        gesichert = await readJson(sicherung, authHeader, null);
+      } catch (e) {
+        ergebnisse.push({ app: app, fehler: "Sicherung nicht lesbar: " + e.message });
+        continue;
+      }
+      if (gesichert === null) {
+        ergebnisse.push({ app: app, fehler: "Für diese App gibt es keine Sicherung" });
+        continue;
+      }
+      try {
+        const { rev } = await readJsonWithRev(url, authHeader, {});
+        await writeJson(url, authHeader, gesichert, rev || undefined);
+        ergebnisse.push({ app: app, zurueckgespielt: true });
+      } catch (e) {
+        ergebnisse.push({ app: app, fehler: "Zurückspielen fehlgeschlagen: " + e.message });
+      }
+      continue;
+    }
+
+    let daten, rev;
+    try {
+      const gelesen = await readJsonWithRev(url, authHeader, null);
+      daten = gelesen.data;
+      rev = gelesen.rev;
+    } catch (e) {
+      ergebnisse.push({ app: app, fehler: "Nicht lesbar: " + e.message });
+      continue;
+    }
+    if (daten === null) {
+      ergebnisse.push({ app: app, treffer: {}, gesamt: 0, hinweis: "Datei gibt es noch nicht" });
+      continue;
+    }
+
+    const funde = Object.create(null);
+    const zaehler = { n: 0 };
+    // Auf einer Kopie arbeiten: im Vorschau-Modus darf das Original nicht
+    // angefasst werden, und im Schreib-Modus wird die Kopie geschrieben.
+    const kopie = mannschaftUmschreibKnoten(
+      JSON.parse(JSON.stringify(daten)), tabelle, funde, zaehler);
+
+    if (zaehler.n > MANNSCHAFT_UMSCHREIB_MAX_TREFFER) {
+      ergebnisse.push({
+        app: app, gesamt: zaehler.n, treffer: funde,
+        fehler: "Über " + MANNSCHAFT_UMSCHREIB_MAX_TREFFER + " Treffer — das sieht nach einem " +
+                "zu allgemeinen Eintrag unter Frühere Schreibweisen aus. Nichts geändert."
+      });
+      continue;
+    }
+
+    if (modus === "vorschau" || zaehler.n === 0) {
+      ergebnisse.push({ app: app, treffer: funde, gesamt: zaehler.n });
+      continue;
+    }
+
+    // ⚠️ Reihenfolge bindend: erst sichern, dann schreiben. Andersherum stuende
+    // im Fehlerfall die geaenderte Datei ohne Rueckweg da.
+    try {
+      await writeJson(sicherung, authHeader, daten);
+    } catch (e) {
+      ergebnisse.push({ app: app, treffer: funde, gesamt: zaehler.n,
+        fehler: "Sicherung fehlgeschlagen, deshalb NICHT geschrieben: " + e.message });
+      continue;
+    }
+    try {
+      await writeJson(url, authHeader, kopie, rev || undefined);
+      ergebnisse.push({ app: app, treffer: funde, gesamt: zaehler.n, geschrieben: true });
+    } catch (e) {
+      ergebnisse.push({ app: app, treffer: funde, gesamt: zaehler.n,
+        fehler: "Schreiben fehlgeschlagen: " + e.message });
+    }
+  }
+
+  return json({
+    modus: modus,
+    saison: saison,
+    // Der Client blättert selbst weiter; der Worker sagt nur, was er nicht
+    // genommen hat -- ein stilles Abschneiden liesse den Lauf halb erledigt
+    // aussehen wie einen ganzen.
+    rest: gewuenscht.length > apps.length ? gewuenscht.length - apps.length : 0,
+    mehrdeutig: Object.keys(mehrdeutig).map(function (k) {
+      return { normalisiert: k, ziele: mehrdeutig[k] };
+    }),
+    alleApps: Object.keys(DAV_APPS),
+    ergebnisse: ergebnisse
+  }, 200, corsHeaders);
 }

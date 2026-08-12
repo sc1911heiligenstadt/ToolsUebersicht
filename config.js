@@ -453,6 +453,16 @@ const APP_CHANGELOG = [
           "„Vorschlag aus den Profilen“ liest, was heute in den Trainerprofilen steht, fasst gleiche Mannschaften zusammen und schlägt Kurznamen vor. Einträge, die nach einem Altersbereich oder einer Rolle aussehen statt nach einer Mannschaft, werden rot markiert.",
           "Der Schalter „Trainerprofile aus dieser Liste füllen“ ist zunächst AUS. Erst einschalten, wenn die Liste steht: ab dann wird das Feld „Mannschaft(en)“ beim Nutzer berechnet statt getippt — und wer an keiner Mannschaft hängt, hat auch im Profil keine mehr."
         ]
+      },
+      {
+        title: "Alte Schreibweisen in einem Rutsch umschreiben",
+        items: [
+          "Ganz unten im Mannschaften-Bereich steht der Umschreib-Lauf. Er geht durch die Daten aller Werkzeuge und ersetzt jede alte Schreibweise durch den Kurznamen — Grundlage ist, was du bei der Mannschaft unter „Frühere Schreibweisen“ eingetragen hast.",
+          "Erst Vorschau: die zeigt für jedes Werkzeug, was sich ändern würde, und speichert nichts. „Jetzt umschreiben“ geht erst danach.",
+          "Vor dem Schreiben wird von jeder Datei eine Sicherung daneben gelegt. „Zurückspielen“ holt sie wieder zurück.",
+          "Ersetzt wird nur, was als GANZER Eintrag einer alten Schreibweise entspricht. Ein Notizfeld wie „Treffpunkt hinter der B-Junioren-Kabine“ bleibt unangetastet.",
+          "Zeigt eine alte Schreibweise auf zwei verschiedene Mannschaften, wird sie nicht angefasst, sondern gemeldet — geraten wird nicht."
+        ]
       }
     ]
   },

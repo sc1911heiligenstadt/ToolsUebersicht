@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.54" />
+<link rel="stylesheet" href="style.css?v=1.55" />
 </head>
 <body>
 
@@ -821,6 +821,29 @@
       <p class="muted" id="mannschaft-meta" style="margin-top:10px; font-size:12px;"></p>
       <p class="muted" id="mannschaft-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
       <p class="muted" id="mannschaft-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+
+      <!-- Der einmalige Umschreib-Lauf. Bewusst zugeklappt und unten:
+           er fasst die echten Datendateien aller Werkzeuge an. -->
+      <details class="mannschaft-umschreiben">
+        <summary>Alte Schreibweisen in allen Werkzeugen umschreiben</summary>
+        <p class="muted" style="margin:10px 0;">
+          Geht durch die Daten aller Werkzeuge und ersetzt jede alte Schreibweise durch den
+          Kurznamen. Grundlage ist, was oben bei den Mannschaften unter
+          <strong>Frühere Schreibweisen</strong> steht — was dort fehlt, wird nicht gefunden.
+        </p>
+        <p class="muted" style="margin:10px 0;">
+          <strong>Erst Vorschau.</strong> Die zeigt dir für jedes Werkzeug, was sich ändern würde,
+          und schreibt nichts. Beim echten Lauf wird vorher von jeder Datei eine Sicherung
+          daneben gelegt; „Zurückspielen“ holt sie wieder zurück.
+        </p>
+        <div class="mannschaft-werkzeuge">
+          <button type="button" class="btn small" id="btn-umschreib-vorschau">Vorschau</button>
+          <button type="button" class="btn small" id="btn-umschreib-start" disabled>Jetzt umschreiben</button>
+          <button type="button" class="btn small" id="btn-umschreib-zurueck">Zurückspielen</button>
+        </div>
+        <p class="muted" id="umschreib-status" style="margin-top:10px; font-size:12px;"></p>
+        <div id="umschreib-ergebnis" style="margin-top:10px;"></div>
+      </details>
     </details>
 
     <!-- Sichtbarkeits-Verwaltung (nur Admin) -->
@@ -1337,7 +1360,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.96"></script>
-<script src="app.js?v=1.75"></script>
+<script src="config.js?v=1.97"></script>
+<script src="app.js?v=1.76"></script>
 </body>
 </html>
