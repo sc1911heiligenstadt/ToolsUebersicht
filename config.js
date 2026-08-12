@@ -455,13 +455,10 @@ const APP_CHANGELOG = [
         ]
       },
       {
-        title: "Alte Schreibweisen in einem Rutsch umschreiben",
+        title: "Alte Schreibweisen in den Daten",
         items: [
-          "Ganz unten im Mannschaften-Bereich steht der Umschreib-Lauf. Er geht durch die Daten aller Werkzeuge und ersetzt jede alte Schreibweise durch den Kurznamen — Grundlage ist, was du bei der Mannschaft unter „Frühere Schreibweisen“ eingetragen hast.",
-          "Erst Vorschau: die zeigt für jedes Werkzeug, was sich ändern würde, und speichert nichts. „Jetzt umschreiben“ geht erst danach.",
-          "Vor dem Schreiben wird von jeder Datei eine Sicherung daneben gelegt. „Zurückspielen“ holt sie wieder zurück.",
-          "Ersetzt wird nur, was als GANZER Eintrag einer alten Schreibweise entspricht. Ein Notizfeld wie „Treffpunkt hinter der B-Junioren-Kabine“ bleibt unangetastet.",
-          "Zeigt eine alte Schreibweise auf zwei verschiedene Mannschaften, wird sie nicht angefasst, sondern gemeldet — geraten wird nicht."
+          "Für die Umstellung gab es kurzzeitig einen Umschreib-Lauf über die Daten aller Werkzeuge. Er hat nichts mehr gefunden — in den Daten stand keine alte Schreibweise mehr — und ist deshalb wieder ausgebaut.",
+          "Das Feld „Frühere Schreibweisen“ an der Mannschaft bleibt. Es dient jetzt nur noch zum Nachschlagen, wie eine Mannschaft früher hieß."
         ]
       }
     ]
