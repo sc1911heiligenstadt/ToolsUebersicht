@@ -472,7 +472,7 @@ const APP_CHANGELOG = [
         title: "Alte Schreibweisen in den Daten",
         items: [
           "Für die Umstellung gab es kurzzeitig einen Umschreib-Lauf über die Daten aller Werkzeuge. Er hat nichts mehr gefunden — in den Daten stand keine alte Schreibweise mehr — und ist deshalb wieder ausgebaut.",
-          "Das Feld „Frühere Schreibweisen“ an der Mannschaft bleibt. Es dient jetzt nur noch zum Nachschlagen, wie eine Mannschaft früher hieß."
+          "Das Feld „Frühere Schreibweisen“ an der Mannschaft ist damit auch weg. Es hatte den Umschreib-Lauf gefüttert und danach keine Wirkung mehr."
         ]
       }
     ]

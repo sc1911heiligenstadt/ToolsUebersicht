@@ -6739,12 +6739,11 @@ function renderMannschaftenListe() {
           trainerZeilen +
           '<button type="button" class="btn small mannschaft-person-neu" data-team="' + i + '">Person hinzufügen</button>' +
         "</div>" +
-        '<div class="form-field" style="margin-top:12px;">' +
-          "<label>Frühere Schreibweisen</label>" +
-          '<input type="text" class="m-aliase" value="' + escapeHtml(t.aliase.join(" | ")) + '" ' +
-            'placeholder="mit | getrennt, z. B. B-Junioren 2 (K) | B-Junioren" />' +
-          '<p class="muted" style="font-size:12px; margin:4px 0 0;">Wie diese Mannschaft früher noch geschrieben wurde. Nur zum Nachschlagen — die Daten sind umgestellt.</p>' +
-        "</div>" +
+        // Hier stand bis 2026-08-12 das Feld „Frühere Schreibweisen“. Es hat
+        // den Umschreib-Lauf gefüttert; seit der erledigt und ausgebaut ist,
+        // war es ein Feld ohne Wirkung. Michel-Entscheidung, es zu entfernen.
+        // ⚠️ Die gespeicherten `aliase` werden dabei NICHT gelöscht — siehe
+        // mannschaftenAusDom(), das sie aus dem Entwurf weiterreicht.
         '<div style="margin-top:10px;">' +
           '<button type="button" class="btn small mannschaft-weg" data-team="' + i + '">Diese Mannschaft entfernen</button>' +
         "</div>" +
@@ -6781,7 +6780,12 @@ function mannschaftenAusDom() {
       stufe: wert(".m-stufe") || "sonstige",
       nummer: parseInt(wert(".m-nummer"), 10) || 0,
       archiviert: !!(archiviert && archiviert.checked),
-      aliase: wert(".m-aliase").split("|").map(function (s) { return s.trim(); }).filter(Boolean),
+      // ⚠️ Aus dem ENTWURF, nicht aus dem DOM: das Eingabefeld dafür ist seit
+      // 2026-08-12 entfernt. Würde hier wie bisher `.m-aliase` gelesen, käme
+      // ein leerer String zurück und jedes Speichern löschte die gespeicherten
+      // Schreibweisen — ein Datenverlust als stille Nebenwirkung einer reinen
+      // Oberflächen-Änderung.
+      aliase: Array.isArray(alt.aliase) ? alt.aliase.slice() : [],
       trainer: personen,
       verdaechtig: !!alt.verdaechtig,
       grund: alt.grund || ""
