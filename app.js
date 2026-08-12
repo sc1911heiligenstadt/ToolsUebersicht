@@ -1930,6 +1930,10 @@ const CALENDAR_WIDGET_APP_ID = "vereinskalender";
 const CALENDAR_WIDGET_COUNT = 8;
 const ABSENCE_WIDGET_APP_ID = "abwesenheitskalender";
 const ABSENCE_WIDGET_COUNT = 4;
+// Ablaufplan: bewusst NUR der naechste Ablauf und bewusst NUR EINE Zeile
+// (Michel-Entscheidung 2026-08-12). Jeder Punkt einzeln haette die acht Zeilen
+// des Kalenders allein vom Medientag gefuellt und die echten Termine verdraengt.
+const ABLAUF_WIDGET_APP_ID = "ablaufplan";
 // Zuletzt gerenderter Widget-Zustand -- Grundlage fürs Neu-Rendern nach einer
 // abgegebenen Stimme (siehe onCalendarWidgetClick).
 let calendarWidgetOpts = null;
@@ -2155,7 +2159,8 @@ async function loadSidebarWidget() {
 
   const showCalendar = !!currentUser && isVisibleToUser(CALENDAR_WIDGET_APP_ID, currentUser);
   const showAbsences = !!currentUser && isVisibleToUser(ABSENCE_WIDGET_APP_ID, currentUser);
-  if (!showCalendar && !showAbsences) {
+  const showAblauf = !!currentUser && isVisibleToUser(ABLAUF_WIDGET_APP_ID, currentUser);
+  if (!showCalendar && !showAbsences && !showAblauf) {
     termineEl.innerHTML = "";
     updateSidebarSichtbarkeit();
     return;
@@ -2163,7 +2168,8 @@ async function loadSidebarWidget() {
 
   let oeffentlich = [], privat = [], kategorien = [], geburtstage = [];
   let absences = [], absenceKategorien = [];
-  let calendarFailed = false, absenceFailed = false;
+  let naechsterAblauf = null;
+  let calendarFailed = false, absenceFailed = false, ablaufFailed = false;
 
   const calendarPromise = showCalendar
     // hintergrund: dieses dav-load laeuft beim Seitenaufbau von selbst, der Nutzer
@@ -2209,11 +2215,40 @@ async function loadSidebarWidget() {
         .catch((e) => { console.warn("Abwesenheitskalender-Widget nicht ladbar:", e); absenceFailed = true; })
     : Promise.resolve();
 
-  await Promise.all([calendarPromise, absencePromise]);
+  const ablaufPromise = showAblauf
+    // hintergrund: siehe Kalender-Widget darueber, gleicher Grund -- ohne die
+    // Marke buchte die Punktezaehlung eine Nutzung des Ablaufplans, die nie
+    // stattgefunden hat (genau der Fehler vom 2026-08-04).
+    ? callWorker("dav-load", { app: ABLAUF_WIDGET_APP_ID, hintergrund: true })
+        .then((res) => {
+          const data = res && res.data && typeof res.data === "object" ? res.data : {};
+          const ablaeufe = Array.isArray(data.ablaeufe) ? data.ablaeufe : [];
+          // ⚠️ Bewusst NICHT toISOString().slice(0,10) wie zwei Bloecke weiter
+          // oben: das rechnet in UTC und liefert in deutscher Sommerzeit vor
+          // 02:00 Uhr den VORTAG -- ein gestern beendeter Ablauf haenge dann
+          // noch zwei Stunden auf der Startseite. Gleiche Regel wie
+          // isoAusDatum() in E:\ablaufplan\zeitlogik.js.
+          const jetzt = new Date();
+          const today = jetzt.getFullYear() + "-" +
+            String(jetzt.getMonth() + 1).padStart(2, "0") + "-" +
+            String(jetzt.getDate()).padStart(2, "0");
+          // Ein Ablauf zaehlt bis zum Ende seines LETZTEN Tages -- am Medientag
+          // selbst soll er nicht schon aus der Startseite fallen. Gleiche Regel
+          // wie istVergangen() in E:\ablaufplan\zeitlogik.js.
+          naechsterAblauf = ablaeufe
+            .filter((a) => a && /^\d{4}-\d{2}-\d{2}$/.test(String(a.startDatum || "")))
+            .filter((a) => String(a.endDatum || a.startDatum) >= today)
+            .sort((a, b) => String(a.startDatum).localeCompare(String(b.startDatum)))[0] || null;
+        })
+        .catch((e) => { console.warn("Ablaufplan-Widget nicht ladbar:", e); ablaufFailed = true; })
+    : Promise.resolve();
+
+  await Promise.all([calendarPromise, absencePromise, ablaufPromise]);
 
   const calendarOk = showCalendar && !calendarFailed;
   const absenceOk = showAbsences && !absenceFailed;
-  if (!calendarOk && !absenceOk) {
+  const ablaufOk = showAblauf && !ablaufFailed && !!naechsterAblauf;
+  if (!calendarOk && !absenceOk && !ablaufOk) {
     termineEl.innerHTML = "";
     updateSidebarSichtbarkeit();
     return;
@@ -2221,12 +2256,14 @@ async function loadSidebarWidget() {
 
   renderSidebarWidget(widget, {
     showCalendar: calendarOk, oeffentlich, privat, kategorien, geburtstage,
-    showAbsences: absenceOk, absences, absenceKategorien
+    showAbsences: absenceOk, absences, absenceKategorien,
+    showAblauf: ablaufOk, ablauf: naechsterAblauf
   });
 }
 
 function renderSidebarWidget(widget, opts) {
-  const { showCalendar, oeffentlich, privat, kategorien, geburtstage, showAbsences, absences, absenceKategorien } = opts;
+  const { showCalendar, oeffentlich, privat, kategorien, geburtstage, showAbsences, absences, absenceKategorien,
+          showAblauf, ablauf } = opts;
   const tool = toolById(CALENDAR_WIDGET_APP_ID);
   const url = tool ? tool.url : "#";
   const katFarbe = (id) => {
@@ -2278,6 +2315,27 @@ function renderSidebarWidget(widget, opts) {
         </div>
       `;
 
+  // ⚠️ Der Ablaufplan steht GANZ OBEN und mit genau EINER Zeile (Michel-
+  // Entscheidung 2026-08-12). formatAbsenceRange wird mitbenutzt statt kopiert --
+  // es liefert schon "16.08." bzw. "16.–18.08." fuer ein- und mehrtaegig.
+  let ablaufHtml = "";
+  if (showAblauf && ablauf) {
+    const ablaufTool = toolById(ABLAUF_WIDGET_APP_ID);
+    const ablaufUrl = ablaufTool ? ablaufTool.url : "#";
+    const anzahl = Array.isArray(ablauf.punkte) ? ablauf.punkte.length : 0;
+    ablaufHtml = `
+      <h2>⏱️ Nächster Ablauf</h2>
+      <div class="calendar-widget-list">
+        <a class="calendar-widget-item" href="${escapeHtml(ablaufUrl)}">
+          <span class="cw-date">${escapeHtml(formatAbsenceRange(ablauf.startDatum, ablauf.endDatum || ablauf.startDatum))}</span>
+          <span class="cw-emoji">⏱️</span>
+          <span class="cw-title">${escapeHtml(ablauf.titel || "Ohne Titel")}${
+            anzahl ? ` (${anzahl} ${anzahl === 1 ? "Punkt" : "Punkte"})` : ""}</span>
+        </a>
+      </div>
+    `;
+  }
+
   let calendarHtml = "";
   if (showCalendar) {
     const rows = (geburtstage.length || oeffentlich.length)
@@ -2290,8 +2348,10 @@ function renderSidebarWidget(widget, opts) {
       <h2 class="calendar-widget-sub-heading">🔒 Private Termine</h2>
       <div class="calendar-widget-list">${privat.map(rowHtml).join("")}</div>
     ` : "";
+    // Steht der Ablaufplan darueber, braucht diese Ueberschrift den Abstand der
+    // Unterueberschrift -- sonst klebt sie an der Ablauf-Zeile.
     calendarHtml = `
-      <h2>📅 Nächste Termine</h2>
+      <h2${ablaufHtml ? ' class="calendar-widget-sub-heading"' : ""}>📅 Nächste Termine</h2>
       <div class="calendar-widget-list">${rows}</div>
       ${privateSection}
     `;
@@ -2330,7 +2390,7 @@ function renderSidebarWidget(widget, opts) {
   }
 
   const termineEl = document.getElementById("termine-widget-inhalt");
-  if (termineEl) termineEl.innerHTML = `<div class="card">${calendarHtml}${absenceHtml}</div>`;
+  if (termineEl) termineEl.innerHTML = `<div class="card">${ablaufHtml}${calendarHtml}${absenceHtml}</div>`;
   updateSidebarSichtbarkeit();
 
   // Für das Neu-Rendern nach einer abgegebenen Stimme merken; der Klick-Handler

@@ -446,6 +446,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8812", // Schulsport (Dev-Server)
   "http://localhost:8813", // Spieltagscrew (Dev-Server)
   "http://localhost:8814", // Spielstatistik (Dev-Server)
+  "http://localhost:8815", // Ablaufplan (Dev-Server)
   // AgeLan haengt sonst an keinem Gateway (eigenes Firebase); seit dem Passwort-Gate
   // vor dem Streamplan ruft sie verify-action-password hier auf.
   "http://localhost:8791", // AgeLan (Dev-Server)
@@ -484,7 +485,8 @@ const DAV_APPS = {
   "dokumentenvorlagen": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Dokumentenvorlagen/dokumentenvorlagen.json",
   "ausbildungsplan":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ausbildungsplan/ausbildungsplan.json",
   "schulsport":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Schulsport/schulsport.json",
-  "spielstatistik":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielstatistik/spielstatistik.json"
+  "spielstatistik":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielstatistik/spielstatistik.json",
+  "ablaufplan":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ablaufplan/ablaufplan.json"
 };
 
 // Archivdatei des Schulsport-Planers: abgeschlossene Schuljahre wandern hierhin,
@@ -566,7 +568,14 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   // Tore und Karten mehrerer Saisons. Ein versehentliches dav-save eines Nur-Sehers
   // wuerde die komplette Vereinshistorie ueberschreiben -- Merge gibt es nicht,
   // nur Last-Write-Wins. Schreiben deshalb strikt an das Bearbeiten-Recht.
-  "spielstatistik"
+  "spielstatistik",
+  // ablaufplan (neu 2026-08-12): Sehen steht hier auf "alle eingeloggten Nutzer",
+  // damit jeder Trainer den Ablauf nachschlagen und den Link weitergeben kann.
+  // Genau deshalb MUSS Schreiben am Bearbeiten-Recht haengen: in ablaeufe[] steht
+  // je Ablauf das linkToken, mit dem der login-lose Weg aufgeht. Ohne diesen
+  // Eintrag koennte jeder Seher per dav-save ein fremdes Token setzen, einen
+  // Widerruf zuruecknehmen oder den Medientag umschreiben.
+  "ablaufplan"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
@@ -1365,6 +1374,16 @@ export default {
         return handleSchulsportFreigabeLesen(request, body, env, authHeader, corsHeaders);
       case "schulsport-freigabe-senden":
         return handleSchulsportFreigabeSenden(request, body, env, authHeader, corsHeaders);
+      // Ablaufplan: einen einzelnen Ablauf OHNE Login lesen (plan.html), damit
+      // Eltern und Spieler die Zeiten sehen, ohne ein Vereinskonto zu haben.
+      // Gleiche Bauform wie die beiden Aktionen darueber -- getVerifiedSession
+      // wird bewusst NICHT aufgerufen, der Ausweis ist der Token IM Ablauf.
+      // Antwortet deshalb nie 401, sondern 400 (Token-Form), 404 (unbekannt),
+      // 410 (zurueckgezogen) oder 429 (Zaehlwerk); daran erkennt man in der
+      // Live-Probe, dass sie wirklich VOR jeder Sitzungspruefung liegt.
+      // ⚠️ NUR LESEN. Es gibt bewusst keine schreibende Gegenstueck-Aktion.
+      case "ablaufplan-oeffentlich":
+        return handleAblaufplanOeffentlich(request, body, env, authHeader, corsHeaders);
       // Kleiderbestellung: Spieler ohne Vereinskonto bestellen ueber einen Link
       // mit Zufallstoken. Gleiche Bauform wie die beiden Aktionen darueber --
       // getVerifiedSession wird bewusst NICHT aufgerufen, der Ausweis ist der
@@ -8450,6 +8469,69 @@ async function handleSchulsportFreigabeLesen(request, body, env, authHeader, cor
   return json({ nachweis: schulsportOeffentlicherNachweis(treffer) }, 200, corsHeaders);
 }
 
+// ---------- ablaufplan-oeffentlich (OHNE Login) ----------
+//
+// Gibt GENAU EINEN Ablauf heraus, und davon nur die Felder, die auf einem Zettel
+// am schwarzen Brett auch stehen duerften.
+//
+// ⚠️ Was hier bewusst NICHT mitgeht und auch nicht nachtraeglich ergaenzt werden
+// darf, ohne den Datenschutz-Absatz auf plan.html mitzuziehen:
+//   linkToken     -- der Ausweis selbst; wer die Seite offen hat, hat ihn ohnehin,
+//                    aber er gehoert nicht in eine Antwort, die weitergeleitet wird
+//   erstelltVon   -- ein Kontoname
+//   anhaenge      -- Michel-Entscheidung: Anhaenge nur fuer Angemeldete
+//   ALLE anderen Ablaeufe der Datei
+function ablaufplanOeffentlicherAblauf(a) {
+  return {
+    titel: String(a.titel || ""),
+    startDatum: String(a.startDatum || ""),
+    endDatum: String(a.endDatum || a.startDatum || ""),
+    ort: String(a.ort || ""),
+    info: String(a.info || ""),
+    punkte: (Array.isArray(a.punkte) ? a.punkte : []).map((p) => ({
+      id: String((p && p.id) || ""),
+      datum: String((p && p.datum) || ""),
+      startZeit: String((p && p.startZeit) || ""),
+      endZeit: String((p && p.endZeit) || ""),
+      was: String((p && p.was) || ""),
+      mannschaften: Array.isArray(p && p.mannschaften) ? p.mannschaften.map(String) : [],
+      werFrei: String((p && p.werFrei) || ""),
+      ort: String((p && p.ort) || ""),
+      notiz: String((p && p.notiz) || "")
+    }))
+  };
+}
+
+async function handleAblaufplanOeffentlich(request, body, env, authHeader, corsHeaders) {
+  // 1. Formpruefung zuerst -- die billigste Bremse, ohne jeden Datei-Zugriff.
+  const token = String(body.token || "");
+  if (!/^[0-9a-f]{64}$/.test(token)) return json({ error: "Ungültiger Link" }, 400, corsHeaders);
+  // 2. Zaehlwerk je IP. Bewusst dasselbe wie beim Schulsport-Freigabelink: eine
+  //    zweite Map brächte nichts, die Bremse gilt fuer login-lose Zugriffe.
+  if (!schulsportIpBremse(request)) return json({ error: "Zu viele Versuche" }, 429, corsHeaders);
+
+  const doc = await readJson(DAV_APPS["ablaufplan"], authHeader, null);
+  const ablaeufe = (doc && Array.isArray(doc.ablaeufe)) ? doc.ablaeufe : [];
+
+  // 3. Vergleich timing-sicher, nicht mit ===.
+  let treffer = null;
+  for (const a of ablaeufe) {
+    if (!a || !a.linkToken) continue;
+    if (await staticPasswordEquals(token, String(a.linkToken))) { treffer = a; break; }
+  }
+  if (!treffer) {
+    // Bremse wie bei handleSchulsportFreigabeLesen: ein unbekannter Token darf
+    // nicht schneller antworten als ein bekannter.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return json({ error: "Dieser Link ist nicht gültig" }, 404, corsHeaders);
+  }
+  if (treffer.linkWiderrufen) {
+    return json({ error: "Dieser Link wurde zurückgezogen" }, 410, corsHeaders);
+  }
+
+  return json({ ablauf: ablaufplanOeffentlicherAblauf(treffer) }, 200, corsHeaders);
+}
+
 // ---------- schulsport-freigabe-senden (OHNE Login) ----------
 async function handleSchulsportFreigabeSenden(request, body, env, authHeader, corsHeaders) {
   const token = String(body.token || "");
@@ -11940,7 +12022,11 @@ const PUNKTE_IGNORIERT = new Set([
   // Laeuft beim Aufklappen des Rundnachricht-Panels von selbst und liefert nur
   // Verlauf und Reichweite. Das Absenden (push-rundnachricht) ist die Handlung
   // und zaehlt weiter mit.
-  "push-rundnachricht-verlauf"
+  "push-rundnachricht-verlauf",
+  // Der login-lose Blick auf einen Ablaufplan. Laeuft ohne Sitzung und laedt sich
+  // auf der offenen Seite jede Minute selbst nach -- es gibt niemanden, dem man
+  // das gutschreiben koennte, und es ist keine Handlung.
+  "ablaufplan-oeffentlich"
 ]);
 
 // Katalog echter Abschluesse -> volle Punkte je Vorkommen. Alles, was hier NICHT
@@ -12018,7 +12104,11 @@ const PUNKTE_APP_PRAEFIXE = [
   ["set-materialcontainer", "materialliste"],
   ["beleg-eingang", "budget"],
   ["schulsport", "schulsport"],
-  ["spieltagscrew", "spieltagscrew"]
+  ["spieltagscrew", "spieltagscrew"],
+  // Der Ablaufplan spricht sonst nur dav-load/dav-save und traegt die App im Body.
+  // Der Eintrag deckt kuenftige eigene Aktionen ab; die einzige heutige
+  // (ablaufplan-oeffentlich) steht in PUNKTE_IGNORIERT und laeuft ohne Sitzung.
+  ["ablaufplan", "ablaufplan"]
 ];
 
 // Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht

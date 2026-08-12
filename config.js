@@ -353,6 +353,14 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/spielstatistik/",
     icon: "📊",
     category: "Verein"
+  },
+  {
+    id: "ablaufplan",
+    name: "Ablaufplan",
+    description: "Getaktete Tage des Vereins an einer Stelle: Medientag, Turniertag, Trainingslager, Feriencamp. Ein Ablauf besteht aus Punkten mit Uhrzeit, beteiligten Mannschaften, Ort und einer Notiz zum Mitbringen; die Ansicht ist ein Zeitstrahl mit einer Marke, wo gerade „jetzt“ ist. Wer angemeldet ist, sieht seine eigenen Punkte farbig und kann alles andere ausblenden. Eine fertige Liste lässt sich einfügen, statt jeden Punkt zu tippen, und wenn es am Tag verrutscht, schiebt ein Knopf alles ab einer Stelle um ein paar Minuten. Zum Weitergeben gibt es einen Link, der ohne Anmeldung funktioniert — für Eltern und Spieler.",
+    url: "https://sc1911heiligenstadt.github.io/ablaufplan/",
+    icon: "⏱️",
+    category: "Verein"
   }
 ];
 
@@ -432,6 +440,27 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.6",
+    groups: [
+      {
+        title: "Neue Kachel „Ablaufplan“",
+        items: [
+          "Getaktete Tage des Vereins stehen jetzt an einer Stelle: Medientag, Turniertag, Trainingslager, Feriencamp.",
+          "Ein Ablauf besteht aus Punkten mit Uhrzeit, beteiligten Mannschaften, Ort und einer Notiz zum Mitbringen. Angezeigt wird er als Zeitstrahl mit einer Marke, wo gerade „jetzt“ ist.",
+          "Wer angemeldet ist, sieht die Punkte seiner eigenen Mannschaften farbig und kann alles andere ausblenden.",
+          "Zum Weitergeben an Eltern und Spieler gibt es je Ablauf einen Link, der ohne Anmeldung funktioniert — wahlweise gleich auf eine Mannschaft eingestellt."
+        ]
+      },
+      {
+        title: "Der nächste Ablauf steht auf der Startseite",
+        items: [
+          "Über den nächsten Terminen steht eine Zeile mit dem nächsten Ablauf samt Datum und Anzahl der Punkte; ein Klick führt hinein.",
+          "Es ist bewusst nur der eine nächste Ablauf und nur eine Zeile — jeder Punkt einzeln hätte die Terminliste daneben verdrängt."
+        ]
+      }
+    ]
+  },
   {
     version: "1.5",
     groups: [
