@@ -360,7 +360,8 @@ const TOOLS = [
     description: "Getaktete Tage des Vereins an einer Stelle: Medientag, Turniertag, Trainingslager, Feriencamp. Ein Ablauf besteht aus Punkten mit Uhrzeit, beteiligten Mannschaften, Ort und einer Notiz zum Mitbringen; die Ansicht ist ein Zeitstrahl mit einer Marke, wo gerade „jetzt“ ist. Wer angemeldet ist, sieht seine eigenen Punkte farbig und kann alles andere ausblenden. Eine fertige Liste lässt sich einfügen, statt jeden Punkt zu tippen, und wenn es am Tag verrutscht, schiebt ein Knopf alles ab einer Stelle um ein paar Minuten. Zum Weitergeben gibt es einen Link, der ohne Anmeldung funktioniert — für Eltern und Spieler.",
     url: "https://sc1911heiligenstadt.github.io/ablaufplan/",
     icon: "⏱️",
-    category: "Verein"
+    category: "Verein",
+    push: true
   }
 ];
 
@@ -469,6 +470,13 @@ const APP_CHANGELOG = [
         items: [
           "Über den nächsten Terminen steht eine Zeile mit dem nächsten Ablauf samt Datum und Anzahl der Punkte; ein Klick führt hinein.",
           "Es ist bewusst nur der eine nächste Ablauf und nur eine Zeile — jeder Punkt einzeln hätte die Terminliste daneben verdrängt."
+        ]
+      },
+      {
+        title: "Neue Handy-Nachricht: Ablaufplan",
+        items: [
+          "Wer eine beteiligte Mannschaft im Profil hat, bekommt 15 Minuten vor seinem Punkt eine Erinnerung aufs Handy.",
+          "Der Schalter dafür steht wie bei den anderen Anlässen unter „Mein Konto“ und heißt „Ablaufplan — Erinnerung kurz vor meinem eigenen Punkt“."
         ]
       }
     ]

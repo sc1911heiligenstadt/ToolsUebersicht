@@ -933,6 +933,15 @@ export default {
     const noetig = ["NEXTCLOUD_URL", "NEXTCLOUD_USERNAME", "NEXTCLOUD_PASSWORD", "NEXTCLOUD_NUTZER_URL"];
     if (noetig.some((name) => !env[name])) return;
     const authHeader = "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD);
+
+    // Seit 2026-08-12 zwei Zeitplaene. ⚠️ Die Weiche prueft NUR auf den
+    // Fuenf-Minuten-Takt; alles andere -- auch ein fehlender oder unbekannter
+    // Ausdruck -- laeuft wie bisher in den naechtlichen Lauf. So kann eine
+    // Aenderung am Zeitplan die Spieltagscrew-Erinnerungen nicht stillegen.
+    if (String((event && event.cron) || "") === ABLAUFPLAN_CRON) {
+      ctx.waitUntil(ablaufplanErinnerungslauf(env, authHeader, ctx).catch(() => {}));
+      return;
+    }
     ctx.waitUntil(scNaechtlicherLauf(env, authHeader, ctx));
   },
 
@@ -10946,6 +10955,10 @@ const PUSH_ANLAESSE = [
     label: "Schulsport — Termine, die auf meine Rückmeldung warten" },
   { id: "spieltagscrew", titel: "Spieltagscrew", ziel: "/spieltagscrew/",
     label: "Spieltagscrew — offene Posten und Erinnerung an meinen Dienst" },
+  // Erinnerung kurz vor dem eigenen Punkt eines Ablaufplans. Ausgeloest vom
+  // Fuenf-Minuten-Lauf in scheduled(), NICHT von einer Nutzerhandlung.
+  { id: "ablaufplan", titel: "Ablaufplan", ziel: "/ablaufplan/",
+    label: "Ablaufplan — Erinnerung kurz vor meinem eigenen Punkt" },
   // Ziel ist die Uebersicht selbst (wie "unterschriften") -- die Antwort steht
   // im Tab "Feedback & Hilfe", nicht in einer der verlinkten Apps. Deshalb traegt
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
@@ -13853,4 +13866,182 @@ async function scNaechtlicherLauf(env, authHeader, execCtx) {
     await scLaufVermerken(authHeader, { spieltage: 0, gesendet: 0, erinnert: 0 },
       (e && e.message) ? e.message : "unbekannt");
   }
+}
+
+// ============================================================================
+// Ablaufplan: Erinnerung kurz vor dem eigenen Punkt (seit 2026-08-12)
+// ============================================================================
+//
+// Michel-Vorgabe: wer an einem Punkt beteiligt ist, soll eine Viertelstunde
+// vorher eine Nachricht aufs Handy bekommen. Ausgeloest vom Fuenf-Minuten-Lauf
+// in scheduled(), NICHT von einer Nutzerhandlung -- es gibt niemanden, der zum
+// richtigen Zeitpunkt die App offen hat.
+//
+// ⚠️ DER ZEITPLAN STEHT IN DER CLOUDFLARE-KONFIGURATION, NICHT IM REPO.
+// Noetig sind ZWEI Trigger: "0 4 * * *" (Spieltagscrew, aelter) und
+// "*/5 * * * *" (dieser Lauf). Ein Script-Upload ueber deploy-worker.ps1
+// loescht sie nicht, legt sie aber auch nicht an -- fehlt der zweite, laeuft
+// diese Funktion nie und niemand merkt es. Pruefen mit:
+//   GET /accounts/<id>/workers/scripts/landingpage/schedules
+//
+// Als geschlossener Block am Dateiende, wie die Aktivitaetspunkte und die
+// Kleiderbestellung davor: am Stueck wieder herausloesbar.
+
+// Der Ausdruck, auf den die Weiche in scheduled() prueft. ⚠️ Muss ZEICHENGENAU
+// dem Trigger in der Cloudflare-Konfiguration entsprechen -- weicht er ab,
+// landet der Fuenf-Minuten-Lauf im naechtlichen Zweig und verschickt jede
+// Viertelstunde Spieltagscrew-Erinnerungen.
+const ABLAUFPLAN_CRON = "*/5 * * * *";
+
+const ABLAUFPLAN_ERINNERT_URL = DAV_APPS["ablaufplan"].replace(/[^/]+$/, "ablaufplan-erinnert.json");
+
+// Vorlauf der Nachricht. ⚠️ Muss zum Label in PUSH_ANLAESSE und zum Info-Text
+// in E:\ablaufplan\config.js passen -- beide sprechen von einer Viertelstunde.
+const ABLAUFPLAN_VORLAUF_MIN = 15;
+// Wie spaet eine Nachricht noch rausgeht, wenn der Lauf sich verzoegert hat.
+// ⚠️ Bewusst klein: eine Erinnerung, die NACH dem Termin kommt, ist schlimmer
+// als keine. Faellt der Worker laenger aus, wird der Punkt still uebersprungen.
+const ABLAUFPLAN_NACHLAUF_MIN = 5;
+// Wie lange ein Merker aufgehoben wird, bevor er weggeraeumt wird.
+const ABLAUFPLAN_MERKER_TAGE = 3;
+// Deckel je Lauf, gegen den Fall, dass jemand aus Versehen hundert Punkte auf
+// denselben Zeitpunkt legt.
+const ABLAUFPLAN_MAX_JE_LAUF = 40;
+
+// ⚠️ ZWEITE KOPIE von normMannschaft aus E:\ablaufplan\zeitlogik.js.
+// Der Worker kann die Datei des App-Repos nicht laden. Wer die eine aendert,
+// muss die andere mitziehen -- sonst bekommt ein Trainer mit "D1-Jugend" im
+// Profil keine Erinnerung fuer einen Punkt, der "D1" sagt, waehrend ihn die App
+// weiterhin als seinen markiert. Gleiche Lage wie NEWS_REACTION_EMOJIS.
+function ablaufplanNormTeam(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[\s._-]+/g, "")
+    .replace(/(jugend|junioren|juniorinnen|mannschaft)$/, "");
+}
+
+// Absoluter Zeitpunkt eines Punktes. ⚠️ Ueber vkBerlinWandzeitZuMs, damit
+// Sommer- und Winterzeit stimmen -- der Lauf tickt in UTC, die Uhrzeit im
+// Ablauf ist Berliner Wandzeit.
+function ablaufplanPunktMs(punkt) {
+  const datum = String((punkt && punkt.datum) || "");
+  const zeit = String((punkt && punkt.startZeit) || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum) || !/^\d{2}:\d{2}$/.test(zeit)) return NaN;
+  return vkBerlinWandzeitZuMs(datum, zeit);
+}
+
+// Wer wird erinnert: die Trainer, in deren Profil eine der Mannschaften des
+// Punktes steht. ⚠️ Der Empfaengerkreis kommt aus dem DATENSATZ plus den
+// Profilen, nie aus einem Request -- diesen Lauf loest ohnehin niemand aus.
+// Archivierte Konten und Spielerkonten bleiben aussen vor.
+function ablaufplanEmpfaenger(punkt, usersDoc) {
+  const teams = (Array.isArray(punkt && punkt.mannschaften) ? punkt.mannschaften : [])
+    .map(ablaufplanNormTeam).filter(Boolean);
+  if (!teams.length) return [];
+
+  const treffer = [];
+  const gesehen = Object.create(null);
+  for (const u of Object.values((usersDoc && usersDoc.users) || {})) {
+    if (!u || u.archiviert || !istPersonal(u)) continue;
+    const meine = (Array.isArray(u.mannschaften) ? u.mannschaften : []).map(ablaufplanNormTeam);
+    if (!meine.some((m) => m && teams.indexOf(m) >= 0)) continue;
+    const name = normalizeUsername(String(u.username || ""));
+    if (!name || gesehen[name]) continue;
+    gesehen[name] = true;
+    treffer.push(name);
+  }
+  return treffer;
+}
+
+// ⚠️ Der Text steht auf dem Sperrbildschirm. Er nennt Uhrzeit, Mannschaft, was
+// ansteht und den Ort -- aber NIE einen Personennamen. Die Trainernamen in der
+// Oberflaeche kommen aus den Profilen, nicht aus dem Datensatz; hier haetten
+// sie nichts zu suchen.
+function ablaufplanText(ablauf, punkt) {
+  const teams = (Array.isArray(punkt.mannschaften) ? punkt.mannschaften : []).join("/");
+  const was = String(punkt.was || "").trim();
+  const kern = [teams, was].filter(Boolean).join(" ") || String(ablauf.titel || "Ablauf");
+  const ort = String(punkt.ort || ablauf.ort || "").trim();
+  return "In " + ABLAUFPLAN_VORLAUF_MIN + " Minuten: " + punkt.startZeit + " " + kern +
+    (ort ? " (" + ort + ")" : "");
+}
+
+// Die Uhrzeit steht mit im Schluessel: wird ein Punkt verschoben, ist die alte
+// Erinnerung verbraucht und die neue Zeit bekommt ihre eigene. Genau das will
+// man -- sonst bliebe eine Verschiebung um zwei Stunden stumm.
+function ablaufplanMerkerSchluessel(ablauf, punkt) {
+  return ablauf.id + ":" + punkt.id + ":" + punkt.datum + "T" + punkt.startZeit;
+}
+
+function ablaufplanMerkerAufraeumen(ids, jetzt) {
+  const grenze = jetzt - ABLAUFPLAN_MERKER_TAGE * 86400000;
+  const sauber = Object.create(null);
+  for (const [k, v] of Object.entries(ids || {})) {
+    const ms = Date.parse(String(v || ""));
+    if (Number.isFinite(ms) && ms >= grenze) sauber[k] = v;
+  }
+  return sauber;
+}
+
+// Sucht die Punkte, die in den naechsten ABLAUFPLAN_VORLAUF_MIN Minuten
+// beginnen und noch keine Erinnerung bekommen haben. Reine Rechnung, damit sie
+// sich ohne Nextcloud pruefen laesst.
+function ablaufplanFaellige(doc, ids, jetzt) {
+  const fenster = ABLAUFPLAN_VORLAUF_MIN * 60000;
+  const nachlauf = ABLAUFPLAN_NACHLAUF_MIN * 60000;
+  const treffer = [];
+  for (const ablauf of (doc && Array.isArray(doc.ablaeufe) ? doc.ablaeufe : [])) {
+    if (!ablauf || !ablauf.id) continue;
+    for (const punkt of (Array.isArray(ablauf.punkte) ? ablauf.punkte : [])) {
+      if (!punkt || !punkt.id) continue;
+      const ms = ablaufplanPunktMs(punkt);
+      if (!Number.isFinite(ms)) continue;
+      const rest = ms - jetzt;
+      if (rest > fenster || rest < -nachlauf) continue;
+      const schluessel = ablaufplanMerkerSchluessel(ablauf, punkt);
+      if (Object.prototype.hasOwnProperty.call(ids || {}, schluessel)) continue;
+      treffer.push({ ablauf: ablauf, punkt: punkt, schluessel: schluessel });
+    }
+  }
+  // Der frueheste zuerst, damit der Deckel im Zweifel das Dringendste nimmt.
+  treffer.sort(function (a, b) { return ablaufplanPunktMs(a.punkt) - ablaufplanPunktMs(b.punkt); });
+  return treffer.slice(0, ABLAUFPLAN_MAX_JE_LAUF);
+}
+
+async function ablaufplanErinnerungslauf(env, authHeader, execCtx) {
+  const doc = await readJson(DAV_APPS["ablaufplan"], authHeader, null);
+  if (!doc || !Array.isArray(doc.ablaeufe) || !doc.ablaeufe.length) return { gesendet: 0 };
+
+  const jetzt = Date.now();
+  let merker = await readJson(ABLAUFPLAN_ERINNERT_URL, authHeader, { version: 1, ids: {} });
+  if (!merker || typeof merker !== "object") merker = { version: 1, ids: {} };
+  const ids = (merker.ids && typeof merker.ids === "object") ? merker.ids : {};
+
+  const faellig = ablaufplanFaellige(doc, ids, jetzt);
+  if (!faellig.length) return { gesendet: 0 };
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+
+  // ⚠️ Reihenfolge bindend: erst den Merker schreiben, dann verschicken.
+  // Andersherum meldete ein Fehlschlag beim Schreiben denselben Punkt in jedem
+  // Fuenf-Minuten-Lauf erneut -- drei gleiche Nachrichten in einer Viertelstunde.
+  // Eine ausgefallene Erinnerung ist der kleinere Schaden.
+  const jetztIso = new Date(jetzt).toISOString();
+  faellig.forEach(function (f) { ids[f.schluessel] = jetztIso; });
+  merker.version = 1;
+  merker.ids = ablaufplanMerkerAufraeumen(ids, jetzt);
+  try {
+    await writeJson(ABLAUFPLAN_ERINNERT_URL, authHeader, merker);
+  } catch (_) {
+    return { gesendet: 0, fehler: "merker" };
+  }
+
+  let gesendet = 0;
+  for (const f of faellig) {
+    const empfaenger = ablaufplanEmpfaenger(f.punkt, usersDoc);
+    if (!empfaenger.length) continue;
+    pushSenden(env, authHeader, execCtx, empfaenger, "ablaufplan", ablaufplanText(f.ablauf, f.punkt));
+    gesendet++;
+  }
+  return { gesendet: gesendet };
 }
