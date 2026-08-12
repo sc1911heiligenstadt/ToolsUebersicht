@@ -1972,3 +1972,68 @@ nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
 .aufnahme-balken-fuellung.knapp { background: var(--gold); }
 .aufnahme-balken-fuellung.voll { background: #e5484d; }
 .aufnahme-leiste .btn { flex: none; }
+
+/* ---------- Mannschaften: die eine Quelle (seit 2026-08-12) ---------- */
+
+/* Die Leiste bricht um. Ohne flex-wrap erzwingen Auswahlfeld und drei Knoepfe
+   eine Mindestbreite von rund 560 px und zoegen bei 375 px die GANZE Seite
+   seitlich auf -- derselbe Fehler, der 2026-08-07 an .gr-header gefunden wurde. */
+.mannschaft-leiste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+.mannschaft-leiste .form-field { flex: 1 1 200px; min-width: 0; margin: 0; }
+
+.mannschaft-abgleich {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 12px 0;
+  background: var(--gray);
+}
+/* Das Kaestchen steht bewusst NICHT in .form-field: dort greift
+   input { width: 100% } und macht aus jeder Checkbox einen Balken. */
+.mannschaft-abgleich label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.mannschaft-abgleich input[type="checkbox"] { width: auto; flex: none; }
+
+.mannschaft-werkzeuge { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.mannschaft-zeile {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.mannschaft-zeile > summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+/* Rot umrandet, nicht rot gefuellt: der Vorschlag markiert damit Zeilen, die
+   nach Altersbereich oder Rolle aussehen statt nach einer Mannschaft. Eine
+   Flaeche in Signalfarbe waere bei einem halben Dutzend Treffern erschlagend. */
+.mannschaft-zeile.verdaechtig { border-color: #c0392b; }
+.mannschaft-warnung {
+  color: #c0392b;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.mannschaft-schalter { margin-top: 10px; }
+.mannschaft-schalter label { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.mannschaft-schalter input[type="checkbox"] { width: auto; flex: none; margin-top: 3px; }
+
+.mannschaft-personen { margin-top: 12px; }
+.mannschaft-personen > label { display: block; font-weight: 600; margin-bottom: 6px; }
+/* Zwei Auswahlfelder und ein Knopf. Am Handy stehen sie untereinander, sonst
+   waere das Namensfeld rund 100 px breit und niemand erkennt, wer dasteht. */
+.mannschaft-person {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.mannschaft-person select { flex: 1 1 200px; min-width: 0; }
+.mannschaft-person .mannschaft-person-rolle { flex: 0 1 160px; }

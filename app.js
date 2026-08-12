@@ -77,6 +77,10 @@ let pendingFirstLoginUsername = null;
 let pendingLoginUsername = null;
 let groupsState = [];
 let usersState = [];
+// Wird das Feld "Mannschaft(en)" im Nutzer-Panel aus der Mannschaftsliste
+// berechnet? Kommt additiv aus list-users. Ein aelterer Worker liefert es nicht
+// -- dann bleibt das Feld bedienbar wie bisher.
+let mannschaftAbgleichAn = false;
 // Filter der Nutzerliste. groupId: "" = alle, "__ohne__" = Nutzer ohne jede Gruppe,
 // sonst eine Gruppen-Id. Rein clientseitig -- list-users liefert immer alle Nutzer.
 let usersFilter = { text: "", groupId: "" };
@@ -248,6 +252,10 @@ async function loadAndRenderUsers() {
     usersState = data.users.slice().sort((a, b) =>
       (a.displayName || a.username).localeCompare(b.displayName || b.username, "de")
     );
+    // ⚠️ VOR renderUsersList setzen: die Zeilen bauen das Mannschaftsfeld daraus
+    // gesperrt oder frei. Ein aelterer Worker liefert das Feld nicht -- dann
+    // bleibt es wie bisher bedienbar (der Schreibweg ist ohnehin die Schranke).
+    mannschaftAbgleichAn = !!data.mannschaftenAbgleichAktiv;
     renderUsersList(usersState);
     renderMannschaftSuggestions();
   } catch (e) {
@@ -413,7 +421,8 @@ function renderUsersList(users) {
           </div>
           <div class="form-field">
             <label>Mannschaft(en)</label>
-            <input type="text" data-edit-user-mannschaften list="mannschaft-suggestions" value="${escapeHtml((user.mannschaften || []).join(", "))}" placeholder="z. B. B-Jugend, C-Jugend" />
+            <input type="text" data-edit-user-mannschaften list="mannschaft-suggestions" value="${escapeHtml((user.mannschaften || []).join(", "))}" placeholder="z. B. B-Jugend, C-Jugend" ${mannschaftAbgleichAn ? "readonly" : ""} />
+            ${mannschaftAbgleichAn ? `<p class="muted" style="font-size:12px; margin:4px 0 0;">Wird aus der Mannschaftsliste berechnet. Zum Ändern die Person unter <strong>Mannschaften</strong> an die richtige Mannschaft hängen.</p>` : ""}
           </div>
           <div class="form-field">
             <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" data-edit-user-is-admin ${user.isAdmin ? "checked" : ""} /> Admin-Rechte</label>
@@ -483,6 +492,13 @@ function renderUsersList(users) {
             errorEl.textContent = rename.applied
               ? `Hinweis: Login-Nutzername wurde von „${rename.from}“ zu „${rename.to}“ angepasst (Namensänderung).`
               : `Name gespeichert, aber der Login-Nutzername „${rename.to}“ ist bereits durch ein anderes Konto belegt und konnte nicht automatisch angepasst werden — bitte das andere Konto prüfen.`;
+            errorEl.style.display = "block";
+          } else if (result.mannschaftenGesperrt) {
+            // Der Worker hat das Mannschaftsfeld ignoriert. Das muss dastehen —
+            // sonst verlässt sich jemand auf eine Zuordnung, die nie ankam.
+            errorEl.style.color = "#c0392b";
+            errorEl.textContent = "Gespeichert — aber die Mannschaft wurde NICHT übernommen. "
+              + "Sie wird aus der Mannschaftsliste berechnet; ändern lässt sie sich nur dort.";
             errorEl.style.display = "block";
           }
         } catch (e) {
@@ -646,6 +662,9 @@ function renderBackfillPanel(panel, rows, unmatched, upToDateCount) {
 
   panel.innerHTML = `
     <p class="muted">${rows.length} Nutzer aus den Personalkosten nachpflegbar${upToDateCount > 0 ? `, ${upToDateCount} bereits aktuell` : ""}. Bestehende Lizenzen werden nicht überschrieben, Mannschaften nur ergänzt.</p>
+    ${mannschaftAbgleichAn ? `<p class="muted" style="color:#c0392b;">
+      <strong>Die Mannschaften unten werden NICHT übernommen.</strong> Sie kommen jetzt aus der
+      Mannschaftsliste; der Import pflegt nur noch die Lizenzen nach.</p>` : ""}
     <div id="backfill-rows">${rowsHtml}</div>
     <div class="btn-row" style="margin-top:12px; gap:8px; justify-content:flex-start;">
       <button type="button" class="btn small" id="btn-backfill-apply">Ausgewählte übernehmen</button>
@@ -6479,6 +6498,7 @@ function renderAdminPanels() {
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
   document.getElementById("admin-materialcontainer-panel").style.display = "none";
+  document.getElementById("admin-mannschaften-panel").style.display = "none";
   document.getElementById("admin-rundnachricht-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("push-panel").style.display = "none";
@@ -6504,6 +6524,7 @@ function renderAdminPanels() {
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
       document.getElementById("admin-materialcontainer-panel").style.display = "block";
+      document.getElementById("admin-mannschaften-panel").style.display = "block";
       document.getElementById("admin-rundnachricht-panel").style.display = "block";
       document.getElementById("admin-aufgaben-panel").style.display = "block";
       document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
@@ -6525,6 +6546,428 @@ function renderAdminPanels() {
     return;
   }
   document.getElementById("admin-login-gate").style.display = "block";
+}
+
+// ---------- Mannschaften: die eine Quelle (seit 2026-08-12) ----------
+//
+// Michel-Vorgabe: eine Liste, an der die Trainer haengen, und alle Werkzeuge
+// holen sich ihre Auswahl von dort. Gepflegt wird AN DER MANNSCHAFT (nicht am
+// Trainer) -- so sieht man sofort, welche Mannschaft noch niemanden hat.
+//
+// ⚠️ Der DOM ist waehrend der Bearbeitung die Wahrheit, nicht mannschaftEntwurf.
+// Jede Struktur-Aenderung (Zeile dazu, Person weg) liest deshalb ZUERST den
+// DOM-Stand ein, aendert daran und rendert neu -- sonst verliert ein
+// Neu-Rendern jede noch nicht gespeicherte Eingabe.
+let mannschaftState = null;   // letzte Antwort des Workers (Saisons, Rollen, Stufen)
+let mannschaftEntwurf = [];   // Arbeitsstand im Panel, erst mit Speichern verbindlich
+
+const MANNSCHAFT_STUFEN_LABEL = {
+  herren: "Herren / Senioren",
+  a: "A-Junioren",
+  b: "B-Junioren",
+  c: "C-Junioren",
+  d: "D-Junioren",
+  e: "E-Junioren",
+  f: "F-Junioren",
+  g: "Bambini / G-Junioren",
+  maedchen: "Mädchen / Frauen",
+  sonstige: "Sonstige"
+};
+
+async function mannschaftenPanelAufbauen(saison) {
+  const liste = document.getElementById("mannschaft-liste");
+  if (!liste) return;
+  liste.innerHTML = '<p class="muted">Wird geladen …</p>';
+  try {
+    // ⚠️ Ohne die Nutzerliste stehen alle Personen-Auswahlfelder leer da, und
+    // ein Speichern in dem Zustand entfernte jede Zuordnung: der Worker nimmt
+    // nur Konten an, die er kennt, und die leeren Felder liefern keine.
+    if (!usersState.length) await loadAndRenderUsers();
+    const res = await callWorker("mannschaften-load", saison ? { saison } : {});
+    mannschaftState = res;
+    mannschaftEntwurf = (res.teams || []).map(mannschaftKopie);
+    renderMannschaftenSaisonwahl();
+    renderMannschaftenListe();
+    mannschaftMeldung("");
+  } catch (e) {
+    liste.innerHTML = "";
+    mannschaftFehler(e.message);
+  }
+}
+
+// Tiefe Kopie je Zeile: der Entwurf darf die Antwort des Workers nicht
+// verbiegen, sonst zeigt ein Abbrechen den bereits veraenderten Stand.
+function mannschaftKopie(t) {
+  return {
+    kurz: t.kurz || "",
+    lang: t.lang || "",
+    liga: t.liga || "",
+    stufe: t.stufe || "sonstige",
+    nummer: t.nummer || 0,
+    archiviert: !!t.archiviert,
+    aliase: Array.isArray(t.aliase) ? t.aliase.slice() : [],
+    trainer: (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {
+      return { username: p.username, rolle: p.rolle || "trainer" };
+    }),
+    verdaechtig: !!t.verdaechtig,
+    grund: t.grund || ""
+  };
+}
+
+function renderMannschaftenSaisonwahl() {
+  const sel = document.getElementById("mannschaft-saison");
+  const hinweis = document.getElementById("mannschaft-saison-hinweis");
+  if (!sel || !mannschaftState) return;
+  const saisons = mannschaftState.saisons || [];
+  sel.innerHTML = saisons.length
+    ? saisons.map(function (s) {
+        return '<option value="' + escapeHtml(s) + '"' +
+          (s === mannschaftState.saison ? " selected" : "") + ">" + escapeHtml(s) + "</option>";
+      }).join("")
+    : '<option value="">noch keine Saison</option>';
+  const abgleich = document.getElementById("mannschaft-abgleich");
+  if (abgleich) abgleich.checked = !!mannschaftState.abgleichAktiv;
+  if (hinweis) {
+    hinweis.textContent = mannschaftState.aktuelleSaison
+      ? (mannschaftState.saison === mannschaftState.aktuelleSaison
+          ? "Das ist die laufende Saison — diese Mannschaften gelten in allen Werkzeugen."
+          : "Nur zum Nachschlagen. Laufend ist " + mannschaftState.aktuelleSaison + ".")
+      : "Noch keine Saison angelegt.";
+  }
+}
+
+// Alle Personal-Konten als Auswahl. Spielerkonten bleiben draussen: an einer
+// Mannschaft haengen Betreuende, nicht die Mannschaft selbst.
+function mannschaftPersonenOptionen(gewaehlt) {
+  const leute = (usersState || [])
+    .filter(function (u) { return u && !u.archiviert && u.art !== "spieler"; })
+    .map(function (u) {
+      return {
+        username: u.username,
+        name: (u.vorname && u.nachname) ? (u.vorname + " " + u.nachname) : u.username
+      };
+    })
+    .sort(function (a, b) { return a.name.localeCompare(b.name, "de"); });
+  // Eine bereits gewaehlte Person, die nicht (mehr) in der Liste steht, bleibt
+  // sichtbar statt still herauszufallen — sonst entfernt ein Speichern jemanden,
+  // ohne dass es jemand gesehen hat.
+  if (gewaehlt && !leute.some(function (l) { return l.username === gewaehlt; })) {
+    leute.unshift({ username: gewaehlt, name: gewaehlt + " (kein Konto mehr)" });
+  }
+  return '<option value="">— Person wählen —</option>' + leute.map(function (l) {
+    return '<option value="' + escapeHtml(l.username) + '"' +
+      (l.username === gewaehlt ? " selected" : "") + ">" + escapeHtml(l.name) + "</option>";
+  }).join("");
+}
+
+function renderMannschaftenListe() {
+  const liste = document.getElementById("mannschaft-liste");
+  if (!liste || !mannschaftState) return;
+  if (!mannschaftEntwurf.length) {
+    liste.innerHTML = '<p class="muted">Noch keine Mannschaft. Lege eine an oder hole dir einen Vorschlag aus den Profilen.</p>';
+    return;
+  }
+  const rollen = mannschaftState.rollen || [{ id: "trainer", label: "Trainer" }];
+  const stufen = mannschaftState.stufen || ["sonstige"];
+
+  liste.innerHTML = mannschaftEntwurf.map(function (t, i) {
+    const trainerZeilen = t.trainer.map(function (p, j) {
+      return '' +
+        '<div class="mannschaft-person" data-team="' + i + '" data-person="' + j + '">' +
+          '<select class="mannschaft-person-name">' + mannschaftPersonenOptionen(p.username) + '</select>' +
+          '<select class="mannschaft-person-rolle">' +
+            rollen.map(function (r) {
+              return '<option value="' + escapeHtml(r.id) + '"' +
+                (r.id === p.rolle ? " selected" : "") + ">" + escapeHtml(r.label) + "</option>";
+            }).join("") +
+          '</select>' +
+          '<button type="button" class="btn small mannschaft-person-weg" data-team="' + i + '" data-person="' + j + '">Entfernen</button>' +
+        '</div>';
+    }).join("");
+
+    const kopf = escapeHtml(t.kurz || "(ohne Kurznamen)") +
+      (t.lang && t.lang !== t.kurz ? ' <span class="muted">· ' + escapeHtml(t.lang) + "</span>" : "") +
+      (t.liga ? ' <span class="muted">· ' + escapeHtml(t.liga) + "</span>" : "") +
+      (t.archiviert ? ' <span class="muted">· archiviert</span>' : "") +
+      ' <span class="muted">· ' + t.trainer.length + (t.trainer.length === 1 ? " Person" : " Personen") + "</span>";
+
+    return '' +
+      '<details class="mannschaft-zeile' + (t.verdaechtig ? " verdaechtig" : "") + '" data-team="' + i + '">' +
+        "<summary>" + kopf + "</summary>" +
+        (t.verdaechtig && t.grund
+          ? '<p class="mannschaft-warnung">' + escapeHtml(t.grund) + "</p>"
+          : "") +
+        '<div class="form-grid">' +
+          '<div class="form-field"><label>Kurz (steht in den Daten)</label>' +
+            '<input type="text" class="m-kurz" maxlength="20" value="' + escapeHtml(t.kurz) + '" /></div>' +
+          '<div class="form-field"><label>Langer Name</label>' +
+            '<input type="text" class="m-lang" maxlength="80" value="' + escapeHtml(t.lang) + '" /></div>' +
+          '<div class="form-field"><label>Liga</label>' +
+            '<input type="text" class="m-liga" maxlength="60" value="' + escapeHtml(t.liga) + '" /></div>' +
+          '<div class="form-field"><label>Altersstufe</label><select class="m-stufe">' +
+            stufen.map(function (s) {
+              return '<option value="' + escapeHtml(s) + '"' + (s === t.stufe ? " selected" : "") + ">" +
+                escapeHtml(MANNSCHAFT_STUFEN_LABEL[s] || s) + "</option>";
+            }).join("") +
+          "</select></div>" +
+          '<div class="form-field"><label>Nummer (1, 2, 3 …)</label>' +
+            '<input type="number" class="m-nummer" min="0" max="99" value="' + (t.nummer || 0) + '" /></div>' +
+        "</div>" +
+        '<div class="mannschaft-schalter">' +
+          '<label><input type="checkbox" class="m-archiviert"' + (t.archiviert ? " checked" : "") + " /> " +
+            "Archiviert (aufgelöst — bleibt für alte Daten stehen, wird nirgends mehr angeboten)</label>" +
+        "</div>" +
+        '<div class="mannschaft-personen">' +
+          "<label>Wer betreut diese Mannschaft</label>" +
+          trainerZeilen +
+          '<button type="button" class="btn small mannschaft-person-neu" data-team="' + i + '">Person hinzufügen</button>' +
+        "</div>" +
+        '<div class="form-field" style="margin-top:12px;">' +
+          "<label>Frühere Schreibweisen</label>" +
+          '<input type="text" class="m-aliase" value="' + escapeHtml(t.aliase.join(" | ")) + '" ' +
+            'placeholder="mit | getrennt, z. B. B-Junioren 2 (K) | B-Junioren" />' +
+          '<p class="muted" style="font-size:12px; margin:4px 0 0;">Danach sucht der Umschreib-Lauf in den alten Daten. Was hier steht, wird zu dieser Mannschaft.</p>' +
+        "</div>" +
+        '<div style="margin-top:10px;">' +
+          '<button type="button" class="btn small mannschaft-weg" data-team="' + i + '">Diese Mannschaft entfernen</button>' +
+        "</div>" +
+      "</details>";
+  }).join("");
+}
+
+// Liest den DOM-Stand in den Entwurf zurueck. Wird vor JEDER Struktur-Aenderung
+// und vor dem Speichern gerufen.
+function mannschaftenAusDom() {
+  const liste = document.getElementById("mannschaft-liste");
+  if (!liste) return;
+  const zeilen = liste.querySelectorAll(".mannschaft-zeile");
+  const neu = [];
+  zeilen.forEach(function (z) {
+    const idx = parseInt(z.getAttribute("data-team"), 10);
+    const alt = mannschaftEntwurf[idx] || {};
+    const wert = function (sel) {
+      const el = z.querySelector(sel);
+      return el ? el.value.trim() : "";
+    };
+    const personen = [];
+    z.querySelectorAll(".mannschaft-person").forEach(function (p) {
+      const name = p.querySelector(".mannschaft-person-name");
+      const rolle = p.querySelector(".mannschaft-person-rolle");
+      if (!name || !name.value) return;
+      personen.push({ username: name.value, rolle: (rolle && rolle.value) || "trainer" });
+    });
+    const archiviert = z.querySelector(".m-archiviert");
+    neu.push({
+      kurz: wert(".m-kurz"),
+      lang: wert(".m-lang"),
+      liga: wert(".m-liga"),
+      stufe: wert(".m-stufe") || "sonstige",
+      nummer: parseInt(wert(".m-nummer"), 10) || 0,
+      archiviert: !!(archiviert && archiviert.checked),
+      aliase: wert(".m-aliase").split("|").map(function (s) { return s.trim(); }).filter(Boolean),
+      trainer: personen,
+      verdaechtig: !!alt.verdaechtig,
+      grund: alt.grund || ""
+    });
+  });
+  mannschaftEntwurf = neu;
+}
+
+function mannschaftFehler(text) {
+  const el = document.getElementById("mannschaft-error");
+  const ok = document.getElementById("mannschaft-success");
+  if (ok) ok.style.display = "none";
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "block" : "none";
+}
+
+function mannschaftMeldung(text) {
+  const el = document.getElementById("mannschaft-success");
+  const err = document.getElementById("mannschaft-error");
+  if (err) err.style.display = "none";
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "block" : "none";
+}
+
+async function speichereMannschaften() {
+  mannschaftenAusDom();
+  const sel = document.getElementById("mannschaft-saison");
+  const saison = sel ? sel.value : "";
+  if (!saison) {
+    mannschaftFehler("Erst eine Saison anlegen.");
+    return;
+  }
+  // Vor dem Absenden pruefen, statt den Worker 400 sagen zu lassen: dort steht
+  // dann nur eine Zeile, hier weiss man, welche Zeile gemeint ist.
+  const gesehen = Object.create(null);
+  for (const t of mannschaftEntwurf) {
+    if (!t.kurz) {
+      mannschaftFehler("Eine Mannschaft hat keinen Kurznamen. Ohne den kann sie nirgends stehen.");
+      return;
+    }
+    const k = t.kurz.toLowerCase();
+    if (gesehen[k]) {
+      mannschaftFehler("Der Kurzname " + t.kurz + " kommt zweimal vor. Jeder darf nur einmal vergeben sein.");
+      return;
+    }
+    gesehen[k] = true;
+  }
+  const abgleich = document.getElementById("mannschaft-abgleich");
+  const btn = document.getElementById("btn-mannschaft-save");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await callWorker("mannschaften-speichern", {
+      saison: saison,
+      teams: mannschaftEntwurf,
+      abgleichAktiv: !!(abgleich && abgleich.checked)
+    });
+    mannschaftState = res;
+    mannschaftEntwurf = (res.teams || []).map(mannschaftKopie);
+    renderMannschaftenSaisonwahl();
+    renderMannschaftenListe();
+    const a = res.abgleich || {};
+    // Ein stiller No-Op waere hier das Schlimmste: wer den Schalter fuer
+    // angeschaltet haelt, verliesse sich auf Profile, die niemand gefuellt hat.
+    mannschaftMeldung("Gespeichert." + (a.aus
+      ? " Trainerprofile wurden NICHT geändert (Schalter ist aus)."
+      : (a.fehler
+          ? " Achtung: Profile konnten nicht gefüllt werden (" + a.fehler + ")."
+          : " " + (a.abgeglichen || 0) + " Profile angepasst.")));
+  } catch (e) {
+    mannschaftFehler(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function mannschaftSaisonVorgang(was) {
+  const sel = document.getElementById("mannschaft-saison");
+  const aktuell = sel ? sel.value : "";
+  let saison = aktuell;
+  if (was === "anlegen" || was === "kopieren") {
+    saison = window.prompt("Welche Saison? Form: 2026/27", mannschaftNaechsteSaison(aktuell));
+    if (!saison) return;
+    saison = saison.trim();
+  }
+  if (was === "aktiv" && aktuell) {
+    if (!window.confirm("Saison " + aktuell + " als laufende Saison setzen? Ab dann gelten diese Mannschaften in allen Werkzeugen.")) return;
+  }
+  try {
+    const res = await callWorker("mannschaften-saison", {
+      was: was, saison: saison, quelle: was === "kopieren" ? aktuell : ""
+    });
+    mannschaftState = res;
+    mannschaftEntwurf = (res.teams || []).map(mannschaftKopie);
+    renderMannschaftenSaisonwahl();
+    renderMannschaftenListe();
+    mannschaftMeldung("Gespeichert.");
+  } catch (e) {
+    mannschaftFehler(e.message);
+  }
+}
+
+// Vorschlag fuer die naechste Saison: aus 2026/27 wird 2027/28.
+function mannschaftNaechsteSaison(saison) {
+  const m = String(saison || "").match(/^(\d{4})\/(\d{2})$/);
+  if (!m) return "";
+  const jahr = parseInt(m[1], 10) + 1;
+  return jahr + "/" + String((jahr + 1) % 100).padStart(2, "0");
+}
+
+async function mannschaftVorschlagHolen() {
+  if (mannschaftEntwurf.length &&
+      !window.confirm("Der Vorschlag ersetzt die Liste im Fenster. Noch nicht gespeicherte Änderungen gehen verloren. Weiter?")) {
+    return;
+  }
+  try {
+    const res = await callWorker("mannschaften-vorschlag", {});
+    if (mannschaftState) {
+      mannschaftState.rollen = res.rollen || mannschaftState.rollen;
+      mannschaftState.stufen = res.stufen || mannschaftState.stufen;
+    }
+    mannschaftEntwurf = (res.vorschlag || []).map(mannschaftKopie);
+    renderMannschaftenListe();
+    const heikel = mannschaftEntwurf.filter(function (t) { return t.verdaechtig; }).length;
+    mannschaftMeldung(mannschaftEntwurf.length + " Vorschläge aus den Profilen gelesen." +
+      (heikel ? " " + heikel + " davon sehen nicht nach einer Mannschaft aus (rot markiert) — die gehören wahrscheinlich raus." : "") +
+      " Nichts ist gespeichert, bis du auf Speichern drückst.");
+  } catch (e) {
+    mannschaftFehler(e.message);
+  }
+}
+
+function setupMannschaftenPanel() {
+  const panel = document.getElementById("admin-mannschaften-panel");
+  if (!panel) return;
+
+  // Erst beim Aufklappen laden -- zwei Nextcloud-Reads fuer ein Panel, das
+  // meistens niemand oeffnet (gleiche Ueberlegung wie beim Rundnachricht-Panel).
+  panel.addEventListener("toggle", function () {
+    if (panel.open && !mannschaftState) mannschaftenPanelAufbauen();
+  });
+
+  document.getElementById("mannschaft-saison").addEventListener("change", function (e) {
+    mannschaftenPanelAufbauen(e.target.value);
+  });
+  document.getElementById("btn-mannschaft-saison-neu")
+    .addEventListener("click", function () { mannschaftSaisonVorgang("anlegen"); });
+  document.getElementById("btn-mannschaft-saison-kopieren")
+    .addEventListener("click", function () { mannschaftSaisonVorgang("kopieren"); });
+  document.getElementById("btn-mannschaft-saison-aktiv")
+    .addEventListener("click", function () { mannschaftSaisonVorgang("aktiv"); });
+  document.getElementById("btn-mannschaft-vorschlag")
+    .addEventListener("click", mannschaftVorschlagHolen);
+  document.getElementById("btn-mannschaft-save")
+    .addEventListener("click", speichereMannschaften);
+
+  document.getElementById("btn-mannschaft-neu").addEventListener("click", function () {
+    mannschaftenAusDom();
+    mannschaftEntwurf.push({
+      kurz: "", lang: "", liga: "", stufe: "sonstige", nummer: 0,
+      archiviert: false, aliase: [], trainer: [], verdaechtig: false, grund: ""
+    });
+    renderMannschaftenListe();
+    // Die neue Zeile aufklappen, sonst sucht man sie am Ende einer langen Liste.
+    const zeilen = document.querySelectorAll("#mannschaft-liste .mannschaft-zeile");
+    if (zeilen.length) zeilen[zeilen.length - 1].open = true;
+  });
+
+  // Ein Handler fuer die ganze Liste: die Zeilen werden bei jedem Rendern neu
+  // gebaut, ein Listener je Knopf waere danach verwaist.
+  document.getElementById("mannschaft-liste").addEventListener("click", function (e) {
+    const weg = e.target.closest(".mannschaft-weg");
+    const personWeg = e.target.closest(".mannschaft-person-weg");
+    const personNeu = e.target.closest(".mannschaft-person-neu");
+    if (!weg && !personWeg && !personNeu) return;
+    e.preventDefault();
+    mannschaftenAusDom();
+    if (weg) {
+      const i = parseInt(weg.getAttribute("data-team"), 10);
+      const t = mannschaftEntwurf[i];
+      if (!window.confirm("Mannschaft " + ((t && t.kurz) || "") + " aus der Liste entfernen? " +
+          "Wenn sie nur aufgelöst ist, lieber archivieren — dann bleiben alte Daten lesbar.")) return;
+      mannschaftEntwurf.splice(i, 1);
+    } else if (personWeg) {
+      const i = parseInt(personWeg.getAttribute("data-team"), 10);
+      const j = parseInt(personWeg.getAttribute("data-person"), 10);
+      if (mannschaftEntwurf[i]) mannschaftEntwurf[i].trainer.splice(j, 1);
+    } else if (personNeu) {
+      const i = parseInt(personNeu.getAttribute("data-team"), 10);
+      if (mannschaftEntwurf[i]) mannschaftEntwurf[i].trainer.push({ username: "", rolle: "trainer" });
+    }
+    const offen = [];
+    document.querySelectorAll("#mannschaft-liste .mannschaft-zeile").forEach(function (z, idx) {
+      if (z.open) offen.push(idx);
+    });
+    renderMannschaftenListe();
+    // Aufgeklappte Zeilen bleiben offen -- sonst klappt beim Hinzufuegen einer
+    // Person die Mannschaft zu, an der man gerade arbeitet.
+    document.querySelectorAll("#mannschaft-liste .mannschaft-zeile").forEach(function (z, idx) {
+      if (offen.indexOf(idx) >= 0) z.open = true;
+    });
+  });
 }
 
 // ---------- Materialcontainer-Code ----------
@@ -8173,6 +8616,7 @@ async function init() {
   setupDokumenteTab();
   setupAuthForms();
   setupKontoFoto();
+  setupMannschaftenPanel();
   setupPunktePanel();
   setupWhatsappLink();
   setupWikiFrage();

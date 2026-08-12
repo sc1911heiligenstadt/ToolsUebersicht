@@ -442,6 +442,21 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.8",
+    groups: [
+      {
+        title: "Mannschaften: ab jetzt eine einzige Liste",
+        items: [
+          "Neuer Bereich „Mannschaften“ in den Einstellungen. Dort steht jede Mannschaft genau einmal — mit Kurznamen (B1), langem Namen (B-Junioren 1) und Liga.",
+          "An jeder Mannschaft hängen die Leute, die sie betreuen, mit ihrer Rolle: Trainer, Co-Trainer, Torwarttrainer oder Betreuer. So sieht man sofort, welche Mannschaft noch niemanden hat.",
+          "Die Liste gilt je Saison. Beim Saisonwechsel einmal „Saison kopieren“ drücken und anpassen — der alte Stand bleibt zum Nachschlagen stehen.",
+          "„Vorschlag aus den Profilen“ liest, was heute in den Trainerprofilen steht, fasst gleiche Mannschaften zusammen und schlägt Kurznamen vor. Einträge, die nach einem Altersbereich oder einer Rolle aussehen statt nach einer Mannschaft, werden rot markiert.",
+          "Der Schalter „Trainerprofile aus dieser Liste füllen“ ist zunächst AUS. Erst einschalten, wenn die Liste steht: ab dann wird das Feld „Mannschaft(en)“ beim Nutzer berechnet statt getippt — und wer an keiner Mannschaft hängt, hat auch im Profil keine mehr."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.7",
     groups: [
       {

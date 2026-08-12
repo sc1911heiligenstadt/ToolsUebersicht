@@ -1420,6 +1420,18 @@ export default {
         return handlePunkteOptOut(request, body, env, authHeader, corsHeaders);
       case "aktivitaet-auswertung":
         return handleAktivitaetAuswertung(request, body, env, authHeader, corsHeaders);
+      // Mannschaften (seit 2026-08-12). Lesen darf jeder Angemeldete -- es ist
+      // die Liste der Vereinsmannschaften, keine Personendatei. Pflegen darf
+      // nur ein globaler Admin: eine zentrale Liste, die jeder aendern kann,
+      // waere in kurzer Zeit wieder das Chaos, gegen das sie gebaut ist.
+      case "mannschaften-load":
+        return handleMannschaftenLoad(request, body, env, authHeader, corsHeaders);
+      case "mannschaften-speichern":
+        return handleMannschaftenSpeichern(request, body, env, authHeader, corsHeaders);
+      case "mannschaften-saison":
+        return handleMannschaftenSaison(request, body, env, authHeader, corsHeaders);
+      case "mannschaften-vorschlag":
+        return handleMannschaftenVorschlag(request, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -1832,7 +1844,21 @@ async function handleListUsers(request, env, authHeader, corsHeaders) {
     // selbst laedt es nicht -- 540 Abrufe fuer eine Verwaltungsliste.
     fotoVersion: u.fotoVersion || null
   }));
-  return json({ users }, 200, corsHeaders);
+  // Additiv seit 2026-08-12: sagt dem Nutzer-Panel, ob das Mannschaftsfeld noch
+  // von Hand zu pflegen ist oder aus der Mannschaftsliste berechnet wird. Ein
+  // Feld, das man tippen kann und das nichts bewirkt, ist schlimmer als ein
+  // gesperrtes mit Erklaerung. Kostet EINEN zusaetzlichen Read, und zwar nur
+  // hier -- die Nutzerliste holt ohnehin schon die ganze nutzer.json.
+  let mannschaftenAbgleichAktiv = false;
+  try {
+    mannschaftenAbgleichAktiv = await mannschaftenAbgleichLaeuft(authHeader);
+  } catch (_) {
+    // Anders als in handleUpdateUser hier bewusst still: das ist eine reine
+    // Anzeige-Auskunft, und die Nutzerverwaltung darf an einem Wackler beim
+    // Lesen einer Nebendatei nicht scheitern. Die echte Schranke sitzt im
+    // Schreibweg, nicht hier.
+  }
+  return json({ users, mannschaftenAbgleichAktiv }, 200, corsHeaders);
 }
 
 async function handleResetPassword(request, body, env, authHeader, corsHeaders) {
@@ -1890,7 +1916,19 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   user.art = art;
   user.isAdmin = isAdmin;
   user.lizenz = normalizeLizenz(body.lizenz);
-  user.mannschaften = normalizeMannschaften(body.mannschaften);
+  // ⚠️ Seit 2026-08-12 ist "mannschaften" ein ABGELEITETES Feld, sobald der
+  // Abgleich in mannschaften.json eingeschaltet ist -- gepflegt wird dann
+  // ausschliesslich an der Mannschaft. Der Client sperrt das Eingabefeld auch,
+  // aber Ausblenden ist nicht Zurueckhalten: ohne diese Schranke schriebe jeder
+  // Aufruf von update-user (auch der Personalkosten-Import) den berechneten
+  // Wert wieder mit Freitext zu, und die Liste haette bis zum naechsten
+  // Abgleich eine zweite Wahrheit neben sich.
+  // Solange der Schalter AUS ist, bleibt der alte Weg unveraendert offen --
+  // sonst koennte waehrend des Aufbaus der Liste niemand mehr etwas pflegen.
+  const mannschaftenGesperrt = await mannschaftenAbgleichLaeuft(authHeader);
+  if (!mannschaftenGesperrt) {
+    user.mannschaften = normalizeMannschaften(body.mannschaften);
+  }
   user.vertragBenoetigt = !!body.vertragBenoetigt;
 
   // Der Login-Nutzername wird beim Anlegen einmalig aus Vorname/Nachname generiert
@@ -1952,6 +1990,10 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   return json({
     username: finalUsername, vorname, nachname, isAdmin,
     lizenz: user.lizenz, mannschaften: user.mannschaften,
+    // Wurde das Mannschaftsfeld ignoriert, MUSS das dastehen. Ein stiller
+    // No-Op waere hier der schlechteste Ausgang: der Admin tippt eine
+    // Mannschaft ein, bekommt "Gespeichert" und verlaesst sich darauf.
+    mannschaftenGesperrt: mannschaftenGesperrt,
     fotoVersion: user.fotoVersion || null, usernameRename
   }, 200, corsHeaders);
 }
@@ -12018,6 +12060,13 @@ const PUNKTE_IGNORIERT = new Set([
   // Laeuft beim Oeffnen des Info-Tabs im Vereinskalender von selbst. Das Erzeugen
   // und Entwerten des Abo-Links sind Handlungen und zaehlen weiter mit.
   "vereinskalender-abo-status",
+  // Die Mannschaftsliste holt sich JEDE App der Flotte beim Seitenstart -- sie
+  // fuellt nur Auswahlfelder. Zaehlte sie mit, gaebe das blosse Oeffnen
+  // irgendeiner App zusaetzlich Punkte fuer die Uebersicht, und die
+  // Nutzungsstatistik wiese ein Werkzeug als benutzt aus, das niemand anfasste
+  // (dieselbe Falle wie bei den Startseiten-Widgets). Der Vorschlag ist eine
+  // reine Leseauswertung; das SPEICHERN der Liste zaehlt weiter mit.
+  "mannschaften-load", "mannschaften-vorschlag",
   // Dateien, die eine Liste beim Rendern selbsttaetig nachlaedt
   "nutzerfoto-get", "nutzerfoto-versionen", "dav-file-get", "dav-restricted-get",
   "dokument-datei-get", "news-datei-get", "vereinsaufgabe-datei-get",
@@ -14044,4 +14093,603 @@ async function ablaufplanErinnerungslauf(env, authHeader, execCtx) {
     gesendet++;
   }
   return { gesendet: gesendet };
+}
+
+// =============================================================================
+// Mannschaften -- die eine Quelle (seit 2026-08-12)
+//
+// Bis hierher gab es KEINE Mannschaftsliste, nur Trainer, die ihre Mannschaft
+// als freien Text ins Profil schrieben (nutzer.json, Feld "mannschaften").
+// Der Ablaufplan sammelte daraus seine Kaestchen ein -- deshalb standen dort
+// "B1", "B-Junioren", "B-Junioren 2 (K)" und "Zeugwart" nebeneinander.
+// Daneben fuehrte der Kadermanager eigene Teams, Busplan und Ausbildungsplan
+// feste Listen im Code.
+//
+// Michel-Entscheidungen vom 2026-08-12 (Interview, jede einzeln bestaetigt):
+//
+//   Ort          eine Liste im Gateway, NICHT im Kadermanager -- jede App
+//                spricht ohnehin mit dem Gateway, auch die ohne Kaderbezug
+//   Name         drei Felder: Kurz (B1), Lang (B-Junioren 1), Liga
+//   Inhalt       nur echte Mannschaften. Kein "Zeugwart", kein "U6-U11" --
+//                ein Koordinator bekommt die einzelnen Mannschaften angehakt
+//   Pflegeort    AN DER MANNSCHAFT haengen die Trainer, nicht umgekehrt.
+//                nutzer.json wird daraus BERECHNET (siehe Abgleich unten)
+//   Rolle        feste Auswahl je Person (Trainer/Co/Torwart/Betreuer)
+//   Saison       je Saison ein eigener Satz, "Saison kopieren" beim Wechsel
+//   Schluessel   der KURZNAME wandert in die App-Daten, keine technische Id --
+//                die Nextcloud-Dateien sollen mit blossem Auge lesbar bleiben
+//   Altbestand   einmaliger Umschreib-Lauf statt dauerhafter Alias-Uebersetzung
+//   Umfang       Jugend A-G, Maedchen/Frauen UND Herren (Busplan und
+//                Platzbelegung brauchen die Erste, sonst bricht dort etwas weg)
+//   Personen     nur Konten der Tools-Uebersicht -- sonst greifen "meine
+//                Mannschaften", die Push-Erinnerung und die gefilterte Ansicht
+//                nicht
+//
+// ⚠️ BEWUSST eine eigene Datei und KEIN Feld in nutzer.json -- dieselbe
+// Ueberlegung wie bei push-abos.json, ansicht.json und kalender-abos.json:
+// nutzer.json wird bei JEDER Sitzungspruefung der ganzen Flotte gelesen. Eine
+// mitgefuehrte Mannschaftsliste mit Trainern und Altschreibweisen schleppte
+// jeder einzelne Request mit. Umgekehrt bleibt das ABGELEITETE Feld
+// u.mannschaften dort stehen -- es ist kurz, und die halbe Flotte liest es
+// bereits aus der Sitzung, ohne einen zusaetzlichen Read zu bezahlen.
+//
+// Aufbau mannschaften.json:
+//   { version: 1,
+//     aktuelleSaison: "2026/27",
+//     abgleichAktiv: false,
+//     saisons: { "2026/27": { teams: [ {
+//        kurz, lang, liga, stufe, nummer, archiviert,
+//        trainer: [ { username, rolle } ],
+//        aliase: [ "B-Junioren 2 (K)", ... ]
+//     } ] } } }
+// =============================================================================
+
+const MANNSCHAFTEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/mannschaften.json";
+
+// Rollen als feste Liste statt Freitext -- der Wert steht spaeter in Aushaengen
+// und Serienbriefen, und "Co" / "Co-Trainer" / "co trainer" waeren genau die
+// Uneinheitlichkeit, gegen die diese ganze Datei gebaut ist.
+const MANNSCHAFT_ROLLEN = ["trainer", "co", "torwart", "betreuer"];
+const MANNSCHAFT_ROLLE_LABELS = {
+  trainer: "Trainer",
+  co: "Co-Trainer",
+  torwart: "Torwarttrainer",
+  betreuer: "Betreuer"
+};
+
+// Sortierung: Herren oben, dann A bis G, dann Maedchen. NICHT alphabetisch --
+// sonst stuende E1 vor D1 und die Kaestchenliste im Ablaufplan waere wieder
+// unlesbar. Die Stufe wird gespeichert, die Reihenfolge daraus gerechnet.
+const MANNSCHAFT_STUFEN = ["herren", "a", "b", "c", "d", "e", "f", "g", "maedchen", "sonstige"];
+
+const MANNSCHAFT_MAX_TEAMS = 80;
+const MANNSCHAFT_MAX_TRAINER = 12;
+const MANNSCHAFT_MAX_ALIASE = 25;
+const MANNSCHAFT_MAX_KURZ = 20;
+const MANNSCHAFT_MAX_LANG = 80;
+const MANNSCHAFT_MAX_LIGA = 60;
+const MANNSCHAFT_MAX_SAISONS = 20;
+// Form der Saison: "2026/27". Sie wird Objekt-Schluessel und darf deshalb
+// weder Pfadzeichen noch __proto__ sein.
+const MANNSCHAFT_SAISON_RE = /^\d{4}\/\d{2}$/;
+
+function leeresMannschaftenDoc() {
+  return { version: 1, aktuelleSaison: "", abgleichAktiv: false, saisons: {} };
+}
+
+// Laeuft der Abgleich? Dann ist u.mannschaften in nutzer.json ein abgeleitetes
+// Feld und darf nicht mehr von Hand beschrieben werden (siehe handleUpdateUser).
+//
+// ⚠️ Ein LESEFEHLER wird bewusst nicht gefangen: readJson liefert den Fallback
+// nur bei 404 oder leerer Datei und wirft sonst -> 502 an den Client. Ein
+// stilles "false" bei einem Nextcloud-Wackler hiesse, dass ein Admin-Save die
+// berechneten Zuordnungen mit Freitext ueberschreibt, ohne dass es jemand
+// merkt. Lieber ein sichtbarer Fehler als eine unbemerkt kaputte Zuordnung.
+async function mannschaftenAbgleichLaeuft(authHeader) {
+  const doc = await readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+  return !!(doc && doc.abgleichAktiv);
+}
+
+// Vergleichsform fuer Altschreibweisen. Bewusst dieselbe Bauart wie
+// ablaufplanNormTeam/normMannschaft: Kleinschreibung, Trennzeichen weg,
+// angehaengtes "jugend"/"junioren"/"mannschaft" weg. Zusaetzlich fallen
+// Klammerzusaetze wie "(K)" oder "(VL)" heraus -- genau die machen aus
+// "B-Junioren 2" und "B-Junioren 2 (K)" zwei Eintraege.
+function mannschaftNorm(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[\s._\-\/]+/g, "")
+    .replace(/(jugend|junioren|juniorinnen|mannschaft)/g, "");
+}
+
+function mannschaftStufe(roh) {
+  const s = capStr(roh, 20).toLowerCase();
+  return MANNSCHAFT_STUFEN.includes(s) ? s : "sonstige";
+}
+
+// Sortierschluessel als ganze Zahl statt als Fliesskommawert -- ein Rest
+// entschiede sonst ueber die Reihenfolge (siehe feedback-sortierschluessel-runden).
+function mannschaftSortKey(team) {
+  const stufeIdx = MANNSCHAFT_STUFEN.indexOf(mannschaftStufe(team && team.stufe));
+  const nummer = Math.max(0, Math.min(99, Math.round(Number(team && team.nummer) || 0)));
+  return (stufeIdx < 0 ? MANNSCHAFT_STUFEN.length : stufeIdx) * 100 + nummer;
+}
+
+function mannschaftenSortieren(teams) {
+  return teams.slice().sort(function (a, b) {
+    const d = mannschaftSortKey(a) - mannschaftSortKey(b);
+    if (d !== 0) return d;
+    return String(a.kurz || "").localeCompare(String(b.kurz || ""), "de");
+  });
+}
+
+// Baut EINEN Mannschafts-Datensatz serverseitig aus Einzelfeldern zusammen.
+// Kein Durchreichen des Client-Objekts: es wandert in eine Datei, die die ganze
+// Flotte liest, und der Kurzname wird zum Schluessel in fremden App-Daten.
+function mannschaftSaeubern(roh, bekannteNutzer) {
+  const kurz = capStr(roh && roh.kurz, MANNSCHAFT_MAX_KURZ);
+  if (!kurz || kurz === "__proto__") return null;
+
+  const gesehen = Object.create(null);
+  const trainer = [];
+  (Array.isArray(roh && roh.trainer) ? roh.trainer : []).forEach(function (t) {
+    if (trainer.length >= MANNSCHAFT_MAX_TRAINER) return;
+    const username = normalizeUsername(capStr(t && t.username, 80));
+    if (!username || username === "__proto__") return;
+    // Nur echte Konten. Ein freier Name waere wieder Freitext -- und die Person
+    // bekaeme weder Push noch die gefilterte Ansicht, obwohl sie dastuende.
+    if (bekannteNutzer && !bekannteNutzer.has(username)) return;
+    if (gesehen[username]) return;
+    gesehen[username] = true;
+    const rolleRoh = capStr(t && t.rolle, 20).toLowerCase();
+    trainer.push({
+      username: username,
+      rolle: MANNSCHAFT_ROLLEN.includes(rolleRoh) ? rolleRoh : "trainer"
+    });
+  });
+
+  const aliasGesehen = Object.create(null);
+  const aliase = [];
+  (Array.isArray(roh && roh.aliase) ? roh.aliase : []).forEach(function (a) {
+    if (aliase.length >= MANNSCHAFT_MAX_ALIASE) return;
+    const wert = capStr(a, MANNSCHAFT_MAX_LANG);
+    if (!wert) return;
+    const norm = mannschaftNorm(wert);
+    if (!norm || aliasGesehen[norm]) return;
+    aliasGesehen[norm] = true;
+    aliase.push(wert);
+  });
+
+  return {
+    kurz: kurz,
+    lang: capStr(roh && roh.lang, MANNSCHAFT_MAX_LANG) || kurz,
+    liga: capStr(roh && roh.liga, MANNSCHAFT_MAX_LIGA),
+    stufe: mannschaftStufe(roh && roh.stufe),
+    nummer: Math.max(0, Math.min(99, Math.round(Number(roh && roh.nummer) || 0))),
+    archiviert: !!(roh && roh.archiviert),
+    trainer: trainer,
+    aliase: aliase
+  };
+}
+
+function mannschaftenSaisonTeams(doc, saison) {
+  const s = getOwn(doc && doc.saisons, saison);
+  return (s && Array.isArray(s.teams)) ? s.teams : [];
+}
+
+// ---------- Abgleich der Trainerprofile ----------
+//
+// nutzer.json fuehrt u.mannschaften weiter -- aber ab jetzt BERECHNET aus
+// dieser Liste statt von Hand getippt. Das ist der Grund, aus dem die halbe
+// Flotte ohne jede Aenderung sauberer wird: Ablaufplan, Trainerdaten,
+// Spielstatistik und die Push-Erinnerung lesen dasselbe Feld wie vorher, es
+// steht nur nicht mehr "B-Junioren 2 (K)" darin, sondern "B2".
+//
+// ⚠️ Der Abgleich laeuft NUR bei doc.abgleichAktiv === true. Solange die Liste
+// aufgebaut wird, ist sie unvollstaendig -- ein Abgleich wuerde dann jedem
+// Trainer, der noch an keiner Mannschaft haengt, sein Profil LEEREN und damit
+// flottenweit Rechte und Filter entziehen. Der Schalter ist der Sicherheitsgurt
+// und steht bewusst per Vorgabe auf aus.
+async function mannschaftenProfileAbgleichen(env, authHeader, doc) {
+  if (!doc || !doc.abgleichAktiv) return { abgeglichen: 0, aus: true };
+  const saison = capStr(doc.aktuelleSaison, 10);
+  if (!saison) return { abgeglichen: 0, aus: true };
+
+  // username -> Set der Kurznamen. Archivierte Mannschaften zaehlen nicht mit:
+  // sie sind Historie, keine laufende Zustaendigkeit.
+  const zuordnung = Object.create(null);
+  mannschaftenSaisonTeams(doc, saison).forEach(function (t) {
+    if (!t || t.archiviert) return;
+    const kurz = capStr(t.kurz, MANNSCHAFT_MAX_KURZ);
+    if (!kurz) return;
+    (Array.isArray(t.trainer) ? t.trainer : []).forEach(function (p) {
+      const u = normalizeUsername(capStr(p && p.username, 80));
+      if (!u || u === "__proto__") return;
+      if (!zuordnung[u]) zuordnung[u] = [];
+      if (zuordnung[u].indexOf(kurz) < 0) zuordnung[u].push(kurz);
+    });
+  });
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: usersDoc, rev } = await readJsonWithRev(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const users = (usersDoc && usersDoc.users) || {};
+    let geaendert = 0;
+    Object.keys(users).forEach(function (key) {
+      const u = users[key];
+      if (!u) return;
+      const uname = normalizeUsername(u.username || key);
+      const neu = (zuordnung[uname] || []).slice().sort(function (a, b) {
+        return a.localeCompare(b, "de");
+      });
+      const alt = Array.isArray(u.mannschaften) ? u.mannschaften.map(String) : [];
+      if (alt.length === neu.length && alt.every(function (v, i) { return v === neu[i]; })) return;
+      u.mannschaften = neu;
+      geaendert++;
+    });
+    // Kein Schreibvorgang ohne Aenderung: nutzer.json wird bei jeder
+    // Sitzungspruefung der Flotte gelesen, ein Write ohne Anlass waere ein
+    // vermeidbares Konfliktfenster (gleiche Ueberlegung wie bei rename-group).
+    if (!geaendert) return { abgeglichen: 0, aus: false };
+    try {
+      await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc, rev || undefined);
+      return { abgeglichen: geaendert, aus: false };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  return { abgeglichen: 0, aus: false, konflikt: true };
+}
+
+// ---------- Aktion: Liste lesen ----------
+//
+// Offen fuer JEDEN Angemeldeten, auch Spielerkonten: es ist die Liste der
+// Vereinsmannschaften, keine Personendatei. Die Trainernamen stehen ohnehin an
+// jedem Aushang. Ein Rechte-Gate haette nur zur Folge, dass die login-losen
+// Ansichten (Ablaufplan-Link, Fotoauftrag-Freigabe) leere Auswahlfelder zeigen.
+async function handleMannschaftenLoad(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const doc = await readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+  // Ohne Angabe die laufende Saison. Eine ANDERE ist nur zum Nachschlagen da
+  // (wer hatte 2025/26 die D2) -- geschrieben wird immer ausdruecklich.
+  const gewuenscht = capStr(body && body.saison, 10);
+  return json(mannschaftenAntwort(doc, session.usersDoc, gewuenscht), 200, corsHeaders);
+}
+
+// Gemeinsame Antwortform fuer Lesen und Speichern -- eine zweite Zusammenbau-
+// Stelle liefe auseinander, sobald ein Feld dazukommt.
+function mannschaftenAntwort(doc, usersDoc, saisonWunsch) {
+  const saisons = Object.keys((doc && doc.saisons) || {}).sort().reverse();
+  const saison = (saisonWunsch && saisons.indexOf(saisonWunsch) >= 0)
+    ? saisonWunsch
+    : (capStr(doc && doc.aktuelleSaison, 10) || saisons[0] || "");
+
+  const teams = mannschaftenSortieren(mannschaftenSaisonTeams(doc, saison)).map(function (t) {
+    return {
+      kurz: t.kurz,
+      lang: t.lang || t.kurz,
+      liga: t.liga || "",
+      stufe: mannschaftStufe(t.stufe),
+      nummer: t.nummer || 0,
+      archiviert: !!t.archiviert,
+      aliase: Array.isArray(t.aliase) ? t.aliase : [],
+      trainer: (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {
+        return {
+          username: p.username,
+          rolle: p.rolle || "trainer",
+          // Der Klarname wird AUFGELOEST, nicht mitgespeichert -- sonst zeigte
+          // eine Mannschaft nach einer Umbenennung weiter den alten Namen.
+          // Kostet keinen zusaetzlichen Read: usersDoc steckt in der Sitzung.
+          name: aufgabenAnzeigeName(usersDoc, p.username)
+        };
+      })
+    };
+  });
+
+  return {
+    saison: saison,
+    saisons: saisons,
+    aktuelleSaison: capStr(doc && doc.aktuelleSaison, 10),
+    abgleichAktiv: !!(doc && doc.abgleichAktiv),
+    rollen: MANNSCHAFT_ROLLEN.map(function (r) {
+      return { id: r, label: MANNSCHAFT_ROLLE_LABELS[r] };
+    }),
+    stufen: MANNSCHAFT_STUFEN,
+    teams: teams
+  };
+}
+
+// ---------- Aktion: Liste speichern ----------
+async function handleMannschaftenSpeichern(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
+
+  const saison = capStr(body && body.saison, 10);
+  if (!MANNSCHAFT_SAISON_RE.test(saison)) {
+    return json({ error: "Saison muss die Form 2026/27 haben" }, 400, corsHeaders);
+  }
+  if (!Array.isArray(body && body.teams)) {
+    return json({ error: "Keine Mannschaften uebergeben" }, 400, corsHeaders);
+  }
+  if (body.teams.length > MANNSCHAFT_MAX_TEAMS) {
+    return json({ error: "Zu viele Mannschaften" }, 400, corsHeaders);
+  }
+
+  const bekannteNutzer = new Set(
+    Object.keys((session.usersDoc && session.usersDoc.users) || {}).map(function (k) {
+      const u = session.usersDoc.users[k];
+      return normalizeUsername((u && u.username) || k);
+    })
+  );
+
+  // Der Kurzname ist der Schluessel -- zwei gleiche waeren zwei Wahrheiten
+  // unter einem Namen, und der Umschreib-Lauf koennte nicht entscheiden.
+  const kurzGesehen = Object.create(null);
+  const teams = [];
+  for (const roh of body.teams) {
+    const t = mannschaftSaeubern(roh, bekannteNutzer);
+    if (!t) continue;
+    const key = t.kurz.toLowerCase();
+    if (kurzGesehen[key]) {
+      return json({ error: "Kurzname doppelt vergeben: " + t.kurz }, 400, corsHeaders);
+    }
+    kurzGesehen[key] = true;
+    teams.push(t);
+  }
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+    doc.version = doc.version || 1;
+    if (!doc.saisons || typeof doc.saisons !== "object") doc.saisons = {};
+    if (Object.keys(doc.saisons).length >= MANNSCHAFT_MAX_SAISONS && !getOwn(doc.saisons, saison)) {
+      return json({ error: "Zu viele Saisons" }, 400, corsHeaders);
+    }
+    doc.saisons[saison] = { teams: teams };
+    if (!capStr(doc.aktuelleSaison, 10)) doc.aktuelleSaison = saison;
+    if (typeof body.abgleichAktiv === "boolean") doc.abgleichAktiv = body.abgleichAktiv;
+
+    try {
+      await writeJson(MANNSCHAFTEN_URL, authHeader, doc, rev || undefined);
+      // Der Abgleich steht NACH dem Schreiben: die Liste ist die Wahrheit, das
+      // Profil die Ableitung. Ein Fehlschlag beim Ableiten darf die gerade
+      // gespeicherte Liste nicht zurueckrollen -- er wird gemeldet, nicht geworfen.
+      let abgleich = { abgeglichen: 0, aus: true };
+      try {
+        abgleich = await mannschaftenProfileAbgleichen(env, authHeader, doc);
+      } catch (e) {
+        abgleich = { abgeglichen: 0, fehler: String(e && e.message || e) };
+      }
+      const antwort = mannschaftenAntwort(doc, session.usersDoc, saison);
+      antwort.ok = true;
+      antwort.abgleich = abgleich;
+      return json(antwort, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Mannschaften konnten nicht gespeichert werden" }, 502, corsHeaders);
+}
+
+// ---------- Aktion: Saison anlegen, kopieren, umschalten ----------
+async function handleMannschaftenSaison(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
+
+  const was = capStr(body && body.was, 20);
+  const saison = capStr(body && body.saison, 10);
+  if (!MANNSCHAFT_SAISON_RE.test(saison)) {
+    return json({ error: "Saison muss die Form 2026/27 haben" }, 400, corsHeaders);
+  }
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+    doc.version = doc.version || 1;
+    if (!doc.saisons || typeof doc.saisons !== "object") doc.saisons = {};
+
+    if (was === "anlegen" || was === "kopieren") {
+      if (getOwn(doc.saisons, saison)) {
+        return json({ error: "Diese Saison gibt es schon" }, 409, corsHeaders);
+      }
+      if (Object.keys(doc.saisons).length >= MANNSCHAFT_MAX_SAISONS) {
+        return json({ error: "Zu viele Saisons" }, 400, corsHeaders);
+      }
+      let teams = [];
+      if (was === "kopieren") {
+        const quelle = capStr(body && body.quelle, 10);
+        // Kopiert wird die STRUKTUR samt Trainern -- beim Saisonwechsel bleibt
+        // das meiste gleich, geaendert wird von Hand. Archivierte bleiben
+        // draussen: sie waren schon in der alten Saison Historie.
+        teams = mannschaftenSaisonTeams(doc, quelle)
+          .filter(function (t) { return t && !t.archiviert; })
+          .map(function (t) { return JSON.parse(JSON.stringify(t)); });
+      }
+      doc.saisons[saison] = { teams: teams };
+      if (!capStr(doc.aktuelleSaison, 10)) doc.aktuelleSaison = saison;
+    } else if (was === "aktiv") {
+      if (!getOwn(doc.saisons, saison)) {
+        return json({ error: "Unbekannte Saison" }, 404, corsHeaders);
+      }
+      doc.aktuelleSaison = saison;
+    } else if (was === "loeschen") {
+      if (!getOwn(doc.saisons, saison)) {
+        return json({ error: "Unbekannte Saison" }, 404, corsHeaders);
+      }
+      if (capStr(doc.aktuelleSaison, 10) === saison) {
+        return json({ error: "Die laufende Saison laesst sich nicht loeschen" }, 409, corsHeaders);
+      }
+      delete doc.saisons[saison];
+    } else {
+      return json({ error: "Unbekannter Vorgang" }, 400, corsHeaders);
+    }
+
+    try {
+      await writeJson(MANNSCHAFTEN_URL, authHeader, doc, rev || undefined);
+      // Nur der Wechsel der laufenden Saison aendert, welche Mannschaften
+      // "jetzt" gelten -- Anlegen und Loeschen einer anderen Saison nicht.
+      let abgleich = { abgeglichen: 0, aus: true };
+      if (was === "aktiv") {
+        try {
+          abgleich = await mannschaftenProfileAbgleichen(env, authHeader, doc);
+        } catch (e) {
+          abgleich = { abgeglichen: 0, fehler: String(e && e.message || e) };
+        }
+      }
+      const antwort = mannschaftenAntwort(doc, session.usersDoc, saison);
+      antwort.ok = true;
+      antwort.abgleich = abgleich;
+      return json(antwort, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Saison konnte nicht gespeichert werden" }, 502, corsHeaders);
+}
+
+// ---------- Aktion: Vorschlag aus dem Altbestand ----------
+//
+// Die echten Schreibweisen stehen in nutzer.json und lassen sich von aussen
+// nicht einsehen. Statt sie abzutippen, baut diese Aktion aus dem vorhandenen
+// Freitext einen VORSCHLAG: gleiche Mannschaften zusammengefasst, Kurzname
+// erraten, alle gefundenen Schreibweisen als Aliase drangehaengt -- genau die
+// Zuordnung, die der spaetere Umschreib-Lauf braucht.
+//
+// ⚠️ Sie SPEICHERT nichts. Der Vorschlag geht an die Oberflaeche, wird dort
+// korrigiert und erst dann gespeichert. Ein automatisch uebernommener Vorschlag
+// waere geraten -- und was beim Raten falsch liegt, stuende danach in 20 Apps.
+async function handleMannschaftenVorschlag(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
+
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+  // norm -> { schreibweisen:Set, personen:Set }
+  const gefunden = Object.create(null);
+  Object.keys(users).forEach(function (key) {
+    const u = users[key];
+    if (!u || u.archiviert) return;
+    const uname = normalizeUsername(u.username || key);
+    (Array.isArray(u.mannschaften) ? u.mannschaften : []).forEach(function (m) {
+      const text = capStr(m, MANNSCHAFT_MAX_LANG);
+      if (!text) return;
+      const key2 = mannschaftVorschlagKey(text);
+      if (!key2) return;
+      if (!gefunden[key2]) gefunden[key2] = { schreibweisen: new Set(), personen: new Set() };
+      gefunden[key2].schreibweisen.add(text);
+      gefunden[key2].personen.add(uname);
+    });
+  });
+
+  const teams = Object.keys(gefunden).map(function (key) {
+    const eintrag = gefunden[key];
+    const schreibweisen = Array.from(eintrag.schreibweisen);
+    const geraten = mannschaftVorschlagFelder(key, schreibweisen);
+    return {
+      kurz: geraten.kurz,
+      lang: geraten.lang,
+      liga: geraten.liga,
+      stufe: geraten.stufe,
+      nummer: geraten.nummer,
+      archiviert: false,
+      // ⚠️ Als Vorschlag mitgeliefert, NICHT als Zusage: wer "U6-U11" im Profil
+      // stehen hat, betreut in Wahrheit mehrere Mannschaften. Die Oberflaeche
+      // markiert solche Zeilen und Michel entscheidet.
+      trainer: Array.from(eintrag.personen).map(function (p) {
+        return { username: p, rolle: "trainer", name: aufgabenAnzeigeName(session.usersDoc, p) };
+      }),
+      aliase: schreibweisen,
+      // Sammelbegriffe und Rollen sind KEINE Mannschaft -- vorgeschlagen wird
+      // trotzdem, aber sichtbar zum Wegwerfen markiert.
+      verdaechtig: geraten.verdaechtig,
+      grund: geraten.grund
+    };
+  });
+
+  return json({
+    vorschlag: mannschaftenSortieren(teams),
+    rollen: MANNSCHAFT_ROLLEN.map(function (r) {
+      return { id: r, label: MANNSCHAFT_ROLLE_LABELS[r] };
+    }),
+    stufen: MANNSCHAFT_STUFEN
+  }, 200, corsHeaders);
+}
+
+// Gruppierungsschluessel des Vorschlags. Anders als mannschaftNorm bleibt die
+// NUMMER erhalten -- "B-Junioren 1" und "B-Junioren 2" sind zwei Mannschaften,
+// waehrend "B-Junioren 2 (K)" und "B2" dieselbe sind.
+function mannschaftVorschlagKey(text) {
+  const roh = String(text || "").toLowerCase().replace(/\([^)]*\)/g, " ").trim();
+  if (!roh) return "";
+  // Sammelbegriffe wie "U6-U11" oder "U12-U15" bleiben als eigener Schluessel
+  // stehen, damit sie im Vorschlag sichtbar sind statt still zu verschwinden.
+  const spanne = roh.match(/^u\s*\d{1,2}\s*[-\/bis]+\s*u?\s*\d{1,2}$/);
+  if (spanne) return "spanne:" + roh.replace(/\s+/g, "");
+  const stufe = roh.match(/^([a-g])\s*[-\s]?\s*(?:junioren|juniorinnen|jugend)?\s*(\d{1,2})?\s*$/);
+  if (stufe) return "stufe:" + stufe[1] + ":" + (stufe[2] || "1");
+  const stufeNum = roh.match(/^([a-g])\s*(\d{1,2})\s*(?:junioren|juniorinnen|jugend)?\s*$/);
+  if (stufeNum) return "stufe:" + stufeNum[1] + ":" + stufeNum[2];
+  return "frei:" + roh.replace(/\s+/g, " ");
+}
+
+function mannschaftVorschlagFelder(key, schreibweisen) {
+  // Liga aus dem Klammerzusatz der Altschreibweisen -- (VL), (K), (TL), KOL.
+  let liga = "";
+  schreibweisen.forEach(function (s) {
+    const t = String(s);
+    if (/\(\s*VL\s*\)|verbandsliga/i.test(t)) liga = liga || "Verbandsliga";
+    else if (/\(\s*TL\s*\)|thueringenliga|thüringenliga/i.test(t)) liga = liga || "Thueringenliga";
+    else if (/KOL|kreisoberliga/i.test(t)) liga = liga || "Kreisoberliga";
+    else if (/\(\s*K\s*\)|kreisliga/i.test(t)) liga = liga || "Kreisliga";
+  });
+
+  if (key.indexOf("stufe:") === 0) {
+    const teile = key.split(":");
+    const buchstabe = teile[1];
+    const nummer = parseInt(teile[2], 10) || 1;
+    const langNamen = {
+      a: "A-Junioren", b: "B-Junioren", c: "C-Junioren", d: "D-Junioren",
+      e: "E-Junioren", f: "F-Junioren", g: "Bambini / G-Junioren"
+    };
+    return {
+      kurz: buchstabe.toUpperCase() + nummer,
+      lang: (langNamen[buchstabe] || buchstabe.toUpperCase()) + " " + nummer,
+      liga: liga,
+      stufe: buchstabe,
+      nummer: nummer,
+      verdaechtig: false,
+      grund: ""
+    };
+  }
+
+  if (key.indexOf("spanne:") === 0) {
+    const roh = key.slice(7);
+    return {
+      kurz: roh.toUpperCase(),
+      lang: roh.toUpperCase(),
+      liga: "",
+      stufe: "sonstige",
+      nummer: 0,
+      verdaechtig: true,
+      grund: "Sieht nach einem Altersbereich aus, nicht nach einer Mannschaft. Wer das im Profil hat, betreut mehrere Mannschaften -- besser dort einzeln anhaken."
+    };
+  }
+
+  const roh = key.slice(5);
+  const istMannschaft = /mannschaft|herren|frauen|damen|maedchen|mädchen|alte/i.test(roh);
+  return {
+    kurz: roh.slice(0, MANNSCHAFT_MAX_KURZ),
+    lang: schreibweisen[0] || roh,
+    liga: liga,
+    stufe: /maedchen|mädchen|frauen|damen/i.test(roh) ? "maedchen"
+      : (/mannschaft|herren|alte/i.test(roh) ? "herren" : "sonstige"),
+    nummer: (roh.match(/(\d{1,2})/) ? parseInt(roh.match(/(\d{1,2})/)[1], 10) : 0),
+    verdaechtig: !istMannschaft,
+    grund: istMannschaft ? "" : "Passt in kein Mannschaftsmuster -- moeglicherweise eine Aufgabe oder Rolle statt einer Mannschaft."
+  };
 }
