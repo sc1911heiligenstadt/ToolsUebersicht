@@ -6561,6 +6561,23 @@ function renderAdminPanels() {
 let mannschaftState = null;   // letzte Antwort des Workers (Saisons, Rollen, Stufen)
 let mannschaftEntwurf = [];   // Arbeitsstand im Panel, erst mit Speichern verbindlich
 
+// Altersstufe und Nummer aus dem Kurznamen. ⚠️ ZWEITE KOPIE von
+// mannschaftAbleitung aus admin-worker.js — der Client kann die Worker-Datei
+// nicht laden (gleiche Lage wie ablaufplanNormTeam / NEWS_REACTION_EMOJIS).
+// Laufen die beiden auseinander, zeigt das Panel eine andere Stufe an, als der
+// Server nach dem Speichern zurückgibt. Wer eine ändert, zieht die andere mit.
+function mannschaftAbleitungClient(kurz) {
+  const s = String(kurz || "").trim().slice(0, 20);
+  if (!s) return null;
+  const herren = s.match(/^(?:herren|erste|zweite|1\.?\s*mannschaft|2\.?\s*mannschaft)\s*(\d{1,2})?$/i);
+  if (herren) return { stufe: "herren", nummer: parseInt(herren[1], 10) || 1 };
+  const maed = s.match(/^(?:u\s*(\d{1,2})\s*)?(?:m[aä]dchen|frauen|damen)\s*(\d{1,2})?$/i);
+  if (maed) return { stufe: "maedchen", nummer: parseInt(maed[1] || maed[2], 10) || 0 };
+  const jugend = s.match(/^([a-g])\s*[-.]?\s*(\d{1,2})?$/i);
+  if (jugend) return { stufe: jugend[1].toLowerCase(), nummer: parseInt(jugend[2], 10) || 1 };
+  return null;
+}
+
 const MANNSCHAFT_STUFEN_LABEL = {
   herren: "Herren / Senioren",
   a: "A-Junioren",
@@ -6932,6 +6949,28 @@ function setupMannschaftenPanel() {
     // Die neue Zeile aufklappen, sonst sucht man sie am Ende einer langen Liste.
     const zeilen = document.querySelectorAll("#mannschaft-liste .mannschaft-zeile");
     if (zeilen.length) zeilen[zeilen.length - 1].open = true;
+  });
+
+  // Kurzname geändert -> Altersstufe und Nummer nachziehen. ⚠️ Ohne das bleibt
+  // eine falsche Stufe stehen, wenn jemand den Kurznamen korrigiert — und die
+  // Zeile sortiert sich nach dem Speichern an eine unerwartete Stelle. Genau so
+  // stand "D2" hinter "Zeugwart" (Michel-Meldung 2026-08-12).
+  //
+  // Bewusst auf "change" (Feld verlassen), nicht auf "input": beim Tippen von
+  // "D2" wäre nach dem ersten Zeichen kurz die D-Stufe mit Nummer 1 gesetzt.
+  // Und bewusst OHNE Neu-Sortieren — eine Zeile, die einem beim Verlassen des
+  // Feldes wegspringt, verliert man aus den Augen. Sortiert wird beim Speichern,
+  // da kommt die Liste ohnehin fertig sortiert vom Server zurück.
+  document.getElementById("mannschaft-liste").addEventListener("change", function (e) {
+    const feld = e.target.closest(".m-kurz");
+    if (!feld) return;
+    const zeile = feld.closest(".mannschaft-zeile");
+    const ab = mannschaftAbleitungClient(feld.value);
+    if (!zeile || !ab) return;
+    const stufe = zeile.querySelector(".m-stufe");
+    const nummer = zeile.querySelector(".m-nummer");
+    if (stufe) stufe.value = ab.stufe;
+    if (nummer) nummer.value = ab.nummer;
   });
 
   // Ein Handler fuer die ganze Liste: die Zeilen werden bei jedem Rendern neu

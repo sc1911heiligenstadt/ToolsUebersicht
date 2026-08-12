@@ -14213,11 +14213,51 @@ function mannschaftStufe(roh) {
   return MANNSCHAFT_STUFEN.includes(s) ? s : "sonstige";
 }
 
+// Altersstufe und Nummer AUS DEM KURZNAMEN ableiten.
+//
+// ⚠️ Michel-Meldung vom 2026-08-12: "D2" stand hinter "Zeugwart" statt hinter
+// "D1". Ursache war nicht die Sortierung, sondern die Stufe: der Vorschlag
+// hatte "D-Junioren KOL" (ohne Zahl) keinem Buchstaben zuordnen koennen und es
+// als "sonstige" eingestuft. Beim Korrigieren des Kurznamens auf "D2" zog die
+// Stufe nicht mit -- und "sonstige" sortiert ganz hinten.
+//
+// Der Kurzname IST der Schluessel und traegt die Antwort schon in sich. Er wird
+// deshalb ausgewertet und schlaegt die gespeicherte Angabe: eine von Hand
+// gepflegte Stufe, die dem eigenen Kurznamen widerspricht, ist immer der
+// Fehler. Passt der Name auf kein Muster (z. B. "Alte Herren"), bleibt die
+// gespeicherte Angabe stehen.
+function mannschaftAbleitung(kurz) {
+  const s = capStr(kurz, MANNSCHAFT_MAX_KURZ).trim();
+  if (!s) return null;
+
+  // Herren, Erste, Zweite, Alte Herren
+  const herren = s.match(/^(?:herren|erste|zweite|1\.?\s*mannschaft|2\.?\s*mannschaft)\s*(\d{1,2})?$/i);
+  if (herren) return { stufe: "herren", nummer: parseInt(herren[1], 10) || 1 };
+
+  // Maedchen/Frauen, mit oder ohne U-Zahl: "U11 Mädchen", "Frauen", "Damen 1"
+  const maed = s.match(/^(?:u\s*(\d{1,2})\s*)?(?:m[aä]dchen|frauen|damen)\s*(\d{1,2})?$/i);
+  if (maed) return { stufe: "maedchen", nummer: parseInt(maed[1] || maed[2], 10) || 0 };
+
+  // Der Normalfall: ein Buchstabe A-G, optional eine Nummer. "B1", "D2", "G",
+  // auch "B 1" oder "b-1". OHNE Nummer gilt die Erste.
+  const jugend = s.match(/^([a-g])\s*[-.]?\s*(\d{1,2})?$/i);
+  if (jugend) return { stufe: jugend[1].toLowerCase(), nummer: parseInt(jugend[2], 10) || 1 };
+
+  return null;
+}
+
 // Sortierschluessel als ganze Zahl statt als Fliesskommawert -- ein Rest
 // entschiede sonst ueber die Reihenfolge (siehe feedback-sortierschluessel-runden).
 function mannschaftSortKey(team) {
-  const stufeIdx = MANNSCHAFT_STUFEN.indexOf(mannschaftStufe(team && team.stufe));
-  const nummer = Math.max(0, Math.min(99, Math.round(Number(team && team.nummer) || 0)));
+  // ⚠️ Die Ableitung aus dem Kurznamen hat VORRANG vor der gespeicherten Stufe.
+  // Sonst haengt die Reihenfolge an einem Feld, das beim Umbenennen leicht
+  // stehenbleibt -- genau so landete "D2" hinter "Zeugwart". Das wirkt auch auf
+  // bereits gespeicherte Eintraege, ohne dass jemand sie neu speichern muss.
+  const ab = mannschaftAbleitung(team && team.kurz);
+  const stufeIdx = MANNSCHAFT_STUFEN.indexOf(
+    ab ? ab.stufe : mannschaftStufe(team && team.stufe));
+  const nummer = Math.max(0, Math.min(99, Math.round(
+    Number(ab ? ab.nummer : (team && team.nummer)) || 0)));
   return (stufeIdx < 0 ? MANNSCHAFT_STUFEN.length : stufeIdx) * 100 + nummer;
 }
 
@@ -14266,12 +14306,17 @@ function mannschaftSaeubern(roh, bekannteNutzer) {
     aliase.push(wert);
   });
 
+  // Stufe und Nummer aus dem Kurznamen, wenn er ein Muster trifft -- so muss
+  // niemand daran denken, sie beim Umbenennen mitzuziehen. Nur wenn der Name
+  // auf kein Muster passt ("Alte Herren"), zaehlt die Handeingabe.
+  const ab = mannschaftAbleitung(kurz);
   return {
     kurz: kurz,
     lang: capStr(roh && roh.lang, MANNSCHAFT_MAX_LANG) || kurz,
     liga: capStr(roh && roh.liga, MANNSCHAFT_MAX_LIGA),
-    stufe: mannschaftStufe(roh && roh.stufe),
-    nummer: Math.max(0, Math.min(99, Math.round(Number(roh && roh.nummer) || 0))),
+    stufe: ab ? ab.stufe : mannschaftStufe(roh && roh.stufe),
+    nummer: ab ? ab.nummer
+      : Math.max(0, Math.min(99, Math.round(Number(roh && roh.nummer) || 0))),
     archiviert: !!(roh && roh.archiviert),
     trainer: trainer,
     aliase: aliase
@@ -14373,12 +14418,15 @@ function mannschaftenAntwort(doc, usersDoc, saisonWunsch) {
     : (capStr(doc && doc.aktuelleSaison, 10) || saisons[0] || "");
 
   const teams = mannschaftenSortieren(mannschaftenSaisonTeams(doc, saison)).map(function (t) {
+    // Dieselbe Ableitung wie beim Sortieren: das Panel soll nicht "sonstige"
+    // anzeigen, waehrend die Zeile bei den D-Junioren einsortiert ist.
+    const ab = mannschaftAbleitung(t.kurz);
     return {
       kurz: t.kurz,
       lang: t.lang || t.kurz,
       liga: t.liga || "",
-      stufe: mannschaftStufe(t.stufe),
-      nummer: t.nummer || 0,
+      stufe: ab ? ab.stufe : mannschaftStufe(t.stufe),
+      nummer: ab ? ab.nummer : (t.nummer || 0),
       archiviert: !!t.archiviert,
       aliase: Array.isArray(t.aliase) ? t.aliase : [],
       trainer: (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {

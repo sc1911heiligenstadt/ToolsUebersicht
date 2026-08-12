@@ -442,6 +442,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.9",
+    groups: [
+      {
+        title: "Mannschaften stehen wieder in der richtigen Reihenfolge",
+        items: [
+          "„D2“ stand ganz unten hinter „Zeugwart“ statt hinter „D1“. Grund war nicht die Sortierung, sondern die Altersstufe: beim Korrigieren des Kurznamens blieb die alte Angabe stehen, und „Sonstige“ sortiert hinten.",
+          "Altersstufe und Nummer kommen jetzt aus dem Kurznamen. Wer „D2“ schreibt, bekommt automatisch D-Junioren und die 2 — und die Zeile steht da, wo man sie sucht.",
+          "Das wirkt auch auf schon gespeicherte Mannschaften, ohne dass du sie neu speichern musst.",
+          "Namen ohne erkennbares Muster (z. B. „Alte Herren“) behalten die Stufe, die du von Hand einstellst."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.8",
     groups: [
       {
