@@ -8100,9 +8100,13 @@ function renderAktivitaetsAuswertung(nutzer, personal, monat) {
     .slice()
     .sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0))
     .map((n) => {
+      // Michel-Vorgabe 2026-08-12: ALLE benutzten Werkzeuge, nicht nur die drei
+      // meistgenutzten. Sortierung bleibt absteigend nach Vorgaengen, damit oben
+      // steht, was am haeufigsten dran war. Die Zellen brechen um
+      // (table-layout: fixed + overflow-wrap: anywhere), das Handy laeuft also
+      // nicht seitlich ueber.
       const apps = Object.keys(n.proApp || {})
         .sort((a, b) => (n.proApp[b] || 0) - (n.proApp[a] || 0))
-        .slice(0, 3)
         .map((a) => { const t = toolById(a); return t ? t.name : (a === "uebersicht" ? "Übersicht" : a); });
       return "<tr><td>" + escapeHtml(namen[n.username] || n.username) + "</td>" +
         '<td class="zahl">' + escapeHtml(String(Number(n.punkte) || 0)) + "</td>" +
@@ -8145,7 +8149,7 @@ function renderAktivitaetsAuswertung(nutzer, personal, monat) {
         '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle">' +
         '<colgroup><col /><col class="spalte-zahl" /><col /></colgroup>' +
         "<thead><tr>" +
-        "<th>Person</th><th class=\"zahl\">Punkte</th><th>Meistgenutzt</th>" +
+        "<th>Person</th><th class=\"zahl\">Punkte</th><th>Genutzte Werkzeuge</th>" +
         "</tr></thead><tbody>" + personZeilen + "</tbody></table></div>"
       : "");
 }

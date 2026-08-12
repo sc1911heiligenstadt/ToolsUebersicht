@@ -441,6 +441,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.7",
+    groups: [
+      {
+        title: "Auswertung: alle benutzten Werkzeuge je Person",
+        items: [
+          "In der Aktivitäts-Auswertung standen je Person nur die drei meistgenutzten Werkzeuge. Jetzt stehen dort alle, die sie im Monat benutzt hat — weiterhin sortiert, das Häufigste zuerst.",
+          "Die Spalte heißt deshalb jetzt „Genutzte Werkzeuge“ statt „Meistgenutzt“."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.6",
     groups: [
       {
