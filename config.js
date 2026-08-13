@@ -450,6 +450,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.11",
+    groups: [
+      {
+        title: "Kontaktliste-Freigabe jetzt unter „Mein Konto“",
+        items: [
+          "Ob und mit welchen Angaben du in der Kontaktliste erscheinst, stellst du ab sofort hier im Tab „Mein Konto“ ein — vorher steckte das in „Trainerdaten“ unter „Meine Daten“.",
+          "Neben jedem Häkchen steht jetzt, was tatsächlich freigegeben würde: deine Nummer, deine Adresse. Vorher kreuzte man an, ohne zu sehen was.",
+          "Ist zu einer Angabe nichts hinterlegt, sagt die Karte das — statt eine Freigabe für etwas anzubieten, das gar nicht existiert.",
+          "Bereits gesetzte Freigaben bleiben unverändert bestehen, es ist nur die Bedienstelle umgezogen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.10",
     groups: [
       {

@@ -469,6 +469,41 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
   cursor: pointer;
 }
 
+/* ---------- Freigabe fuer die Kontaktliste (seit 2026-08-13) ----------
+   ⚠️ Dieselbe Falle wie bei .push-schalter: die Kaestchen duerfen NICHT in
+   .form-field stehen, dort greift input { width: 100% } und macht aus jeder
+   Checkbox einen Balken. Breite/Hoehe deshalb auch hier ausdruecklich. */
+.kf-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.kf-check input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  margin: 2px 0 0 0;
+  cursor: pointer;
+}
+.kf-check.kf-haupt { margin-bottom: 6px; }
+/* Der eigene Wert neben dem Haekchen -- ohne ihn kreuzt man blind an, weil die
+   Daten selbst in Trainerdaten liegen und hier nirgends sonst stehen.
+   `overflow-wrap` faengt lange E-Mail-Adressen ab, die sonst die Karte
+   seitlich aufziehen. */
+.kf-wert { color: var(--muted); overflow-wrap: anywhere; }
+.kf-wert:before { content: "· "; }
+/* Fehlt der Wert in Trainerdaten, steht das da statt eines leeren Haekchens --
+   sonst gibt jemand etwas frei, was gar nicht existiert. */
+.kf-wert.kf-leer { font-style: italic; }
+.kf-hinweis { margin: 0 0 12px 27px; font-size: 12px; }
+/* Ausgegraut statt gesperrt: ein disabled-Kaestchen schluckt den Klick
+   kommentarlos (gleiche Ueberlegung wie beim Abhak-Guard der Aufgaben). */
+#kf-felder.kf-aus { opacity: 0.5; }
+
 .push-geraete { list-style: none; margin: 0; padding: 0; }
 .push-geraete li {
   display: flex;

@@ -5175,6 +5175,207 @@ function meineFeedbacksLeeren() {
   if (liste) liste.innerHTML = "";
 }
 
+// ---- Freigabe fuer die Kontaktliste (seit 2026-08-13) ----
+//
+// Stand bis dahin in Trainerdaten und ist von dort hierher gezogen (Michel-Vorgabe):
+// es ist eine Einstellung am eigenen Konto, kein Vertragsdatum.
+//
+// ⚠️ Gespeichert bleibt die Freigabe in trainerdaten.json, und diese Karte spricht
+// deshalb Trainerdatens EIGENEN Worker direkt an -- nicht das Gateway hier. Der
+// gleiche Direktweg, den die Personalakte fuer die Dokumente geht. Der Grund ist
+// derselbe: Trainerdaten ist wegen der IBAN bewusst nicht in DAV_APPS, und ein
+// SCHREIBweg vom Gateway in diese Datei waere ein neuer, breiter Zugang zu genau
+// der Datei, die man am engsten halten will. Die bestehende Aktion prueft den
+// Token selbst per Service Binding und schreibt nur den eigenen Datensatz.
+const TRAINERDATEN_WORKER_URL = "https://trainerdaten1.michel-brunner.workers.dev";
+
+// Zustand der Karte. `werte` sind die EIGENEN Kontaktdaten aus Trainerdaten --
+// sie stehen neben den Haekchen, damit niemand blind ankreuzt.
+let kontaktFreigabeState = null;
+
+// ⚠️ Diese Datei kennt KEINE NotLoggedInError-Klasse (die gibt es nur in den
+// db.js der App-Repos). Die abgelaufene Sitzung wird deshalb als Flag am
+// Fehlerobjekt markiert -- beim Bauen zunaechst mit der Klasse geschrieben, was
+// ein ReferenceError gewesen waere, den kein node --check findet.
+function kfFehler(text, abgemeldet) {
+  const e = new Error(text);
+  if (abgemeldet) e.abgemeldet = true;
+  return e;
+}
+
+async function trainerdatenRequest(payload) {
+  const token = loadStoredToken();
+  if (!token) throw kfFehler("Nicht angemeldet", true);
+  const resp = await fetch(TRAINERDATEN_WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(payload)
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (resp.status === 401) throw kfFehler("Sitzung abgelaufen", true);
+  if (!resp.ok) throw kfFehler(data.error || "Fehler (HTTP " + resp.status + ")", false);
+  return data;
+}
+
+// ⚠️ Wie loadMeineFeedbacks: NUR der Worker-Aufruf steht im stillen try. Kennt ein
+// noch nicht deployter Worker die Aktion nicht, bleibt die Karte weg, statt einen
+// roten Hinweis auf etwas zu zeigen, das es serverseitig noch nicht gibt.
+async function ladeKontaktFreigabe() {
+  const card = document.getElementById("kontakt-freigabe-panel");
+  if (!card || !currentUser) return;
+
+  let data;
+  try {
+    data = await trainerdatenRequest({ action: "my-kontakt-freigabe" });
+  } catch (e) {
+    card.style.display = "none";
+    return;
+  }
+  kontaktFreigabeState = data;
+  card.style.display = "block";
+  renderKontaktFreigabe();
+}
+
+// ⚠️ Ueberall `=== true`, nie truthy: die Bestandsdatensaetze fuehren das Feld gar
+// nicht, und ein "ja" aus einer alten Fassung darf keine Einwilligung sein. Das
+// Fehlen muss in die geschlossene Richtung fallen.
+function renderKontaktFreigabe() {
+  const d = kontaktFreigabeState;
+  if (!d) return;
+  const status = document.getElementById("kf-status");
+  const wrap = document.getElementById("kf-felder-wrap");
+
+  // Kein Trainerdaten-Datensatz -> nichts freizugeben. Mit Weg dorthin, sonst ist
+  // das eine Sackgasse.
+  if (!d.vorhanden) {
+    wrap.style.display = "none";
+    status.innerHTML = "Zu deinem Konto sind noch keine Kontaktdaten hinterlegt. "
+      + "Trag sie in <a href=\"https://sc1911heiligenstadt.github.io/Trainerdaten/\">Trainerdaten</a> "
+      + "ein, danach kannst du sie hier freigeben.";
+    return;
+  }
+
+  const f = d.kontaktFreigabe || {};
+  const w = d.werte || {};
+  wrap.style.display = "";
+  document.getElementById("kf-name").checked    = f.name === true;
+  document.getElementById("kf-telefon").checked = f.telefon === true;
+  document.getElementById("kf-email").checked   = f.email === true;
+  document.getElementById("kf-adresse").checked = f.adresse === true;
+
+  const adresse = [w.adresse && w.adresse.strasse, [w.adresse && w.adresse.plz, w.adresse && w.adresse.ort].filter(Boolean).join(" ")]
+    .filter(Boolean).join(", ");
+  setzeKfWert("kf-wert-name", [w.vorname, w.nachname].filter(Boolean).join(" "));
+  setzeKfWert("kf-wert-telefon", w.telefon);
+  setzeKfWert("kf-wert-email", w.email);
+  setzeKfWert("kf-wert-adresse", adresse);
+
+  kfFelderZustand();
+  status.textContent = kfStatusText(f);
+}
+
+// Zeigt den eigenen Wert neben dem Haekchen -- oder sagt, dass er fehlt. Ohne das
+// gibt jemand ein Feld frei, zu dem in Trainerdaten gar nichts steht, und wundert
+// sich, dass in der Liste nichts erscheint.
+function setzeKfWert(id, wert) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const leer = !String(wert || "").trim();
+  el.textContent = leer ? "nicht hinterlegt" : wert;
+  el.classList.toggle("kf-leer", leer);
+}
+
+function kfStatusText(f) {
+  if (f.name === true) {
+    const zusatz = [
+      f.telefon === true ? "Telefonnummer" : null,
+      f.email === true   ? "E-Mail-Adresse" : null,
+      f.adresse === true ? "Anschrift" : null
+    ].filter(Boolean);
+    return "✅ Du stehst in der Kontaktliste — sichtbar sind dein Name"
+      + (zusatz.length ? " sowie " + zusatz.join(", ") : " (sonst nichts)") + ".";
+  }
+  if (f.aktualisiertAm) {
+    return "Du stehst nicht in der Kontaktliste. Das ist in Ordnung — die Freigabe ist freiwillig.";
+  }
+  return "Du hast dazu noch nichts entschieden. Bis dahin steht nichts über dich in der Liste.";
+}
+
+// Die drei Feld-Haekchen sind ohne den Hauptschalter wirkungslos. Sie werden
+// deshalb ausgegraut -- aber NICHT disabled: ein gesperrtes Kaestchen schluckt den
+// Klick kommentarlos, und dann steht man ratlos davor.
+function kfFelderZustand() {
+  const an = document.getElementById("kf-name").checked;
+  const felder = document.getElementById("kf-felder");
+  felder.classList.toggle("kf-aus", !an);
+  felder.title = an ? "" : "Setz zuerst das Häkchen oben — sonst stehst du gar nicht in der Liste.";
+}
+
+async function speichereKontaktFreigabe() {
+  const btn = document.getElementById("btn-kf-speichern");
+  const fehler = document.getElementById("kf-fehler");
+  fehler.style.display = "none";
+  btn.disabled = true;
+  try {
+    const res = await trainerdatenRequest({
+      action: "kontakt-freigabe-speichern",
+      name:    document.getElementById("kf-name").checked,
+      telefon: document.getElementById("kf-telefon").checked,
+      email:   document.getElementById("kf-email").checked,
+      adresse: document.getElementById("kf-adresse").checked
+    });
+    // Aus der ANTWORT uebernehmen: der Server normalisiert auf echte Booleans und
+    // setzt aktualisiertAm.
+    kontaktFreigabeState = { ...kontaktFreigabeState, kontaktFreigabe: res.kontaktFreigabe };
+    renderKontaktFreigabe();
+    // Ohne diesen Zusatz passiert beim zweiten Druck auf denselben Stand sichtbar
+    // nichts und der Klick wirkt folgenlos.
+    const st = document.getElementById("kf-status");
+    st.textContent = "Gespeichert. " + st.textContent;
+  } catch (e) {
+    fehler.style.display = "block";
+    fehler.textContent = e.abgemeldet
+      ? "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu."
+      : "Konnte nicht gespeichert werden: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ⚠️ Beim Abmelden reicht `display: none` NICHT. Die Karte fuehrt Nummer, Adresse
+// und E-Mail des angemeldeten Nutzers als TEXT im DOM -- versteckt bleiben sie
+// auslesbar, und beim naechsten Anmelden an einem geteilten Geraet stuenden dort
+// bis zum ersten Laden die Daten des Vorgaengers. Beim Bauen genau so gemessen
+// (nach afterAuthChange stand "0177..." weiter im textContent).
+// Dieselbe Falle wie bei renderNews() und den eigenen Feedbacks.
+function kfKarteLeeren() {
+  const card = document.getElementById("kontakt-freigabe-panel");
+  if (!card) return;
+  kontaktFreigabeState = null;
+  card.style.display = "none";
+  const wrap = document.getElementById("kf-felder-wrap");
+  if (wrap) wrap.style.display = "none";
+  ["kf-name", "kf-telefon", "kf-email", "kf-adresse"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = false;
+  });
+  ["kf-wert-name", "kf-wert-telefon", "kf-wert-email", "kf-wert-adresse"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ""; el.classList.remove("kf-leer"); }
+  });
+  const st = document.getElementById("kf-status");
+  if (st) st.textContent = "Wird geladen …";
+  const fehler = document.getElementById("kf-fehler");
+  if (fehler) { fehler.style.display = "none"; fehler.textContent = ""; }
+}
+
+function setupKontaktFreigabe() {
+  const btn = document.getElementById("btn-kf-speichern");
+  if (!btn) return;
+  btn.addEventListener("click", speichereKontaktFreigabe);
+  document.getElementById("kf-name").addEventListener("change", kfFelderZustand);
+}
+
 // Die eigenen Einreichungen samt Antwort.
 //
 // ⚠️ Aufgerufen wird das aus activateTab("feedback"), NICHT aus
@@ -5535,6 +5736,10 @@ function activateTab(name) {
   // Eigene Einreichungen erst beim Oeffnen des Tabs holen, nicht beim
   // Seitenaufbau — siehe loadMeineFeedbacks.
   if (name === "feedback") loadMeineFeedbacks();
+  // Gleiche Ueberlegung: my-kontakt-freigabe liest trainerdaten.json, also einen
+  // echten Nextcloud-Read. Beim Seitenaufbau waere das ein Roundtrip fuer jeden
+  // Nutzer bei jedem Aufruf der Startseite, auch wenn er den Tab nie oeffnet.
+  if (name === "konto") ladeKontaktFreigabe();
 }
 
 function setupTabs() {
@@ -7638,6 +7843,13 @@ async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
+  // ⚠️ Bei JEDEM Wechsel der Anmeldung erst leeren (siehe kfKarteLeeren -- die Daten
+  // stehen als Text im DOM). Beim Anmelden wird nicht gleich neu geladen: das holt
+  // activateTab("konto") nach. Nur wenn der Konto-Tab gerade offen steht, muesste
+  // ihn sonst jemand von Hand neu oeffnen.
+  kfKarteLeeren();
+  const kontoOffen = document.getElementById("tab-konto");
+  if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeKontaktFreigabe();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
   await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
@@ -8672,6 +8884,7 @@ async function init() {
   setupDokumenteTab();
   setupAuthForms();
   setupKontoFoto();
+  setupKontaktFreigabe();
   setupMannschaftenPanel();
   setupPunktePanel();
   setupWhatsappLink();
