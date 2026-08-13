@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.60" />
+<link rel="stylesheet" href="style.css?v=1.61" />
 </head>
 <body>
 
@@ -593,6 +593,34 @@
           <label>Video-Link (optional, für längere Videos)</label>
           <input type="url" id="news-video-url" maxlength="500" placeholder="https://…" />
           <p class="muted" style="font-size:12px; margin-top:6px;">Für Videos, die über 10 MB liegen — z. B. YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nicht eingebettet.</p>
+        </div>
+        <!-- Push beim Speichern (seit 2026-08-13). Geht über die bestehende Aktion
+             `push-rundnachricht` mit dem Anlass "mitteilung" — kein neuer Worker-Weg
+             und damit kein Worker-Deploy; der Versand landet im selben Protokoll wie
+             eine von Hand geschriebene Mitteilung.
+             ⚠️ Bewusst KEIN .form-field um die Häkchenzeile: dort gilt
+             `label { display: block }` (spezifischer als eine einzelne Klasse) und
+             `input { width: 100% }` — das macht aus dem Kästchen einen Balken und
+             legt den Text darunter. Gleiche Falle wie bei .push-schalter und
+             .rund-eingrenzen-feld. -->
+        <div class="news-push-feld">
+          <label class="news-push-zeile" for="news-push">
+            <input type="checkbox" id="news-push" />
+            <span>Als Push-Nachricht an alle Handys senden</span>
+          </label>
+          <div class="news-push-optionen" id="news-push-optionen" style="display:none;">
+            <label class="news-push-kreis-label" for="news-push-kreis">Empfänger</label>
+            <select id="news-push-kreis" class="form-select">
+              <option value="personal">Mitarbeiter — ohne Spielerkonten</option>
+              <option value="alle">Alle Konten — auch Spieler</option>
+            </select>
+            <p class="muted" style="font-size:12px; margin:8px 0 0;">
+              Geht sofort raus und <strong>lässt sich nicht zurückholen</strong>. Überschrift und Text
+              der Meldung stehen dann auf dem Sperrbildschirm, wo auch andere mitlesen können —
+              keine Namen und nichts Vertrauliches. Wer den Schalter „Mitteilungen des Vereins“
+              in seinem Konto ausgeschaltet hat, bekommt nichts.
+            </p>
+          </div>
         </div>
         <div class="form-field">
           <button type="submit" class="btn small" id="btn-news-submit">Hinzufügen</button>
@@ -1420,7 +1448,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=2.4"></script>
-<script src="app.js?v=1.82"></script>
+<script src="config.js?v=2.5"></script>
+<script src="app.js?v=1.83"></script>
 </body>
 </html>

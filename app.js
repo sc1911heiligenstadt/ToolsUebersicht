@@ -4189,10 +4189,24 @@ function newsFormReset() {
   document.getElementById("news-title").value = "";
   document.getElementById("news-text").value = "";
   document.getElementById("news-video-url").value = "";
+  newsPushHaekchenSetzen(false);
   newsMedienEntwurf = [];
   newsMedienEditorRendern();
   document.getElementById("btn-news-submit").textContent = "Hinzufügen";
   document.getElementById("btn-news-cancel").style.display = "none";
+}
+
+// ⚠️ Das Häkchen faellt IMMER auf aus zurueck -- auch beim Bearbeiten einer
+// bestehenden Meldung. Ein stehengebliebener Haken schickt beim naechsten
+// Speichern eine zweite Push-Nachricht an alle Handys, und die laesst sich nicht
+// zurueckholen (gleiche Linie wie die Eingrenzung bei der Rundnachricht).
+// Der Empfaengerkreis bleibt dagegen stehen: er ist eine Vorliebe, kein Auftrag.
+function newsPushHaekchenSetzen(an) {
+  const box = document.getElementById("news-push");
+  if (!box) return;
+  box.checked = !!an;
+  const opt = document.getElementById("news-push-optionen");
+  if (opt) opt.style.display = box.checked ? "block" : "none";
 }
 
 function startEditNews(id) {
@@ -4205,6 +4219,7 @@ function startEditNews(id) {
   document.getElementById("news-title").value = n.title || "";
   document.getElementById("news-text").value = n.text || "";
   document.getElementById("news-video-url").value = n.videoUrl || "";
+  newsPushHaekchenSetzen(false);
   // Kopie, nicht die Referenz: sonst schriebe ein "Entfernen" im Formular direkt
   // in newsState und wäre auch dann weg, wenn der Admin auf Abbrechen drückt.
   newsMedienEntwurf = (Array.isArray(n.medien) ? n.medien : []).map((m) => ({ ...m }));
@@ -4222,11 +4237,17 @@ async function deleteNews(id) {
 }
 
 // Speichert newsState serverseitig; bei Fehler Rollback auf den vorherigen Stand.
+// Liefert true, wenn wirklich gespeichert wurde -- der Push-Versand haengt daran
+// und darf nicht laufen, wenn die Meldung gar nicht steht.
 async function persistNews(prevOnError) {
   const errorEl = document.getElementById("news-error");
   const successEl = document.getElementById("news-success");
   errorEl.style.display = "none";
   successEl.style.display = "none";
+  // ⚠️ Text zuruecksetzen: eine vorangegangene Push-Meldung ("Gespeichert. Push
+  // an 12 Personen…") stuende hier sonst beim naechsten Speichern noch da und
+  // behauptete einen Versand, den es nicht gab.
+  successEl.textContent = "Gespeichert.";
   try {
     const res = await callWorker("save-news", { news: newsState });
     if (res && Array.isArray(res.news)) newsState = res.news;
@@ -4234,10 +4255,63 @@ async function persistNews(prevOnError) {
     renderNews();
     renderNewsAdmin();
     successEl.style.display = "block";
+    return true;
   } catch (err) {
     if (prevOnError) newsState = prevOnError;
     renderNewsAdmin();
     errorEl.textContent = err.message;
+    errorEl.style.display = "block";
+    return false;
+  }
+}
+
+// ---------- Neuigkeit zusaetzlich als Push verschicken (seit 2026-08-13) ----------
+//
+// ⚠️ Bewusst KEIN eigener Worker-Weg: der Versand laeuft ueber die bestehende
+// Aktion `push-rundnachricht` (Anlass "mitteilung", Ziel /ToolsUebersicht/ --
+// also genau dorthin, wo die Meldung steht). Damit kostet das Haekchen keinen
+// Worker-Deploy, der Versand landet im selben Protokoll wie eine von Hand
+// geschriebene Mitteilung (ein Nachlese-Ort statt zwei) und die
+// Doppelklick-Sperre des Workers greift mit. Der Preis: im Verlauf steht nicht,
+// dass die Nachricht aus einer Neuigkeit kam.
+const NEWS_PUSH_TITEL_MAX = 100;  // = PUSH_RUND_TITEL_MAX im Worker
+const NEWS_PUSH_TEXT_MAX = 200;   // = PUSH_RUND_TEXT_MAX -- laenger kommt gar nicht erst an
+
+// Hier kuerzen statt es dem Worker zu ueberlassen: der schneidet hart ab, und
+// ein mitten im Wort endender Satz auf dem Sperrbildschirm sieht nach Fehler aus.
+function newsPushKuerzen(s, max) {
+  const t = String(s || "").trim();
+  return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + "…";
+}
+
+async function newsPushSenden(titel, text, kreis) {
+  const errorEl = document.getElementById("news-error");
+  const successEl = document.getElementById("news-success");
+  const pTitel = newsPushKuerzen(titel, NEWS_PUSH_TITEL_MAX);
+  // ⚠️ Der Worker weist eine Nachricht OHNE Text mit 400 ab, der Text einer
+  // Neuigkeit ist aber optional. Ohne diesen Rueckfall waere das Haekchen bei
+  // jeder Meldung, die nur aus einem Titel besteht, ein stiller Fehlschlag.
+  const pText = newsPushKuerzen(text, NEWS_PUSH_TEXT_MAX) || "Jetzt in der Tools-Übersicht ansehen.";
+  const wer = kreis === "alle" ? "alle Konten, auch Spieler" : "alle Mitarbeiter, ohne Spielerkonten";
+  // Sicherheitsabfrage wie bei der Rundnachricht: ein Fehlgriff aufs Haekchen
+  // faellt sonst erst auf, wenn die Handys schon geklingelt haben. Ohne Zahlen --
+  // die kaeme nur ein zusaetzlicher Roundtrip her, und was rausgeht, steht da.
+  if (!window.confirm("Diese Meldung jetzt als Push-Nachricht an " + wer + " schicken?\n\n"
+      + pTitel + "\n" + pText + "\n\nDas lässt sich nicht zurückholen.")) {
+    successEl.textContent = "Gespeichert. Push nicht verschickt.";
+    successEl.style.display = "block";
+    return;
+  }
+  try {
+    const data = await callWorker("push-rundnachricht", { titel: pTitel, text: pText, kreis });
+    successEl.textContent = "Gespeichert. Push an " + Number((data && data.personen) || 0)
+      + " Personen auf " + Number((data && data.geraete) || 0) + " Geräten.";
+    successEl.style.display = "block";
+  } catch (e) {
+    // ⚠️ Nicht still schlucken. Die Meldung steht, aber niemand wurde geweckt --
+    // und genau darauf hat sich derjenige verlassen, der das Haekchen gesetzt hat.
+    successEl.style.display = "none";
+    errorEl.textContent = "Gespeichert, aber der Push ging nicht raus: " + e.message;
     errorEl.style.display = "block";
   }
 }
@@ -8264,12 +8338,26 @@ function setupAuthForms() {
         return;
       }
       if (videoUrl) item.videoUrl = videoUrl;
+      // ⚠️ Push-Wunsch und Empfaengerkreis VOR newsFormReset() auslesen -- das
+      // raeumt beides gleich wieder weg.
+      const pushBox = document.getElementById("news-push");
+      const pushGewuenscht = !!(pushBox && pushBox.checked);
+      const kreisEl = document.getElementById("news-push-kreis");
+      const pushKreis = (kreisEl && kreisEl.value === "alle") ? "alle" : "personal";
       const prev = newsState.slice();
       newsState = editId ? newsState.map((x) => (x.id === editId ? item : x)) : [item, ...newsState];
       newsFormReset();
-      await persistNews(prev);
+      const gespeichert = await persistNews(prev);
+      // ⚠️ Erst speichern, dann pushen. Andersherum weckt ein Speicherfehler die
+      // halbe Belegschaft mit einer Meldung, die auf der Uebersicht gar nicht steht.
+      if (gespeichert && pushGewuenscht) await newsPushSenden(item.title, item.text, pushKreis);
     });
     document.getElementById("btn-news-cancel").addEventListener("click", () => newsFormReset());
+
+    // Der Empfaengerkreis erscheint erst mit dem Haken: ohne ihn ist er eine
+    // Frage zu etwas, das gar nicht passiert.
+    const pushBox = document.getElementById("news-push");
+    if (pushBox) pushBox.addEventListener("change", () => newsPushHaekchenSetzen(pushBox.checked));
 
     // Medien-Anhänge: Knopf öffnet den Datei-Dialog, die Auswahl lädt sofort hoch.
     const medienBtn = document.getElementById("btn-news-medien-add");

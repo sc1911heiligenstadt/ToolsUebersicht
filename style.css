@@ -1112,6 +1112,49 @@ main { flex: 1; min-width: 0; }
   padding-bottom: 4px;
 }
 
+/* ---------- Neuigkeit zusaetzlich als Push (seit 2026-08-13) ----------
+   Steht wie .rund-eingrenzen-feld ausserhalb von .form-field: dessen
+   `label { display: block }` und `input { width: 100% }` machen aus dem
+   Kaestchen sonst einen Balken quer durch die Karte. Breite und Hoehe des
+   Kaestchens deshalb hier ausdruecklich, gleiche Werte wie bei .push-schalter. */
+.news-push-feld { grid-column: 1 / -1; }
+
+.news-push-zeile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.news-push-zeile input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;   /* sonst quetscht flex das Kaestchen bei langem Text zusammen */
+  margin: 1px 0 0 0;
+  cursor: pointer;
+}
+
+/* Eingerueckt unter dem Kaestchen, damit sichtbar bleibt, wozu die Auswahl
+   gehoert. max-width statt der vollen Rasterbreite: ein Auswahlfeld ueber die
+   ganze Karte sieht aus wie ein Pflichtfeld des Formulars. */
+.news-push-optionen { margin: 10px 0 0 27px; max-width: 340px; }
+.news-push-kreis-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.news-push-optionen select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
 /* ---------- Eingrenzen auf Gruppen und Personen (seit 2026-08-07) ---------- */
 
 /* Nimmt die volle Breite des Formular-Rasters ein. Steht hier statt als

@@ -450,6 +450,21 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.13",
+    groups: [
+      {
+        title: "Neuigkeiten kommen auf Wunsch aufs Handy",
+        items: [
+          "Eine neue Meldung auf der Übersicht kann jetzt zusätzlich als Push-Nachricht rausgehen — dafür gibt es beim Anlegen ein Häkchen „Als Push-Nachricht an alle Handys senden“.",
+          "Das Häkchen ist immer aus, bis es jemand setzt: eine Push-Nachricht lässt sich nicht zurückholen. Vor dem Versand fragt die Seite noch einmal nach und zeigt, was auf den Handys stehen wird.",
+          "Wählbar ist, wer sie bekommt: alle Mitarbeiter ohne Spielerkonten, oder wirklich alle Konten.",
+          "Wer den Schalter „Mitteilungen des Vereins“ in seinem Konto ausgeschaltet hat, bekommt weiterhin nichts — daran ändert das Häkchen nichts.",
+          "Verschickte Meldungen stehen im Verlauf unter „Nachricht an alle Handys“, zusammen mit den von Hand geschriebenen Mitteilungen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.12",
     groups: [
       {
