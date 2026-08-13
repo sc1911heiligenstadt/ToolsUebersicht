@@ -504,6 +504,21 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
    kommentarlos (gleiche Ueberlegung wie beim Abhak-Guard der Aufgaben). */
 #kf-felder.kf-aus { opacity: 0.5; }
 
+/* ⚠️ Eigene Knopfreihe, weil `.btn-row` in DIESEM Repo nicht existiert -- die
+   Klasse stammt aus den App-Repos, hier blieb das <div> `display: block` und die
+   beiden Knoepfe richteten sich an der Textbasislinie aus (gemessen: 4 px
+   Hoehenunterschied und sichtbarer Versatz).
+   `align-items: center` statt `stretch`: der Link traegt bei `.secondary` einen
+   1px-Rahmen und ist dadurch zwangslaeufig zwei Pixel hoeher als der rahmenlose
+   Button -- zentriert faellt das nicht auf, gestreckt saehe der Button gedehnt aus. */
+.kf-knopfreihe {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 .push-geraete { list-style: none; margin: 0; padding: 0; }
 .push-geraete li {
   display: flex;
@@ -859,6 +874,24 @@ a.btn-link {
   text-decoration: none;
 }
 a.btn-link:hover { opacity: 0.9; }
+/* ⚠️ `line-height` MUSS gesetzt sein, sonst ist ein `a.btn-link` hoeher als der
+   gleich gestylte `button.btn` daneben: ein <button> bringt seine eigene
+   Default-Zeilenhoehe mit, ein <a> nicht. Gemessen am 2026-08-13 in derselben
+   Reihe: Link 40 px gegen Button 36 px (primaer) bzw. 37 px (sekundaer, mit
+   Rahmen). Mit 1.15 trifft der sekundaere Link die 37 px auf den Pixel und der
+   primaere liegt bei 35 statt 38. Wer den Wert aendert, misst gegen einen echten
+   `button.btn` in derselben Zeile -- schaetzen geht hier daneben. */
+a.btn-link { line-height: 1.15; }
+/* ⚠️ Die Knopf-Optik ist ELEMENTGEBUNDEN: `button.btn` (Zeile ~547) greift bei
+   einem <a> nicht, ein `<a class="btn secondary">` sieht deshalb wie ein
+   gewoehnlicher Link aus (unterstrichen, Besucht-Lila) -- genau so am 2026-08-13
+   beim Knopf "Zur Kontaktliste" aufgeschlagen. Fuer Links ist `a.btn-link` die
+   richtige Klasse; hier die fehlende sekundaere Variante dazu, damit ein Link
+   neben einem primaeren Knopf stehen kann, ohne mit ihm zu konkurrieren.
+   Werte bewusst identisch zu `button.btn.secondary` -- wer eines aendert, zieht
+   das andere mit (die Doppelung ist im Kopf dieses Abschnitts schon vermerkt). */
+a.btn-link.secondary { background: var(--gray); color: var(--text); border: 1px solid var(--border); }
+a.btn-link.small { padding: 6px 12px; font-size: 13px; }
 
 /* ---------- Dashboard-Layout (Kalender-Widget + Kacheln) ---------- */
 /* .page-body bricht bewusst aus dem zentrierten max-width:1100px von <main>
