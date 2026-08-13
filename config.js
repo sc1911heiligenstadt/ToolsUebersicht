@@ -455,11 +455,11 @@ const APP_CHANGELOG = [
       {
         title: "Werkzeug suchen",
         items: [
-          "Über den Kacheln steht ein neuer Knopf „🔎 Suchen“. Ein Klick blendet ein Feld ein, und während des Tippens bleiben nur die passenden Werkzeuge stehen — in der Kachel- wie in der Listenansicht.",
+          "Über den Kacheln steht neben „Anordnen“ ein Suchfeld. Es ist gleich da — nichts aufklappen, einfach hineintippen. Während des Tippens bleiben nur die passenden Werkzeuge stehen, in der Kachel- wie in der Listenansicht.",
           "Gesucht wird in Name, Beschreibung und Kategorie. Wer nicht weiß, wie ein Werkzeug heißt, findet es also über das, was es tut: „urlaub“ führt zum Abwesenheitskalender.",
           "Mehrere Wörter grenzen weiter ein, die Reihenfolge ist egal. Umlaute müssen nicht getippt werden — „platz“ findet auch „Plätze“.",
-          "Beenden mit dem ✕ im Feld, mit der Escape-Taste oder mit einem zweiten Druck auf den Knopf. Die Suche wird nicht gespeichert: beim nächsten Aufruf steht die vollständige Übersicht da.",
-          "Suchen und „Anordnen“ gehen bewusst nicht gleichzeitig — beim Verschieben in einer gefilterten Liste würde die eigene Reihenfolge der ausgeblendeten Werkzeuge verloren gehen. Der eine Knopf schaltet den anderen ab."
+          "Zurücknehmen mit dem ✕ im Feld oder mit der Escape-Taste. Die Suche wird nicht gespeichert: beim nächsten Aufruf steht die vollständige Übersicht da.",
+          "Suchen und „Anordnen“ gehen bewusst nicht gleichzeitig — beim Verschieben in einer gefilterten Liste würde die eigene Reihenfolge der ausgeblendeten Werkzeuge verloren gehen. Der erste getippte Buchstabe beendet deshalb das Anordnen, und ein Druck auf „Anordnen“ nimmt die Suche zurück."
         ]
       }
     ]

@@ -97,8 +97,10 @@ let ansichtBearbeiten = false;   // Anordnen-Modus an? Nur dann laesst sich etwa
 // damit nicht am Konto gespeichert: es ist ein fluechtiger Filter fuer diesen einen
 // Besuch, keine Anzeige-Vorliebe. Ein beim naechsten Anmelden noch gesetzter Filter
 // liesse die halbe Uebersicht fehlen, ohne dass jemand danach gesucht hat.
+//
+// Das Feld steht offen in der Leiste, es gibt keinen Auf-/Zuklapp-Zustand -- ein
+// leerer Text IST der Ruhezustand.
 let ansichtSuchText = "";
-let ansichtSucheOffen = false;   // Feld eingeblendet? (auch bei leerem Text)
 let _ansichtSaveTimer = null;    // gebuendeltes Speichern nach dem Verschieben
 let _ansichtSaveLaeuft = false;  // In-Flight-Guard: waehrend ein Speichern laeuft, wird nicht parallel gestartet
 let _ansichtSaveNachholen = false; // waehrend des laufenden Speicherns kam eine weitere Aenderung
@@ -1389,22 +1391,20 @@ function ansichtBearbeitenAus() {
 }
 
 function ansichtSucheAus() {
-  ansichtSucheOffen = false;
   ansichtSuchText = "";
 }
 
 // ⚠️ Suchen und Anordnen schliessen sich gegenseitig aus. saveToolOrder() liest die
 // Tool-IDs aus dem DOM -- verschoebe jemand in einer gefilterten Liste, fielen alle
 // ausgeblendeten Werkzeuge aus der gespeicherten Reihenfolge und haengten sich beim
-// naechsten Rendern hinten an. Beide Knoepfe bleiben klickbar und schalten den
-// jeweils anderen Zustand ab; ein gesperrter Knopf schluckt den Klick kommentarlos.
-function ansichtSucheUmschalten() {
-  if (ansichtSucheOffen) { ansichtSucheAus(); renderToolGrid(); return; }
-  ansichtSucheOffen = true;
-  ansichtBearbeitenAus();
+// naechsten Rendern hinten an. Seit das Feld offen dasteht, ist der Ausloeser das
+// TIPPEN: der erste Buchstabe beendet den Anordnen-Modus (und speichert ihn sofort).
+// Das Feld dafuer zu sperren waere schlechter -- ein totes Feld schluckt die Eingabe
+// kommentarlos.
+function ansichtSucheGetippt(wert) {
+  ansichtSuchText = wert;
+  if (ansichtSuchText) ansichtBearbeitenAus();
   renderToolGrid();
-  const feld = document.getElementById("ansicht-suche-eingabe");
-  if (feld) feld.focus();
 }
 
 // Wird am Ende von renderToolGrid() aufgerufen, damit Leiste und Kacheln nie
@@ -1448,14 +1448,10 @@ function renderAnsichtLeiste(hatKacheln) {
   const hinweis = document.getElementById("ansicht-hinweis");
   if (hinweis) hinweis.style.display = ansichtBearbeiten ? "inline" : "none";
 
-  const sucheBtn = document.getElementById("btn-ansicht-suche");
-  if (sucheBtn) {
-    sucheBtn.setAttribute("aria-expanded", ansichtSucheOffen ? "true" : "false");
-    sucheBtn.classList.toggle("aktiv", ansichtSucheOffen);
-    sucheBtn.title = ansichtSucheOffen ? "Suche beenden" : "Werkzeug suchen";
-  }
-  const sucheBox = document.getElementById("ansicht-suche-feld");
-  if (sucheBox) sucheBox.style.display = ansichtSucheOffen ? "flex" : "none";
+  // Das ✕ steht nur da, wenn es etwas zurueckzunehmen gibt -- ein dauerhaft
+  // sichtbares Kreuz an einem leeren Feld sieht aus, als tue es etwas.
+  const sucheZu = document.getElementById("btn-ansicht-suche-schliessen");
+  if (sucheZu) sucheZu.style.display = ansichtSuchText ? "block" : "none";
   const sucheFeld = document.getElementById("ansicht-suche-eingabe");
   // ⚠️ Den Wert nur setzen, wenn er wirklich abweicht: ein Zuweisen bei jedem
   // Tastendruck setzt die Schreibmarke ans Ende, und mitten im Wort zu korrigieren
@@ -1475,7 +1471,7 @@ function ansichtBearbeitenUmschalten() {
   // dass es jetzt steht. Das steckt in ansichtBearbeitenAus().
   if (ansichtBearbeiten) { ansichtBearbeitenAus(); renderToolGrid(); return; }
   ansichtBearbeiten = true;
-  ansichtSucheAus(); // gegenseitiger Ausschluss, Begruendung bei ansichtSucheUmschalten()
+  ansichtSucheAus(); // gegenseitiger Ausschluss, Begruendung bei ansichtSucheGetippt()
   renderToolGrid();
 }
 
@@ -1487,15 +1483,19 @@ function setupAnsichtLeiste() {
   if (listeBtn) listeBtn.addEventListener("click", () => ansichtModusSetzen("liste"));
   if (anordnenBtn) anordnenBtn.addEventListener("click", ansichtBearbeitenUmschalten);
 
-  const sucheBtn = document.getElementById("btn-ansicht-suche");
   const sucheZu = document.getElementById("btn-ansicht-suche-schliessen");
   const sucheFeld = document.getElementById("ansicht-suche-eingabe");
-  if (sucheBtn) sucheBtn.addEventListener("click", ansichtSucheUmschalten);
-  if (sucheZu) sucheZu.addEventListener("click", () => { ansichtSucheAus(); renderToolGrid(); });
+  // Das ✕ nimmt die Suche zurueck und laesst die Schreibmarke im Feld: wer sie
+  // zuruecknimmt, tippt meist gleich etwas anderes.
+  if (sucheZu) sucheZu.addEventListener("click", () => {
+    ansichtSucheAus();
+    renderToolGrid();
+    if (sucheFeld) sucheFeld.focus();
+  });
   if (sucheFeld) {
     // Gefiltert wird bei jedem Tastendruck. Das kostet nichts: renderToolGrid() baut
     // rund 30 Karten neu, es gibt keinen Server-Aufruf und nichts wird gespeichert.
-    sucheFeld.addEventListener("input", () => { ansichtSuchText = sucheFeld.value; renderToolGrid(); });
+    sucheFeld.addEventListener("input", () => ansichtSucheGetippt(sucheFeld.value));
     sucheFeld.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") { ansichtSucheAus(); renderToolGrid(); }
     });

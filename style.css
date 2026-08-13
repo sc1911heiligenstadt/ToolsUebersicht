@@ -1376,11 +1376,8 @@ main { flex: 1; min-width: 0; }
 .ansicht-edit-btn:hover { background: var(--gray); }
 .ansicht-edit-btn.aktiv { background: var(--green); border-color: var(--green); color: var(--white); }
 .ansicht-edit-btn.aktiv:hover { background: var(--green); }
-/* Der Suchknopf teilt sich die Optik mit "Anordnen", darf im eingeschalteten Zustand
-   aber nicht gruen werden -- gruen heisst in dieser Leiste "du veraenderst gerade
-   etwas". Suchen veraendert nichts, deshalb blau. */
-.ansicht-such-btn.aktiv { background: var(--blue); border-color: var(--blue); color: var(--white); }
-.ansicht-such-btn.aktiv:hover { background: var(--blue); }
+/* Das Suchfeld steht offen in der Leiste (seit 2026-08-13 ohne Knopf davor). Es traegt
+   dieselbe Pillenform wie die Knoepfe daneben, damit die Leiste eine Reihe bleibt. */
 .ansicht-suche {
   display: flex;
   align-items: center;
@@ -1390,6 +1387,10 @@ main { flex: 1; min-width: 0; }
   background: var(--white);
   padding: 0 6px 0 12px;
 }
+.ansicht-suche:focus-within { border-color: var(--blue); }
+/* Die Lupe ersetzt den frueheren Knopf als Hinweis, wozu das Feld da ist -- der
+   Platzhaltertext allein verschwindet beim ersten Buchstaben. */
+.ansicht-suche-lupe { font-size: 13px; line-height: 1; }
 .ansicht-suche input {
   font-family: inherit;
   font-size: 13px;
@@ -1398,6 +1399,11 @@ main { flex: 1; min-width: 0; }
   background: transparent;
   outline: none;
   padding: 7px 0;
+  /* ⚠️ line-height explizit, sonst ist das Feld 4px hoeher als die Knoepfe daneben --
+     ein Textfeld bringt eine groessere Standard-Zeilenhoehe mit als ein Button. In
+     einer Flex-Leiste zieht das hoechste Element alle anderen mit, die ganze Leiste
+     waere also 37 statt 33px hoch. Gemessen, nicht geschaetzt. */
+  line-height: 17px;
   /* Ohne min-width:0 erzwingt die intrinsische Mindestbreite eines Textfelds in der
      Flex-Leiste am Handy einen seitlichen Ueberlauf der ganzen Seite -- dieselbe Falle
      wie beim Datumsfeld im Aufgaben-Formular. */
