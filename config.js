@@ -453,17 +453,18 @@ const APP_CHANGELOG = [
     version: "1.14",
     groups: [
       {
-        title: "Admin-Dashboard steht jetzt in den Einstellungen",
+        title: "Admin-Dashboard und Testansicht stehen jetzt in den Einstellungen",
         items: [
           "Der goldene Knopf „📊 Admin-Dashboard“ ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — dort steht er ganz oben.",
-          "Er kann genau dasselbe wie vorher, und wie vorher sehen ihn nur Admins.",
-          "Die Kopfzeile hat dadurch am Handy eine Zeile weniger."
+          "Gleich daneben steht die Auswahl für die Testansicht („👑 Admin (echt)“), die vorher ebenfalls oben rechts war.",
+          "Beide können genau dasselbe wie vorher, und wie vorher sieht sie nur, wer Admin ist.",
+          "Die Kopfzeile hat dadurch am Handy zwei Zeilen weniger."
         ]
       },
       {
         title: "Kleinere Knöpfe in der Kopfzeile",
         items: [
-          "Die Knöpfe oben — Materialcontainercode, Unterschriften, Meine ToDos, Testansicht, der eigene Name und Abmelden — sind eine Stufe kleiner geworden.",
+          "Die Knöpfe oben — Materialcontainercode, Unterschriften, Meine ToDos, der eigene Name und Abmelden — sind eine Stufe kleiner geworden.",
           "Dadurch passt oben wieder alles in eine Zeile, statt umzubrechen."
         ]
       }

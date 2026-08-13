@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.63" />
+<link rel="stylesheet" href="style.css?v=1.64" />
 </head>
 <body>
 
@@ -48,7 +48,6 @@
          und zwei benachbarte Knöpfe hätten genau die Vermischung fortgeschrieben,
          die das Aufteilen beenden soll. -->
     <button type="button" class="header-code-btn" id="btn-todos-oeffnen" style="display:none;" title="Eigene ToDos anlegen und abhaken">📝 <span class="btn-lang">Meine </span>ToDos<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
-    <select class="view-as-select" id="view-as-select" style="display:none;" title="Testansicht: Dashboard und alle verlinkten Apps als Mitglied einer anderen Gruppe ansehen (nur für Admins)"></select>
     <div class="header-user" id="header-user" style="display:none;"></div>
     <button type="button" class="header-logout-btn" id="btn-logout" style="display:none;">Abmelden</button>
     <img class="header-logo" src="https://sc1911heiligenstadt.github.io/logo.svg" alt="1. SC 1911 e.V. Heilbad Heiligenstadt" />
@@ -545,12 +544,19 @@
 
   <section class="tab-section" id="tab-admin">
 
-    <!-- Zugang zum Admin-Dashboard. Stand bis 2026-08-13 als goldener Knopf in der
-         Kopfzeile; Michel-Vorgabe: er gehoert zu den Einstellungen. Nebenbei kostete
-         er am Handy dort eine volle Zeile (siehe "Als App ablegen" in CLAUDE.md).
-         ⚠️ Die Id bleibt -- Klick-Handler und Sichtbarkeits-Steuerung in app.js
-         haengen daran und bleiben unveraendert. -->
-    <button type="button" class="admin-dashboard-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
+    <!-- Zugang zum Admin-Dashboard und die Testansicht. Beide standen bis
+         2026-08-13 in der Kopfzeile; Michel-Vorgabe: sie gehoeren zu den
+         Einstellungen. Nebenbei kosteten sie am Handy dort Zeilen (siehe
+         "Als App ablegen" in CLAUDE.md).
+         ⚠️ Beide Ids bleiben -- Klick-Handler, renderViewAsControl() und die
+         Sichtbarkeits-Steuerung in app.js haengen daran und sind unveraendert.
+         ⚠️ Bewusst KEINE Beschriftung neben der Auswahl: app.js blendet nur das
+         <select> ein und aus, ein danebenstehendes Wort bliebe stehen. Was sie
+         tut, sagen ihre Eintraege ("👑 Admin (echt)") und der title. -->
+    <div class="admin-kopfzeile">
+      <button type="button" class="admin-dashboard-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
+      <select class="view-as-select" id="view-as-select" style="display:none;" title="Testansicht: Dashboard und alle verlinkten Apps als Mitglied einer anderen Gruppe ansehen (nur für Admins)"></select>
+    </div>
 
     <!-- Neuigkeiten-Verwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-news-panel" style="display:none;">
@@ -1453,7 +1459,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=2.7"></script>
+<script src="config.js?v=2.8"></script>
 <script src="app.js?v=1.83"></script>
 </body>
 </html>

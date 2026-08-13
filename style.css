@@ -40,9 +40,9 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
    nur als Ganzes) und schoebe das Wappen aus dem Bild. */
 .header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; }
 .header-logo { height: 44px; width: auto; display: block; }
-/* ⚠️ Die Pillen der Kopfzeile (.header-code-btn, .header-user, .view-as-select,
+/* ⚠️ Die Pillen der Kopfzeile (.header-code-btn, .header-user,
    .header-logout-btn) sind am 2026-08-13 auf Michel-Vorgabe eine Stufe kleiner
-   geworden: Schrift 13→12px (Testansicht 12→11), Polsterung entsprechend. Sie
+   geworden: Schrift 13→12px, Polsterung entsprechend. Sie
    gehoeren als Satz zusammen -- wer eine davon anfasst, zieht die anderen mit,
    sonst steht eine Pille sichtbar aus der Reihe. Die Kopfzeilen-HOEHE aendert
    sich dadurch am Rechner nicht: das hoechste Element ist das 44px hohe
@@ -65,16 +65,6 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
    Flex-Leiste faellt genau das auf. Bewusst NUR hier enger, nicht an
    .version-badge selbst: die traegt auch die Versionsangabe im Info-Tab. */
 .header-user .version-badge { font-size: 10px; padding: 1px 7px; }
-.view-as-select {
-  font-size: 11px;
-  font-weight: 600;
-  color: white;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 999px;
-  padding: 4px 9px;
-  cursor: pointer;
-}
 /* Abmelden sitzt im Header neben dem Nutzer-Chip, damit es von jedem Tab aus
    erreichbar ist -- nicht mehr nur im Einstellungen-Tab. */
 .header-logout-btn {
@@ -89,8 +79,18 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   cursor: pointer;
 }
 .header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
-.view-as-select option { color: #111; }
 .badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
+/* Erste Zeile des Einstellungen-Tabs: Dashboard-Knopf und Testansicht-Auswahl
+   nebeneinander (Michel-Vorgabe 2026-08-13). Das margin-bottom sitzt HIER und
+   nicht mehr am Knopf -- sonst haetten beide Elemente je eigenen Abstand nach
+   unten, und beim Umbruch am Handy klaffte eine Luecke dazwischen. */
+.admin-kopfzeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
 /* Zugang zum Admin-Dashboard. Steht seit 2026-08-13 oben im Einstellungen-Tab,
    davor in der Kopfzeile (Michel-Vorgabe). Das Gold bleibt: zwischen den grauen
    Panels kennzeichnet es den Wechsel in eine andere Ansicht.
@@ -100,7 +100,6 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
    ⚠️ Kein display hier: app.js setzt inline-flex fuer Admins und none fuer alle
    anderen (renderAdminPanels), eine Angabe an dieser Stelle waere wirkungslos. */
 .admin-dashboard-btn {
-  margin-bottom: 16px;
   align-items: center;
   gap: 6px;
   font: inherit;
@@ -115,6 +114,27 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   white-space: nowrap;
 }
 .admin-dashboard-btn:hover { opacity: 0.9; }
+/* Testansicht-Auswahl, seit 2026-08-13 neben dem Dashboard-Knopf statt in der
+   Kopfzeile (Michel-Vorgabe).
+   ⚠️ Die Farben MUSSTEN mit umziehen: in der Kopfzeile trug sie weisse Schrift auf
+   halbdurchsichtigem Weiss -- auf dem hellen Grund der Sektion waere das ein
+   unsichtbares Feld gewesen. Die Pillenform bleibt, damit sie neben dem goldenen
+   Knopf kein Fremdkoerper ist; die frühere Regel `.view-as-select option` ist mit
+   der weissen Schrift entfallen (Eintraege erben jetzt das dunkle #111).
+   ⚠️ Kein display hier: renderViewAsControl() in app.js setzt inline-block nur
+   fuer echte Admins (realIsAdmin) -- eine Angabe an dieser Stelle waere
+   wirkungslos, und die Auswahl darf nie fuer andere aufblitzen. */
+.view-as-select {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
 
 /* Kopf-Knoepfe (Materialcontainercode, Unterschriften) sitzen links neben dem
    Titel. Der ToDo-Knopf steht bewusst NICHT hier, sondern in .header-right --
