@@ -150,6 +150,13 @@
 //     wer laut Trainerdaten (PROVISION_ONLY_PATHS, Tag+Monat, Europe/Berlin) heute Geburtstag hat — nur der
 //     Name, nie das Geburtsjahr oder andere Trainerdaten-Felder (die bleiben exklusiv personalakte-overview
 //     vorbehalten). Fürs "Nächste Termine"-Widget in app.js.
+//   POST { action: "kontakte-liste" } (angemeldet, kein Spielerkonto, Sichtbarkeit des Tools "kontakte")
+//     -> { kontakte: [{vorname, nachname, telefon?, email?, adresse?:{strasse,plz,ort}}] }
+//     Die Kontaktliste des Vereins, gespeist aus Trainerdaten (PROVISION_ONLY_PATHS). Aufgenommen wird NUR,
+//     wer sich in Trainerdaten selbst dafür freigegeben hat (Feld `kontaktFreigabe`, gesetzt über die dortige
+//     Aktion `kontakt-freigabe-speichern`), und je Person NUR die einzeln freigegebenen Felder — ein nicht
+//     freigegebenes Feld fehlt im Objekt, statt leer mitzukommen. Nie IBAN/Geburtsdatum/Dokumente/Vertrag.
+//     Ohne `kontaktFreigabe.name === true` erscheint die Person überhaupt nicht.
 //   POST { action: "raumnutzung-kontakt-lookup", name } (Raumnutzung-Bearbeiter via resolveEditPermission)
 //     -> { treffer: {strasse, plz, ort, telefon, email} | null } — Kontaktdaten GENAU EINER namentlich
 //     benannten Person aus Trainerdaten (PROVISION_ONLY_PATHS), fürs Vorbefüllen von Veranstaltungsleitung/
@@ -447,6 +454,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8813", // Spieltagscrew (Dev-Server)
   "http://localhost:8814", // Spielstatistik (Dev-Server)
   "http://localhost:8815", // Ablaufplan (Dev-Server)
+  "http://localhost:8816", // Kontakte (Dev-Server)
   // AgeLan haengt sonst an keinem Gateway (eigenes Firebase); seit dem Passwort-Gate
   // vor dem Streamplan ruft sie verify-action-password hier auf.
   "http://localhost:8791", // AgeLan (Dev-Server)
@@ -1102,6 +1110,8 @@ export default {
         return handleListTrainerProfiles(request, env, authHeader, corsHeaders);
       case "list-birthdays-today":
         return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
+      case "kontakte-liste":
+        return handleKontakteListe(request, env, authHeader, corsHeaders);
       case "my-trainerdaten-status":
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
       case "raumnutzung-kontakt-lookup":
@@ -2915,6 +2925,67 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
     .map((t) => `${t.vorname || ""} ${t.nachname || ""}`.trim())
     .filter(Boolean);
   return json({ namen }, 200, corsHeaders);
+}
+
+// Kontaktliste des Vereins (App "kontakte"): wer sich in Trainerdaten dafür
+// freigegeben hat, mit genau den Feldern, die er einzeln freigegeben hat.
+// Gleiche Quelle und dieselbe Minimal-Disclosure-Linie wie
+// handleListBirthdaysToday und handleRaumnutzungKontaktLookup darunter —
+// Trainerdaten bleibt PROVISION_ONLY, gelesen wird nur serverseitig.
+//
+// ⚠️ Gefiltert wird HIER, nicht im Client. Ein nicht freigegebenes Feld darf den
+// Worker gar nicht erst verlassen; Ausblenden im Client wäre kein Zurückhalten.
+//
+// ⚠️ Die Antwort wird aus BENANNTEN Einzelfeldern zusammengebaut, nie durch
+// Kopieren des Datensatzes mit anschließendem Löschen. Die Datei enthält IBAN,
+// Bankverbindung, Geburtsdatum, Dokument-Status und Vertragspfade — ein
+// vergessenes delete wäre ein Leck, ein vergessenes Feld hier nur eine Lücke.
+//
+// ⚠️ Überall `=== true`. Die Bestandsdatensätze haben `kontaktFreigabe` nicht,
+// und ein Wert wie "ja" darf nicht als Freigabe durchgehen: das Fehlen muss in
+// die geschlossene Richtung fallen (genau umgekehrt zu `vertragspflichtig`).
+// Ohne `name` gibt es überhaupt keinen Eintrag — ein Kontakt ohne Namen ist
+// keiner, und die anderen Häkchen sind ohne ihn wirkungslos.
+//
+// Gate dreistufig: angemeldet, kein Spielerkonto (~200 Stück; gleiche Linie wie
+// beim Materialcontainer-Code und list-directory — eine Telefonliste des
+// Personals gehört nicht in Spielerhände), und die normale Tool-Sichtbarkeit,
+// damit das Sichtbarkeits-Panel den Kreis wirklich steuert statt einer fest
+// verdrahteten Regel hier.
+async function handleKontakteListe(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (session.art === USER_ART_SPIELER) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  if (!(await userMayAccessTool("kontakte", session, env, authHeader))) {
+    return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  }
+
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const kontakte = [];
+  for (const t of trainerdatenDoc.trainer || []) {
+    const f = t && t.kontaktFreigabe;
+    if (!f || f.name !== true) continue;
+    const vorname = String(t.vorname || "").trim();
+    const nachname = String(t.nachname || "").trim();
+    if (!vorname && !nachname) continue; // Freigabe ohne gepflegten Namen: nichts zu zeigen
+    const eintrag = { vorname, nachname };
+    if (f.telefon === true && String(t.telefon || "").trim()) eintrag.telefon = String(t.telefon).trim();
+    if (f.email === true && String(t.email || "").trim()) eintrag.email = String(t.email).trim();
+    if (f.adresse === true) {
+      const strasse = String(t.strasse || "").trim();
+      const plz = String(t.plz || "").trim();
+      const ort = String(t.ort || "").trim();
+      if (strasse || plz || ort) eintrag.adresse = { strasse, plz, ort };
+    }
+    kontakte.push(eintrag);
+  }
+  // Serverseitig sortiert: die Reihenfolge in der Datei ist die Anlegereihenfolge und
+  // für eine Kontaktliste bedeutungslos.
+  kontakte.sort((a, b) =>
+    (a.nachname || "").localeCompare(b.nachname || "", "de") ||
+    (a.vorname || "").localeCompare(b.vorname || "", "de")
+  );
+  return json({ kontakte }, 200, corsHeaders);
 }
 
 // Kontaktdaten-Prefill für den Raumnutzungs-Antrag (Veranstaltungsleitung/
@@ -12175,7 +12246,11 @@ const PUNKTE_APP_PRAEFIXE = [
   // Der Ablaufplan spricht sonst nur dav-load/dav-save und traegt die App im Body.
   // Der Eintrag deckt kuenftige eigene Aktionen ab; die einzige heutige
   // (ablaufplan-oeffentlich) steht in PUNKTE_IGNORIERT und laeuft ohne Sitzung.
-  ["ablaufplan", "ablaufplan"]
+  ["ablaufplan", "ablaufplan"],
+  // Die Kontakte-App hat genau EINE Aktion und speichert nichts Eigenes (kein
+  // DAV_APPS-Eintrag). Ohne diesen Eintrag liefe ihre Nutzung unter keiner App und
+  // taeuchte in der Admin-Auswertung als "von niemandem benutzt" auf.
+  ["kontakte", "kontakte"]
 ];
 
 // Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht

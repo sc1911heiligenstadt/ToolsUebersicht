@@ -278,6 +278,14 @@ const TOOLS = [
     push: true
   },
   {
+    id: "kontakte",
+    name: "Kontakte",
+    description: "Das Telefonbuch des Vereins: Wer erreicht wen? Jede Person gibt in Trainerdaten selbst frei, ob und mit welchen Angaben sie hier erscheint — ohne Freigabe steht nichts da.",
+    url: "https://sc1911heiligenstadt.github.io/kontakte/",
+    icon: "📇",
+    category: "Verein"
+  },
+  {
     id: "personalakte",
     name: "Personalakte",
     description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten, Führerschein, Personalkosten und Kadermanager-Rolle auf einen Blick, inkl. Archivieren/Reaktivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
@@ -441,6 +449,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.10",
+    groups: [
+      {
+        title: "Neue Kachel „Kontakte“",
+        items: [
+          "Das Telefonbuch des Vereins: Wer erreicht wen? Die Kachel zeigt Name, Telefonnummer, E-Mail-Adresse und Anschrift der Kolleginnen und Kollegen — am Handy genügt ein Tipp auf die Nummer zum Anrufen.",
+          "Es steht dort nur, was die jeweilige Person selbst freigegeben hat. Freigegeben wird in „Trainerdaten“ unter „Meine Daten“, einzeln je Angabe und jederzeit widerrufbar.",
+          "Wer nichts freigibt, taucht in der Liste gar nicht auf. Bankverbindung, Geburtsdatum und Dokumente sind dort grundsätzlich nie zu sehen.",
+          "Die Liste sehen nur angemeldete Personen des Vereins, keine Spielerkonten. Wer die Kachel sieht, steuerst du wie bei jedem anderen Werkzeug im Sichtbarkeits-Panel."
+        ]
+      }
+    ]
+  },
   {
     version: "1.9",
     groups: [
