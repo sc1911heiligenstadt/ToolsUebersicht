@@ -450,6 +450,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.14",
+    groups: [
+      {
+        title: "Admin-Dashboard steht jetzt in den Einstellungen",
+        items: [
+          "Der goldene Knopf „📊 Admin-Dashboard“ ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — dort steht er ganz oben.",
+          "Er kann genau dasselbe wie vorher, und wie vorher sehen ihn nur Admins.",
+          "Die Kopfzeile hat dadurch am Handy eine Zeile weniger."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.13",
     groups: [
       {

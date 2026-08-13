@@ -78,20 +78,16 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
 .header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .view-as-select option { color: #111; }
 .badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
-/* Steht mittig zwischen den Kopf-Knoepfen links und dem Nutzerbereich rechts.
-   ⚠️ Bis 2026-07-29 war das eine ABSOLUTE Positionierung auf die Fenstermitte --
-   die zaehlt im Flex-Fluss nicht mit und ueberlappte deshalb, sobald die Knoepfe
-   links weit genug nach rechts wuchsen: mit "✅ Meine Aufgaben" um 70px, mit der
-   laengeren Beschriftung "✍ Unterschriften anfordern" um 145px (bei 1280px
-   gemessen, sichtbar nur fuer globale Admins -- nur die haben diesen Knopf).
-   Jetzt laeuft er im Fluss und kann dadurch grundsaetzlich nicht mehr kollidieren.
-   ⚠️ Das margin-right:auto hier gehoert mit dem an .header-btns zusammen: zwei
-   auto-Margins teilen den Freiraum haelftig, also klebt die Knopfgruppe am Titel
-   und dieser Knopf sitzt mittig zwischen ihr und dem Nutzerbereich. Nimmt man
-   eines von beiden weg, rutscht entweder die Gruppe in die Mitte (ohne das an
-   .header-btns) oder dieser Knopf an den Nutzerbereich (ohne das hier). */
-.header-admin-btn {
-  margin-right: auto;
+/* Zugang zum Admin-Dashboard. Steht seit 2026-08-13 oben im Einstellungen-Tab,
+   davor in der Kopfzeile (Michel-Vorgabe). Das Gold bleibt: zwischen den grauen
+   Panels kennzeichnet es den Wechsel in eine andere Ansicht.
+   ⚠️ Das frühere margin-right:auto ist mit dem Umzug ENTFALLEN -- es gehoerte zur
+   Kopfzeile und teilte dort den Freiraum haelftig mit dem an .header-btns. In der
+   Sektion haette es keine Bedeutung mehr; das Auto-Margin drueben traegt allein.
+   ⚠️ Kein display hier: app.js setzt inline-flex fuer Admins und none fuer alle
+   anderen (renderAdminPanels), eine Angabe an dieser Stelle waere wirkungslos. */
+.admin-dashboard-btn {
+  margin-bottom: 16px;
   align-items: center;
   gap: 6px;
   font: inherit;
@@ -105,14 +101,15 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   cursor: pointer;
   white-space: nowrap;
 }
-.header-admin-btn:hover { opacity: 0.9; }
+.admin-dashboard-btn:hover { opacity: 0.9; }
 
 /* Kopf-Knoepfe (Materialcontainercode, Unterschriften) sitzen links neben dem
    Titel. Der ToDo-Knopf steht bewusst NICHT hier, sondern in .header-right --
    die persoenliche Liste hat mit den Unterschriften nichts zu tun.
    margin-right:auto schiebt die Gruppe an den Titel -- der Header ist
-   space-between, ohne das Auto-Margin landete sie mittig. Es wirkt zusammen mit
-   dem gleichnamigen am .header-admin-btn (siehe dort).
+   space-between, ohne das Auto-Margin landete sie mittig. Bis 2026-08-13 teilte es
+   den Freiraum mit dem Auto-Margin des Admin-Knopfes; seit dessen Umzug in den
+   Einstellungen-Tab traegt es allein.
    ⚠️ Der Anker sitzt am WRAPPER, nicht an den Knoepfen: beide werden je nach Konto
    einzeln aus- und eingeblendet, und ein Anker an einem versteckten Element traegt
    nicht. Der Wrapper bleibt immer im Fluss, auch wenn beide Knoepfe weg sind. */

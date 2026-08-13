@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.61" />
+<link rel="stylesheet" href="style.css?v=1.62" />
 </head>
 <body>
 
@@ -25,11 +25,10 @@
   <!-- margin-right:auto (in style.css) sitzt am WRAPPER, nicht an den Knoepfen: beide
        koennen je nach Konto einzeln ausgeblendet sein, und ein Layout-Anker an einem
        versteckten Element traegt nicht.
-       ⚠️ Der Admin-Dashboard-Button daneben war bis 2026-07-29 absolut auf die
-       Fenstermitte gesetzt und zaehlte im Flex-Fluss nicht mit -- er ueberlappte
-       diese Gruppe dadurch, sobald sie breit genug wurde (zuletzt 145px). Er laeuft
-       jetzt im Fluss und traegt selbst ein margin-right:auto; die beiden gehoeren
-       zusammen, siehe Kommentar an .header-admin-btn in style.css. -->
+       ⚠️ Hier stand bis 2026-08-13 ausserdem der goldene Admin-Dashboard-Knopf
+       (Michel-Vorgabe: er gehoert in die Einstellungen, siehe #tab-admin). Mit ihm
+       ist auch sein margin-right:auto entfallen -- das Auto-Margin an .header-btns
+       traegt jetzt allein, die Gruppe klebt weiter am Titel. -->
   <div class="header-btns">
     <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
     <!-- Der Zähler ersetzt die Karte auf der Startseite: ohne ihn sähe man beim
@@ -43,7 +42,6 @@
          Die beiden .btn-lang kuerzen ihn unter 860px auf "📲 App". -->
     <button type="button" class="header-code-btn" id="btn-app-ablegen" style="display:none;" title="Diese Übersicht als App auf dem Startbildschirm ablegen">📲 <span class="btn-lang">Als </span>App<span class="btn-lang"> ablegen</span></button>
   </div>
-  <button type="button" class="header-admin-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
   <div class="header-right">
     <!-- Die persönliche Liste steht bewusst auf der ANDEREN Seite der Kopfzeile
          (Michel-Vorgabe 2026-07-29): sie hat mit den Unterschriften nichts zu tun,
@@ -546,6 +544,13 @@
   </section>
 
   <section class="tab-section" id="tab-admin">
+
+    <!-- Zugang zum Admin-Dashboard. Stand bis 2026-08-13 als goldener Knopf in der
+         Kopfzeile; Michel-Vorgabe: er gehoert zu den Einstellungen. Nebenbei kostete
+         er am Handy dort eine volle Zeile (siehe "Als App ablegen" in CLAUDE.md).
+         ⚠️ Die Id bleibt -- Klick-Handler und Sichtbarkeits-Steuerung in app.js
+         haengen daran und bleiben unveraendert. -->
+    <button type="button" class="admin-dashboard-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
 
     <!-- Neuigkeiten-Verwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-news-panel" style="display:none;">
@@ -1448,7 +1453,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=2.5"></script>
+<script src="config.js?v=2.6"></script>
 <script src="app.js?v=1.83"></script>
 </body>
 </html>
