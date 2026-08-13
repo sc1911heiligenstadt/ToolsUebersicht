@@ -450,22 +450,39 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
-    version: "1.14",
+    version: "1.16",
     groups: [
       {
-        title: "Admin-Dashboard und Testansicht stehen jetzt in den Einstellungen",
+        title: "Testansicht steht jetzt neben dem Admin-Dashboard",
         items: [
-          "Der goldene Knopf „📊 Admin-Dashboard“ ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — dort steht er ganz oben.",
-          "Gleich daneben steht die Auswahl für die Testansicht („👑 Admin (echt)“), die vorher ebenfalls oben rechts war.",
-          "Beide können genau dasselbe wie vorher, und wie vorher sieht sie nur, wer Admin ist.",
-          "Die Kopfzeile hat dadurch am Handy zwei Zeilen weniger."
+          "Die Auswahl für die Testansicht („👑 Admin (echt)“) ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — direkt neben den Knopf „📊 Admin-Dashboard“.",
+          "Sie kann genau dasselbe wie vorher, und wie vorher sieht sie nur, wer Admin ist.",
+          "Die Kopfzeile wird dadurch am Handy noch einmal eine Zeile kürzer."
         ]
-      },
+      }
+    ]
+  },
+  {
+    version: "1.15",
+    groups: [
       {
         title: "Kleinere Knöpfe in der Kopfzeile",
         items: [
           "Die Knöpfe oben — Materialcontainercode, Unterschriften, Meine ToDos, der eigene Name und Abmelden — sind eine Stufe kleiner geworden.",
           "Dadurch passt oben wieder alles in eine Zeile, statt umzubrechen."
+        ]
+      }
+    ]
+  },
+  {
+    version: "1.14",
+    groups: [
+      {
+        title: "Admin-Dashboard steht jetzt in den Einstellungen",
+        items: [
+          "Der goldene Knopf „📊 Admin-Dashboard“ ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — dort steht er ganz oben.",
+          "Er kann genau dasselbe wie vorher, und wie vorher sehen ihn nur Admins.",
+          "Die Kopfzeile hat dadurch am Handy eine Zeile weniger."
         ]
       }
     ]
