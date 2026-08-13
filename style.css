@@ -1376,6 +1376,53 @@ main { flex: 1; min-width: 0; }
 .ansicht-edit-btn:hover { background: var(--gray); }
 .ansicht-edit-btn.aktiv { background: var(--green); border-color: var(--green); color: var(--white); }
 .ansicht-edit-btn.aktiv:hover { background: var(--green); }
+/* Der Suchknopf teilt sich die Optik mit "Anordnen", darf im eingeschalteten Zustand
+   aber nicht gruen werden -- gruen heisst in dieser Leiste "du veraenderst gerade
+   etwas". Suchen veraendert nichts, deshalb blau. */
+.ansicht-such-btn.aktiv { background: var(--blue); border-color: var(--blue); color: var(--white); }
+.ansicht-such-btn.aktiv:hover { background: var(--blue); }
+.ansicht-suche {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  padding: 0 6px 0 12px;
+}
+.ansicht-suche input {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 7px 0;
+  /* Ohne min-width:0 erzwingt die intrinsische Mindestbreite eines Textfelds in der
+     Flex-Leiste am Handy einen seitlichen Ueberlauf der ganzen Seite -- dieselbe Falle
+     wie beim Datumsfeld im Aufgaben-Formular. */
+  width: 190px;
+  min-width: 0;
+  max-width: 100%;
+}
+.ansicht-suche-x {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.ansicht-suche-x:hover { background: var(--gray); color: var(--text); }
+/* Am Handy bekommt das Feld die ganze Zeile: neben den drei Knoepfen blieben sonst
+   wenige Pixel, und ein Suchfeld, in das zwei Buchstaben passen, ist keins. */
+@media (max-width: 560px) {
+  .ansicht-suche { flex: 1 1 100%; }
+  .ansicht-suche input { width: 100%; }
+}
 .ansicht-hinweis { font-size: 12px; color: var(--muted); }
 .ansicht-status { font-size: 12px; color: var(--muted); min-height: 1em; }
 .ansicht-status.fehler { color: var(--red); font-weight: 600; }

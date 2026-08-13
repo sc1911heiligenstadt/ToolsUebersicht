@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.57" />
+<link rel="stylesheet" href="style.css?v=1.58" />
 </head>
 <body>
 
@@ -101,6 +101,16 @@
         <button type="button" class="ansicht-btn" id="btn-ansicht-liste" aria-pressed="false" title="Werkzeuge als Liste anzeigen">☰ Liste</button>
       </div>
       <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern">✏️ Anordnen</button>
+      <!-- Suchen und Anordnen schliessen sich gegenseitig aus: eine gefilterte Liste
+           beim Verschieben wuerde die ausgeblendeten Werkzeuge aus der gespeicherten
+           Reihenfolge kippen (saveToolOrder liest die IDs aus dem DOM). Beide Knoepfe
+           bleiben trotzdem klickbar und schalten den jeweils anderen Zustand ab --
+           ein gesperrter Knopf schluckt den Klick kommentarlos. -->
+      <button type="button" class="ansicht-edit-btn ansicht-such-btn" id="btn-ansicht-suche" aria-expanded="false" aria-controls="ansicht-suche-feld" title="Werkzeug suchen">🔎 Suchen</button>
+      <div class="ansicht-suche" id="ansicht-suche-feld" style="display:none;">
+        <input type="search" id="ansicht-suche-eingabe" placeholder="Name oder Stichwort…" autocomplete="off" aria-label="Werkzeuge durchsuchen" />
+        <button type="button" class="ansicht-suche-x" id="btn-ansicht-suche-schliessen" title="Suche beenden" aria-label="Suche beenden">✕</button>
+      </div>
       <span class="ansicht-hinweis" id="ansicht-hinweis" style="display:none;">Am Greifpunkt ⠿ verschieben — innerhalb der eigenen Kategorie.</span>
       <span class="ansicht-status" id="ansicht-status" aria-live="polite"></span>
     </div>
@@ -1400,7 +1410,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=2.2"></script>
-<script src="app.js?v=1.80"></script>
+<script src="config.js?v=2.3"></script>
+<script src="app.js?v=1.81"></script>
 </body>
 </html>

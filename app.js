@@ -93,6 +93,12 @@ let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte,
 // jedem Geraet gleich.
 let ansichtState = { modus: "kacheln", reihenfolge: {} };
 let ansichtBearbeiten = false;   // Anordnen-Modus an? Nur dann laesst sich etwas verschieben.
+// Suchtext ueber den Kacheln (seit 2026-08-13). Bewusst NICHT Teil von ansichtState und
+// damit nicht am Konto gespeichert: es ist ein fluechtiger Filter fuer diesen einen
+// Besuch, keine Anzeige-Vorliebe. Ein beim naechsten Anmelden noch gesetzter Filter
+// liesse die halbe Uebersicht fehlen, ohne dass jemand danach gesucht hat.
+let ansichtSuchText = "";
+let ansichtSucheOffen = false;   // Feld eingeblendet? (auch bei leerem Text)
 let _ansichtSaveTimer = null;    // gebuendeltes Speichern nach dem Verschieben
 let _ansichtSaveLaeuft = false;  // In-Flight-Guard: waehrend ein Speichern laeuft, wird nicht parallel gestartet
 let _ansichtSaveNachholen = false; // waehrend des laufenden Speicherns kam eine weitere Aenderung
@@ -1330,9 +1336,84 @@ function startCardDrag(e, card, grid, category) {
 
 // ---- Bedienleiste ueber den Kacheln ----
 
+// ⚠️ Es braucht ZWEI Vergleichsformen, eine allein laesst die halbe Schreibweise ins
+// Leere laufen -- beim Testen gemessen, nicht vermutet: wer "platze" tippt, meint
+// "Plätze" (Umlaut auf den Grundbuchstaben), wer "buero" tippt, meint "Büro" (Umlaut
+// ausgeschrieben). Mit nur der Langform findet "platze" das "Plätze" nicht, weil dort
+// "plaetze" steht; mit nur der Grundform findet "buero" das "buro" nicht.
+function sucheNormGrund(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss");
+}
+
+function sucheNormLang(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
+// Alle getippten Woerter muessen vorkommen, die Reihenfolge ist egal ("plan foto"
+// findet die Fotoauftraege genauso wie "foto plan"). Gesucht wird in Name,
+// Beschreibung und Kategorie -- die Beschreibung ist der eigentliche Gewinn, denn
+// den Namen kennt nur, wer das Werkzeug ohnehin schon gefunden hat.
+function toolPasstZurSuche(t, woerter) {
+  if (!woerter.length) return true;
+  const roh = [t.name, t.description, t.category].join(" ");
+  const grund = sucheNormGrund(roh);
+  const lang = sucheNormLang(roh);
+  return woerter.every((w) => grund.includes(sucheNormGrund(w)) || lang.includes(sucheNormLang(w)));
+}
+
+function ansichtSuchWoerter() {
+  return String(ansichtSuchText || "").trim().split(/\s+/).filter(Boolean);
+}
+
+// Beendet den Anordnen-Modus und holt ein gebuendeltes Speichern sofort nach: wer
+// aufhoert zu sortieren, erwartet, dass es jetzt steht. Rendert bewusst NICHT --
+// jeder Aufrufer tut das ohnehin genau einmal.
+function ansichtBearbeitenAus() {
+  if (!ansichtBearbeiten) return;
+  ansichtBearbeiten = false;
+  if (_ansichtSaveTimer) {
+    clearTimeout(_ansichtSaveTimer);
+    _ansichtSaveTimer = null;
+    ansichtJetztSpeichern();
+  }
+}
+
+function ansichtSucheAus() {
+  ansichtSucheOffen = false;
+  ansichtSuchText = "";
+}
+
+// ⚠️ Suchen und Anordnen schliessen sich gegenseitig aus. saveToolOrder() liest die
+// Tool-IDs aus dem DOM -- verschoebe jemand in einer gefilterten Liste, fielen alle
+// ausgeblendeten Werkzeuge aus der gespeicherten Reihenfolge und haengten sich beim
+// naechsten Rendern hinten an. Beide Knoepfe bleiben klickbar und schalten den
+// jeweils anderen Zustand ab; ein gesperrter Knopf schluckt den Klick kommentarlos.
+function ansichtSucheUmschalten() {
+  if (ansichtSucheOffen) { ansichtSucheAus(); renderToolGrid(); return; }
+  ansichtSucheOffen = true;
+  ansichtBearbeitenAus();
+  renderToolGrid();
+  const feld = document.getElementById("ansicht-suche-eingabe");
+  if (feld) feld.focus();
+}
+
 // Wird am Ende von renderToolGrid() aufgerufen, damit Leiste und Kacheln nie
 // auseinanderlaufen. Setzt ausschliesslich Anzeige-Zustaende und rendert bewusst NICHT
 // nach -- sonst riefen sich die beiden gegenseitig auf.
+//
+// ⚠️ hatKacheln meint "hat der Nutzer ueberhaupt Werkzeuge", NICHT "hat die Suche
+// getroffen". Haenge die Leiste an den Treffern, verschwindet sie beim ersten Tippfehler
+// mitsamt dem Feld, in dem er steht -- und der Filter ist nicht mehr zuruecknehmbar.
 function renderAnsichtLeiste(hatKacheln) {
   const leiste = document.getElementById("ansicht-leiste");
   if (!leiste) return;
@@ -1341,10 +1422,16 @@ function renderAnsichtLeiste(hatKacheln) {
   // Neuigkeiten.
   const sichtbar = !!currentUser && !!hatKacheln;
   leiste.style.display = sichtbar ? "flex" : "none";
-  if (!sichtbar && ansichtBearbeiten) {
-    ansichtBearbeiten = false;
-    const container = document.getElementById("tool-groups");
-    if (container) container.classList.remove("anordnen");
+  if (!sichtbar) {
+    if (ansichtBearbeiten) {
+      ansichtBearbeiten = false;
+      const container = document.getElementById("tool-groups");
+      if (container) container.classList.remove("anordnen");
+    }
+    // ⚠️ Die Suche muss mit weg. Sonst bliebe nach dem Abmelden ein Filter stehen und
+    // blendete nach der naechsten Anmeldung die halbe Uebersicht aus -- waehrend das
+    // Feld, mit dem man ihn zuruecknimmt, gerade unsichtbar war.
+    ansichtSucheAus();
   }
 
   const kachelBtn = document.getElementById("btn-ansicht-kacheln");
@@ -1360,6 +1447,20 @@ function renderAnsichtLeiste(hatKacheln) {
   }
   const hinweis = document.getElementById("ansicht-hinweis");
   if (hinweis) hinweis.style.display = ansichtBearbeiten ? "inline" : "none";
+
+  const sucheBtn = document.getElementById("btn-ansicht-suche");
+  if (sucheBtn) {
+    sucheBtn.setAttribute("aria-expanded", ansichtSucheOffen ? "true" : "false");
+    sucheBtn.classList.toggle("aktiv", ansichtSucheOffen);
+    sucheBtn.title = ansichtSucheOffen ? "Suche beenden" : "Werkzeug suchen";
+  }
+  const sucheBox = document.getElementById("ansicht-suche-feld");
+  if (sucheBox) sucheBox.style.display = ansichtSucheOffen ? "flex" : "none";
+  const sucheFeld = document.getElementById("ansicht-suche-eingabe");
+  // ⚠️ Den Wert nur setzen, wenn er wirklich abweicht: ein Zuweisen bei jedem
+  // Tastendruck setzt die Schreibmarke ans Ende, und mitten im Wort zu korrigieren
+  // waere danach unmoeglich.
+  if (sucheFeld && sucheFeld.value !== ansichtSuchText) sucheFeld.value = ansichtSuchText;
 }
 
 function ansichtModusSetzen(modus) {
@@ -1370,15 +1471,12 @@ function ansichtModusSetzen(modus) {
 }
 
 function ansichtBearbeitenUmschalten() {
-  ansichtBearbeiten = !ansichtBearbeiten;
-  renderToolGrid();
   // Beim Beenden nicht auf den Buendel-Timer warten: wer auf Fertig drueckt, erwartet,
-  // dass es jetzt steht.
-  if (!ansichtBearbeiten && _ansichtSaveTimer) {
-    clearTimeout(_ansichtSaveTimer);
-    _ansichtSaveTimer = null;
-    ansichtJetztSpeichern();
-  }
+  // dass es jetzt steht. Das steckt in ansichtBearbeitenAus().
+  if (ansichtBearbeiten) { ansichtBearbeitenAus(); renderToolGrid(); return; }
+  ansichtBearbeiten = true;
+  ansichtSucheAus(); // gegenseitiger Ausschluss, Begruendung bei ansichtSucheUmschalten()
+  renderToolGrid();
 }
 
 function setupAnsichtLeiste() {
@@ -1388,6 +1486,20 @@ function setupAnsichtLeiste() {
   if (kachelBtn) kachelBtn.addEventListener("click", () => ansichtModusSetzen("kacheln"));
   if (listeBtn) listeBtn.addEventListener("click", () => ansichtModusSetzen("liste"));
   if (anordnenBtn) anordnenBtn.addEventListener("click", ansichtBearbeitenUmschalten);
+
+  const sucheBtn = document.getElementById("btn-ansicht-suche");
+  const sucheZu = document.getElementById("btn-ansicht-suche-schliessen");
+  const sucheFeld = document.getElementById("ansicht-suche-eingabe");
+  if (sucheBtn) sucheBtn.addEventListener("click", ansichtSucheUmschalten);
+  if (sucheZu) sucheZu.addEventListener("click", () => { ansichtSucheAus(); renderToolGrid(); });
+  if (sucheFeld) {
+    // Gefiltert wird bei jedem Tastendruck. Das kostet nichts: renderToolGrid() baut
+    // rund 30 Karten neu, es gibt keinen Server-Aufruf und nichts wird gespeichert.
+    sucheFeld.addEventListener("input", () => { ansichtSuchText = sucheFeld.value; renderToolGrid(); });
+    sucheFeld.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") { ansichtSucheAus(); renderToolGrid(); }
+    });
+  }
   // Ein noch nicht abgeschickter Buendel-Speichervorgang darf beim Wegwischen der Seite
   // nicht verloren gehen. pagehide feuert auf iOS zuverlaessiger als unload; der
   // versteckte Tab ist der zweite Fall (Tab-Wechsel, App in den Hintergrund).
@@ -1407,13 +1519,24 @@ function renderToolGrid() {
   container.classList.toggle("anordnen", ansichtBearbeiten);
 
   const categories = [...new Set(TOOLS.map((t) => t.category))];
+  // Zwei getrennte Zaehler: anyVisible heisst "der Nutzer hat ueberhaupt Werkzeuge"
+  // und steuert Bedienleiste und Anmelde-Hinweis, anyTreffer heisst "die Suche hat
+  // etwas gefunden". Ein gemeinsamer Zaehler naehme der Suche bei null Treffern das
+  // Feld weg, in dem der Suchtext steht.
   let anyVisible = false;
+  let anyTreffer = false;
+  const suchWoerter = ansichtSuchWoerter();
 
   categories.forEach((category) => {
     const toolsUnordered = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, currentUser));
     if (toolsUnordered.length === 0) return;
     anyVisible = true;
-    const toolsInCategory = applyCustomOrder(category, toolsUnordered);
+    const toolsGefunden = toolsUnordered.filter((t) => toolPasstZurSuche(t, suchWoerter));
+    // Eine Kategorie ohne Treffer faellt samt Ueberschrift weg -- eine leere
+    // Ueberschrift sieht aus, als fehlte etwas.
+    if (toolsGefunden.length === 0) return;
+    anyTreffer = true;
+    const toolsInCategory = applyCustomOrder(category, toolsGefunden);
 
     const group = document.createElement("div");
     group.className = "category-group";
@@ -1479,12 +1602,15 @@ function renderToolGrid() {
   });
 
   const emptyEl = document.getElementById("uebersicht-empty");
-  emptyEl.style.display = anyVisible ? "none" : "block";
-  if (!anyVisible) {
-    document.getElementById("uebersicht-empty-text").textContent = currentUser
-      ? "Aktuell sind keine Tools für dich sichtbar."
-      : "Melde dich an, um deine Tools zu sehen.";
-    document.getElementById("btn-empty-login").style.display = currentUser ? "none" : "inline-block";
+  emptyEl.style.display = anyTreffer ? "none" : "block";
+  if (!anyTreffer) {
+    const text = anyVisible
+      ? "Kein Werkzeug passt zu „" + ansichtSuchText.trim() + "“."
+      : (currentUser ? "Aktuell sind keine Tools für dich sichtbar." : "Melde dich an, um deine Tools zu sehen.");
+    document.getElementById("uebersicht-empty-text").textContent = text;
+    // Bei einer erfolglosen Suche fehlt nicht die Anmeldung, sondern der Treffer --
+    // ein Anmelde-Knopf waere dort eine falsche Fährte.
+    document.getElementById("btn-empty-login").style.display = (!anyVisible && !currentUser) ? "inline-block" : "none";
   }
   renderAnsichtLeiste(anyVisible);
 }
