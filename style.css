@@ -40,39 +40,52 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
    nur als Ganzes) und schoebe das Wappen aus dem Bild. */
 .header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; }
 .header-logo { height: 44px; width: auto; display: block; }
+/* ⚠️ Die Pillen der Kopfzeile (.header-code-btn, .header-user, .view-as-select,
+   .header-logout-btn) sind am 2026-08-13 auf Michel-Vorgabe eine Stufe kleiner
+   geworden: Schrift 13→12px (Testansicht 12→11), Polsterung entsprechend. Sie
+   gehoeren als Satz zusammen -- wer eine davon anfasst, zieht die anderen mit,
+   sonst steht eine Pille sichtbar aus der Reihe. Die Kopfzeilen-HOEHE aendert
+   sich dadurch am Rechner nicht: das hoechste Element ist das 44px hohe
+   .header-logo, und in einer Flex-Leiste zieht das hoechste alle anderen. */
 .header-user {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 999px;
-  padding: 6px 14px;
-}
-.view-as-select {
+  gap: 5px;
   font-size: 12px;
   font-weight: 600;
   color: white;
   background: rgba(255, 255, 255, 0.14);
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 4px 11px;
+}
+/* Das Kennzeichen IM Nutzer-Chip ("Admin", "Testansicht") bestimmt dessen Hoehe:
+   mit den 11px/2px der Grundklasse blieb der Chip bei 29px stehen, waehrend die
+   uebrigen Pillen nach der Verkleinerung 27px hoch sind -- und in einer
+   Flex-Leiste faellt genau das auf. Bewusst NUR hier enger, nicht an
+   .version-badge selbst: die traegt auch die Versionsangabe im Info-Tab. */
+.header-user .version-badge { font-size: 10px; padding: 1px 7px; }
+.view-as-select {
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 4px 9px;
   cursor: pointer;
 }
 /* Abmelden sitzt im Header neben dem Nutzer-Chip, damit es von jedem Tab aus
    erreichbar ist -- nicht mehr nur im Einstellungen-Tab. */
 .header-logout-btn {
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: white;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: 999px;
-  padding: 6px 14px;
+  padding: 4px 11px;
   cursor: pointer;
 }
 .header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
@@ -128,15 +141,15 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
 }
 .header-code-btn {
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: white;
   background: rgba(255, 255, 255, 0.14);
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: 999px;
-  padding: 7px 16px;
+  padding: 5px 13px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -970,9 +983,9 @@ main { flex: 1; min-width: 0; }
    Wunsch komplett ins Fenster gezogen. Der Zähler sitzt seither am Kopf-Knopf --
    ohne ihn sähe man beim Seitenaufruf nicht mehr, dass etwas offen ist. */
 .header-zaehler {
-  flex-shrink: 0; margin-left: 7px; font-size: 11px; font-weight: 700;
+  flex-shrink: 0; margin-left: 6px; font-size: 10px; font-weight: 700;
   background: rgba(255, 255, 255, 0.9); color: var(--blue);
-  border-radius: 999px; padding: 1px 7px; line-height: 1.5;
+  border-radius: 999px; padding: 1px 6px; line-height: 1.5;
 }
 /* Der Ring hebt die rote Zahl vom hellen Kopfbereich ab -- box-shadow liegt
    außerhalb des Layouts und verbreitert den Knopf nicht. */
@@ -1385,8 +1398,11 @@ main { flex: 1; min-width: 0; }
 @media (max-width: 860px) {
   .page-body { flex-direction: column; }
   /* Kompakter, damit die beiden Kopf-Knoepfe moeglichst lange in eine Zeile
-     passen; reicht der Platz trotzdem nicht, bricht .header-btns um. */
-  .header-code-btn { padding: 6px 10px; font-size: 12px; }
+     passen; reicht der Platz trotzdem nicht, bricht .header-btns um.
+     ⚠️ Muss unter der Basis bleiben (seit 2026-08-13: 5px 13px) -- sonst waere
+     der Knopf am Handy groesser als am Rechner. Die font-size steht nicht mehr
+     hier, sie ist oben schon 12px. */
+  .header-code-btn { padding: 5px 9px; }
   /* Und ab hier faellt der entbehrliche Teil der Beschriftung weg: "✍
      Unterschriften anfordern" + "📝 Meine ToDos" zwangen die Kopfzeile bei 375px
      auf 243px Hoehe (fast ein Drittel des Bildschirms), weil jede Gruppe eine

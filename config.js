@@ -459,6 +459,13 @@ const APP_CHANGELOG = [
           "Er kann genau dasselbe wie vorher, und wie vorher sehen ihn nur Admins.",
           "Die Kopfzeile hat dadurch am Handy eine Zeile weniger."
         ]
+      },
+      {
+        title: "Kleinere Knöpfe in der Kopfzeile",
+        items: [
+          "Die Knöpfe oben — Materialcontainercode, Unterschriften, Meine ToDos, Testansicht, der eigene Name und Abmelden — sind eine Stufe kleiner geworden.",
+          "Dadurch passt oben wieder alles in eine Zeile, statt umzubrechen."
+        ]
       }
     ]
   },
