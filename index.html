@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.64" />
+<link rel="stylesheet" href="style.css?v=1.65" />
 </head>
 <body>
 
@@ -121,6 +121,16 @@
       <p id="uebersicht-empty-text" style="margin:0;">Aktuell sind keine Tools sichtbar.</p>
       <button type="button" class="btn" id="btn-empty-login" style="display:none; margin-top:14px;">Jetzt anmelden</button>
     </div>
+    <!-- Linksammlung (seit 2026-08-14). Steht UNTER den Kacheln: die Werkzeuge des
+         Vereins sind die Hauptsache, fremde Webseiten der Zusatz.
+         ⚠️ Sichtbar fuer JEDEN Besucher, auch ohne Konto (Michel-Entscheidung
+         2026-08-14) -- deshalb liefert der Worker sie im oeffentlichen Teil des GET
+         aus, nicht im angemeldet-Zweig wie die Neuigkeiten. Der ganze Bereich
+         bleibt weg, solange kein Link gepflegt ist. -->
+    <section class="links-bereich" id="links-bereich" style="display:none;">
+      <h2 class="links-titel">🔗 Nützliche Links</h2>
+      <div class="links-liste" id="links-liste"></div>
+    </section>
   </section>
 
   <section class="tab-section" id="tab-feedback">
@@ -755,6 +765,46 @@
       <p class="muted" id="materialcontainer-admin-meta" style="margin-top:10px; font-size:12px;"></p>
       <p class="muted" id="materialcontainer-admin-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
       <p class="muted" id="materialcontainer-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Linksammlung der Startseite (nur Admin, seit 2026-08-14).
+         ⚠️ Der Hinweis "fuer jeden Besucher sichtbar" ist nicht Kosmetik: der GET
+         liefert die Links ohne Token aus. Wer den Kreis je enger zieht, aendert
+         BEIDES -- den Worker und diesen Absatz. -->
+    <details class="card collapsible" id="admin-links-panel" style="display:none;">
+      <summary>Links auf der Startseite</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Adressen anderer Webseiten, die auf der Startseite unter den Werkzeug-Kacheln stehen.
+        <strong>Sie sind für jeden Besucher sichtbar</strong> — auch für Leute ohne Vereinskonto.
+        Trag hier deshalb nichts Internes ein. Die Reihenfolge in der Liste unten ist die
+        Reihenfolge auf der Startseite; mit ↑ und ↓ lässt sie sich ändern.
+      </p>
+      <div id="links-admin-list"></div>
+      <form id="links-form" class="form-grid" style="margin-top:16px; align-items:flex-end;">
+        <input type="hidden" id="links-edit-id" value="" />
+        <div class="form-field">
+          <label for="links-icon">Symbol (optional)</label>
+          <input type="text" id="links-icon" maxlength="8" placeholder="z. B. ⚽" autocomplete="off" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="links-titel">Name *</label>
+          <input type="text" id="links-titel" maxlength="80" required placeholder="z. B. Thüringer Fußball-Verband" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="links-url">Adresse *</label>
+          <input type="url" id="links-url" maxlength="500" required placeholder="https://…" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="links-beschreibung">Kurze Erklärung (optional)</label>
+          <input type="text" id="links-beschreibung" maxlength="200" placeholder="z. B. Spielpläne, Staffeln, Passwesen" />
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn small" id="btn-links-submit">Hinzufügen</button>
+          <button type="button" class="btn secondary small" id="btn-links-cancel" style="display:none;">Abbrechen</button>
+        </div>
+      </form>
+      <p class="muted" id="links-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="links-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
     </details>
 
     <!-- Unterschriften anfordern: wer darf ein PDF zum Unterschreiben verschicken (nur Admin).
@@ -1459,7 +1509,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=2.9"></script>
-<script src="app.js?v=1.83"></script>
+<script src="config.js?v=3.0"></script>
+<script src="app.js?v=1.84"></script>
 </body>
 </html>

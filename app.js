@@ -16,6 +16,10 @@ let newsReactionCounts = {}; // { newsId: { emoji: anzahl } } — öffentliche Z
 let newsReactionNames = {};  // { newsId: { emoji: [anzeigename] } } — WER reagiert hat, für den Tooltip; nur angemeldet befüllt
 let newsReactionMine = {};   // { newsId: emoji } — eigene Reaktion, nur eingeloggt (my-news-reactions)
 let newsReactionHint = "";   // kurzer transienter Hinweis unter der Reaktionsleiste (z.B. "Bitte anmelden")
+// Linksammlung der Startseite (seit 2026-08-14). Kommt wie die Tool-Sichtbarkeit aus
+// dem OEFFENTLICHEN Teil des GET -- sie haengt bewusst nicht am Login und wird beim
+// Abmelden deshalb auch nicht geleert (anders als newsState).
+let linksState = [];
 let _newsReactionHintTimer = null;
 let bootstrapAvailable = false;
 let currentToken = null;
@@ -1829,6 +1833,58 @@ async function refreshNews() {
   newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {};
   newsReactionNames = (data && data.newsReactionNames && typeof data.newsReactionNames === "object") ? data.newsReactionNames : {};
   renderNews();
+}
+
+// ---------- Linksammlung der Startseite (seit 2026-08-14) ----------
+//
+// Michel-Wunsch: ein Bereich, in dem ein paar Adressen fremder Webseiten
+// bereitstehen. Steht unter den Kacheln, gepflegt wird er im Einstellungen-Tab.
+//
+// ⚠️ Er haengt NICHT am Login. Der Worker liefert die Liste jedem Besucher aus,
+// und renderLinks() wird deshalb auch nicht beim Abmelden geleert -- anders als
+// renderNews(). Wer das je umdreht, aendert Worker, Panel-Hinweis und diese
+// Funktion gemeinsam.
+
+// Nur http/https anzeigen. Der Worker filtert bereits genauso; die zweite Pruefung
+// kostet nichts und haelt die Seite auch dann sauber, wenn die Liste je aus einer
+// anderen Quelle kaeme (ein javascript:-Link stuende sonst anklickbar auf der
+// oeffentlichen Startseite).
+function linkUrlOk(url) {
+  return /^https?:\/\/[^\s]+$/i.test(String(url || ""));
+}
+
+// Zeigt dem Leser VOR dem Klick, wohin es geht. Faellt eine kaputte Adresse durch,
+// wird die rohe URL gezeigt statt gar nichts.
+function linkHost(url) {
+  try {
+    return new URL(String(url)).hostname.replace(/^www\./, "");
+  } catch (_) {
+    return String(url || "");
+  }
+}
+
+function renderLinks() {
+  const bereich = document.getElementById("links-bereich");
+  const liste = document.getElementById("links-liste");
+  if (!bereich || !liste) return;
+  const eintraege = (Array.isArray(linksState) ? linksState : []).filter((l) => l && l.titel && linkUrlOk(l.url));
+  if (!eintraege.length) {
+    // innerHTML mitleeren, nicht nur ausblenden: ein zurueckgenommener Link bliebe
+    // sonst im DOM stehen und dort lesbar (gleiche Falle wie bei renderNews).
+    liste.innerHTML = "";
+    bereich.style.display = "none";
+    return;
+  }
+  bereich.style.display = "";
+  liste.innerHTML = eintraege.map((l) => `
+    <a class="link-karte" href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer">
+      ${l.icon ? `<span class="link-icon" aria-hidden="true">${escapeHtml(l.icon)}</span>` : ""}
+      <span class="link-text">
+        <span class="link-titel">${escapeHtml(l.titel)}</span>
+        ${l.beschreibung ? `<span class="link-beschreibung">${escapeHtml(l.beschreibung)}</span>` : ""}
+        <span class="link-host">${escapeHtml(linkHost(l.url))} ↗</span>
+      </span>
+    </a>`).join("");
 }
 
 function formatNewsDate(iso) {
@@ -4350,6 +4406,156 @@ function renderNewsAdmin() {
     row.querySelector(".news-edit-btn").addEventListener("click", () => startEditNews(id));
     row.querySelector(".news-del-btn").addEventListener("click", () => deleteNews(id));
   });
+}
+
+// ---------- Linksammlung pflegen (Admin, seit 2026-08-14) ----------
+//
+// Aufbau bewusst wie die Neuigkeiten-Pflege darueber: Liste oben, ein Formular
+// darunter, das im Bearbeiten-Fall dieselben Felder vorbelegt. Der Unterschied
+// sind die Pfeile: die Reihenfolge des Arrays IST die Anzeigereihenfolge, es gibt
+// kein Datum, nach dem sich sortieren liesse.
+
+function renderLinksAdmin() {
+  const list = document.getElementById("links-admin-list");
+  if (!list) return;
+  const eintraege = Array.isArray(linksState) ? linksState : [];
+  if (!eintraege.length) {
+    list.innerHTML = '<p class="muted">Noch keine Links.</p>';
+    return;
+  }
+  list.innerHTML = eintraege.map((l, i) => `
+    <div class="links-admin-row" data-id="${escapeHtml(l.id || "")}">
+      <div class="links-admin-main">
+        <div class="links-admin-titel">${l.icon ? escapeHtml(l.icon) + " " : ""}${escapeHtml(l.titel || "")}</div>
+        ${l.beschreibung ? `<div class="links-admin-text">${escapeHtml(l.beschreibung)}</div>` : ""}
+        <div class="links-admin-url">${escapeHtml(l.url || "")}</div>
+      </div>
+      <div class="links-admin-actions">
+        <button type="button" class="btn secondary small links-up-btn" title="Nach oben"${i === 0 ? " disabled" : ""}>↑</button>
+        <button type="button" class="btn secondary small links-down-btn" title="Nach unten"${i === eintraege.length - 1 ? " disabled" : ""}>↓</button>
+        <button type="button" class="btn secondary small links-edit-btn">Bearbeiten</button>
+        <button type="button" class="btn danger small links-del-btn">Löschen</button>
+      </div>
+    </div>`).join("");
+  list.querySelectorAll(".links-admin-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector(".links-up-btn").addEventListener("click", () => moveLink(id, -1));
+    row.querySelector(".links-down-btn").addEventListener("click", () => moveLink(id, 1));
+    row.querySelector(".links-edit-btn").addEventListener("click", () => startEditLink(id));
+    row.querySelector(".links-del-btn").addEventListener("click", () => deleteLink(id));
+  });
+}
+
+function linksFormReset() {
+  document.getElementById("links-edit-id").value = "";
+  document.getElementById("links-icon").value = "";
+  document.getElementById("links-titel").value = "";
+  document.getElementById("links-url").value = "";
+  document.getElementById("links-beschreibung").value = "";
+  document.getElementById("btn-links-submit").textContent = "Hinzufügen";
+  document.getElementById("btn-links-cancel").style.display = "none";
+  document.getElementById("links-error").style.display = "none";
+}
+
+function startEditLink(id) {
+  const l = (linksState || []).find((x) => x.id === id);
+  if (!l) return;
+  document.getElementById("links-edit-id").value = l.id;
+  document.getElementById("links-icon").value = l.icon || "";
+  document.getElementById("links-titel").value = l.titel || "";
+  document.getElementById("links-url").value = l.url || "";
+  document.getElementById("links-beschreibung").value = l.beschreibung || "";
+  document.getElementById("btn-links-submit").textContent = "Änderung speichern";
+  document.getElementById("btn-links-cancel").style.display = "inline-block";
+  document.getElementById("admin-links-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function deleteLink(id) {
+  if (!confirm("Diesen Link wirklich löschen?")) return;
+  const prev = linksState.slice();
+  linksState = linksState.filter((x) => x.id !== id);
+  await persistLinks(prev);
+}
+
+// Tauscht einen Eintrag mit seinem Nachbarn und speichert sofort. Bewusst kein
+// Drag-and-drop wie bei den Kacheln: die Liste ist kurz, und zwei Pfeile
+// funktionieren am Handy ohne Sonderfaelle.
+async function moveLink(id, richtung) {
+  const i = linksState.findIndex((x) => x.id === id);
+  const ziel = i + richtung;
+  if (i < 0 || ziel < 0 || ziel >= linksState.length) return;
+  const prev = linksState.slice();
+  const neu = linksState.slice();
+  neu[i] = prev[ziel];
+  neu[ziel] = prev[i];
+  linksState = neu;
+  await persistLinks(prev);
+}
+
+// Speichert linksState serverseitig; bei Fehler Rollback auf den vorherigen Stand.
+// Gleiches Muster wie persistNews.
+async function persistLinks(prevOnError) {
+  const errorEl = document.getElementById("links-error");
+  const successEl = document.getElementById("links-success");
+  errorEl.style.display = "none";
+  successEl.style.display = "none";
+  try {
+    const res = await callWorker("save-links", { links: linksState });
+    // Der Worker normiert und gibt die bereinigte Liste zurueck -- sie ist
+    // massgeblich, nicht der lokale Entwurf (er kann Eintraege enthalten, die
+    // serverseitig durchgefallen sind).
+    if (res && Array.isArray(res.links)) linksState = res.links;
+    renderLinks();
+    renderLinksAdmin();
+    successEl.style.display = "block";
+    return true;
+  } catch (err) {
+    if (prevOnError) linksState = prevOnError;
+    renderLinksAdmin();
+    errorEl.textContent = err.message;
+    errorEl.style.display = "block";
+    return false;
+  }
+}
+
+function setupLinksPanel() {
+  const form = document.getElementById("links-form");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("links-error");
+    const titel = document.getElementById("links-titel").value.trim();
+    const url = document.getElementById("links-url").value.trim();
+    // Vor dem Worker abfangen: zu dem Zeitpunkt ist noch nichts gespeichert, und
+    // eine benannte Absage ist besser als ein still verschluckter Eintrag.
+    if (!titel) {
+      errorEl.textContent = "Bitte einen Namen eintragen.";
+      errorEl.style.display = "block";
+      return;
+    }
+    if (!linkUrlOk(url)) {
+      errorEl.textContent = "Die Adresse muss mit https:// oder http:// beginnen.";
+      errorEl.style.display = "block";
+      return;
+    }
+    const editId = document.getElementById("links-edit-id").value;
+    const eintrag = {
+      id: editId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      titel,
+      url,
+      beschreibung: document.getElementById("links-beschreibung").value.trim(),
+      icon: document.getElementById("links-icon").value.trim()
+    };
+    const prev = linksState.slice();
+    // Neue Links hinten anhaengen: die Reihenfolge ist gepflegt, ein neuer Eintrag
+    // soll die bestehende Sortierung nicht von oben her durcheinanderbringen.
+    linksState = editId
+      ? linksState.map((x) => (x.id === editId ? eintrag : x))
+      : linksState.concat([eintrag]);
+    const ok = await persistLinks(prev);
+    if (ok) linksFormReset();
+  });
+  document.getElementById("btn-links-cancel").addEventListener("click", linksFormReset);
 }
 
 // ---------- Medien-Anhänge der Neuigkeiten (seit 2026-08-03) ----------
@@ -6903,6 +7109,7 @@ function renderAdminPanels() {
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
   document.getElementById("admin-materialcontainer-panel").style.display = "none";
+  document.getElementById("admin-links-panel").style.display = "none";
   document.getElementById("admin-mannschaften-panel").style.display = "none";
   document.getElementById("admin-rundnachricht-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
@@ -6929,6 +7136,7 @@ function renderAdminPanels() {
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
       document.getElementById("admin-materialcontainer-panel").style.display = "block";
+      document.getElementById("admin-links-panel").style.display = "block";
       document.getElementById("admin-mannschaften-panel").style.display = "block";
       document.getElementById("admin-rundnachricht-panel").style.display = "block";
       document.getElementById("admin-aufgaben-panel").style.display = "block";
@@ -8060,6 +8268,7 @@ async function afterAuthChange() {
     await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();
+    renderLinksAdmin();
     await loadAndRenderFeedback();
     await ladeMaterialcontainerInsAdminFeld();
     await renderAufgabenAdminPanel();
@@ -9100,6 +9309,7 @@ async function init() {
   setupKontoFoto();
   setupKontaktFreigabe();
   setupMannschaftenPanel();
+  setupLinksPanel();
   setupPunktePanel();
   setupWhatsappLink();
   setupWikiFrage();
@@ -9127,12 +9337,18 @@ async function init() {
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {}; // öffentliche Zähler
   newsReactionNames = (data && data.newsReactionNames && typeof data.newsReactionNames === "object") ? data.newsReactionNames : {}; // Namen für den Tooltip, nur angemeldet gefüllt
+  // Kommt aus dem oeffentlichen Teil des GET, haengt also nicht am Login. Ein
+  // alter Worker liefert das Feld nicht -- dann bleibt der Bereich leer und weg,
+  // statt dass etwas Halbes dasteht.
+  linksState = (data && Array.isArray(data.links)) ? data.links : [];
   bootstrapAvailable = !!(data && data.bootstrapAvailable);
   // ERST hier rendern, nicht schon oben im synchronen Teil: der News-Bereich ist die
   // einzige Stelle, deren Inhalt komplett vom Server kommt. Ein Render vor dem Fetch
   // zeigte das statische Seed aus config.js und ersetzte es danach — sichtbar als
   // kurz aufblitzendes Karussell alter Meldungen bei jedem Seitenaufruf.
   renderNews();
+  // Die Linksammlung ist oeffentlich und braucht deshalb keinen Guard auf currentUser.
+  renderLinks();
   // Eigene Reaktionen nachladen (nur wenn eingeloggt) — bewusst NICHT awaited, damit die
   // eigene Hervorhebung nachrutscht, ohne den restlichen Seitenaufbau zu bremsen.
   refreshMyNewsReactions();
@@ -9150,6 +9366,7 @@ async function init() {
     await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();
+    renderLinksAdmin();
     await loadAndRenderFeedback();
     await ladeMaterialcontainerInsAdminFeld();
     await renderAufgabenAdminPanel();

@@ -2234,3 +2234,74 @@ nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
 }
 .mannschaft-person select { flex: 1 1 200px; min-width: 0; }
 .mannschaft-person .mannschaft-person-rolle { flex: 0 1 160px; }
+
+/* ---------- Linksammlung der Startseite (seit 2026-08-14) ---------- */
+/* Adressen fremder Webseiten, unter den Werkzeug-Kacheln. Bewusst OPTISCH
+   ZURUECKHALTENDER als .tool-card: kein Schatten, kein Anheben beim Ueberfahren,
+   nur ein Rahmen. Die Werkzeuge des Vereins sollen die Hauptsache bleiben --
+   staenden die Links in derselben Optik, waeren es zwei gleichrangige Raster
+   untereinander und niemand wuesste, wo die eigentliche Arbeit anfaengt. */
+.links-bereich { margin-top: 32px; }
+.links-titel {
+  font-size: 16px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+/* minmax(0, 1fr) statt minmax(240px, 1fr): eine lange Adresse ohne Leerzeichen
+   zieht die Spalte sonst ueber die Seitenbreite hinaus. Die Mindestbreite macht
+   hier das erste Argument von auto-fill. */
+.links-liste {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 12px;
+}
+.link-karte {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text);
+  min-width: 0;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.link-karte:hover { border-color: var(--blue); background: var(--blue-light); }
+.link-icon { font-size: 20px; line-height: 1.2; flex-shrink: 0; }
+/* min-width: 0 ist Pflicht, nicht Kosmetik: ohne das bekommt das Flex-Kind die
+   Wunschbreite seines laengsten Wortes (hier die Adresse) und sprengt die Karte. */
+.link-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.link-titel { font-weight: 600; overflow-wrap: anywhere; }
+.link-beschreibung { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+/* Zeigt vor dem Klick, wohin es geht -- die Karte fuehrt aus dem Verein hinaus. */
+.link-host { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Pflege im Einstellungen-Tab. Aufbau wie .news-admin-row, nur mit den beiden
+   Pfeilen: die Reihenfolge des Arrays IST die Anzeigereihenfolge. */
+/* ⚠️ flex-wrap plus eine Basisbreite am Textteil, nicht nur space-between: mit den
+   VIER Knoepfen rechts (zwei davon Pfeile) blieb bei 375 px so wenig Platz, dass
+   die Knopfgruppe sich untereinander stapelte -- gemessen 440 px Zeilenhoehe fuer
+   einen einzigen Link. Mit flex: 1 1 260px bricht die Gruppe stattdessen UNTER den
+   Text und steht dort in einer Zeile. Gleiche Gegenmassnahme wie bei
+   .feedback-admin-row. */
+.links-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.links-admin-row:first-child { border-top: none; }
+.links-admin-main { flex: 1 1 260px; min-width: 0; }
+.links-admin-titel { font-weight: 600; overflow-wrap: anywhere; }
+.links-admin-text { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.links-admin-url { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
+/* flex-wrap, weil hier vier Knoepfe stehen: ohne das erzwingen sie am Handy eine
+   Mindestbreite und ziehen die ganze Seite seitlich auf (dieselbe Falle wie bei
+   .gr-header am 2026-08-07). */
+.links-admin-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }

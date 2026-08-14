@@ -450,6 +450,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.17",
+    groups: [
+      {
+        title: "Nützliche Links auf der Startseite",
+        items: [
+          "Unter den Werkzeug-Kacheln steht jetzt ein Bereich „🔗 Nützliche Links“ mit Adressen anderer Webseiten — zum Beispiel dem Fußball-Verband oder der Vereins-Homepage.",
+          "Gepflegt wird er von Admins unter Einstellungen → „Links auf der Startseite“: Name, Adresse, ein Symbol und eine kurze Erklärung. Die Reihenfolge lässt sich mit ↑ und ↓ ändern.",
+          "Die Links sind für jeden Besucher sichtbar, auch ohne Anmeldung — anders als die Neuigkeiten. Deshalb gehört dort nichts Internes hinein.",
+          "Solange kein Link eingetragen ist, bleibt der Bereich ganz weg."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.16",
     groups: [
       {

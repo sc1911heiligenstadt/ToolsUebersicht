@@ -57,7 +57,7 @@
 // kein zusätzliches Worker-Secret nötig.
 //
 // API (POST-Body: { action, ... } außer beim einfachen GET):
-//   GET                                                        -> { tools, bootstrapAvailable } ohne Auth
+//   GET                                                        -> { tools, links, bootstrapAvailable } ohne Auth
 //   GET /kalender/<token>.ics                                  -> text/calendar, ohne Auth (der Token IM PFAD ist der Ausweis)
 //     Abo-Feed des Vereinskalenders für den eigenen Kalender. Kalenderprogramme können keinen Bearer-Token
 //     schicken, deshalb dieser zweite GET-Pfad. Prüft bei JEDEM Abruf Konto und Tool-Sichtbarkeit neu.
@@ -227,6 +227,9 @@
 //     wertet adminGroupIds mit); provisionGroupIds steuert das Auto-Provisioning: Mitglieder dieser Gruppen
 //     bekommen automatisch einen Eintrag im Tool.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news NUR an Angemeldete (optionaler Bearer-Token am GET, seit 2026-07-25), sonst news: null; Meldungen älter als 14 Tage (NEWS_MAX_ALTER_TAGE, ab dem Meldungsdatum) filtert der GET aus und löscht sie im Hintergrund samt Medien-Dateien und Reaktionen (seit 2026-08-10)
+//   POST { action: "save-links", links } (admin)                 -> speichert die Linksammlung (Array, serverseitig validiert) im links-Key von sichtbarkeit.json (erhält tools/news);
+//     GET liefert links AN JEDEN, auch ohne Token — anders als news. Michel-Entscheidung 2026-08-14: es sind Adressen fremder
+//     Webseiten, kein Vereinsinternum. Reihenfolge des Arrays ist die Anzeigereihenfolge (seit 2026-08-14)
 //   POST { action: "toggle-news-reaction", newsId, emoji } (jeder eingeloggte Nutzer) -> { newsId, counts, mine, namen }
 //     (setzt/wechselt/entfernt die EINE Reaktion des Nutzers auf eine Meldung; Emoji strikt gegen NEWS_REACTION_EMOJIS
 //     validiert, Nutzername aus der Session; Ablage in neuigkeiten-reaktionen.json getrennt von den News)
@@ -1031,6 +1034,15 @@ export default {
       // reactionsDoc und usersDoc stehen oben schon.
       return json({
         tools: config.tools,
+        // ⚠️ Die Linksammlung steht AUSDRUECKLICH hier oben bei tools und NICHT im
+        // angemeldet-Zweig wie news/newsReactions: Michel-Entscheidung 2026-08-14,
+        // sie ist fuer ALLE Besucher gedacht. Es sind Adressen fremder Webseiten,
+        // kein Vereinsinternum -- wer eine interne Adresse hier eintraegt, macht sie
+        // damit oeffentlich. Genau das sagt der Hinweis im Admin-Panel. Wer den
+        // Kreis je enger zieht, zieht diesen Hinweis mit.
+        // Normiert wird auch beim LESEN, nicht nur beim Schreiben: ein von Hand in
+        // Nextcloud editierter Eintrag darf keine kaputte Form ausliefern.
+        links: linksNormieren(config.links),
         news: (angemeldet && frischeNews) ? frischeNews : null,
         newsReactions: angemeldet ? newsReactionCounts(reactionsDoc) : {},
         newsReactionNames: angemeldet ? newsReactionNames(reactionsDoc, usersDoc) : {},
@@ -1271,6 +1283,8 @@ export default {
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
         return handleSetMaterialcontainerCode(request, body, env, authHeader, corsHeaders);
+      case "save-links":
+        return handleSaveLinks(request, body, env, authHeader, corsHeaders);
       case "submit-feedback":
         return handleSubmitFeedback(request, body, env, authHeader, corsHeaders);
       case "list-feedback":
@@ -3787,6 +3801,81 @@ async function handleSetMaterialcontainerCode(request, body, env, authHeader, co
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
   return json({ ok: true, ...config.materialcontainer }, 200, corsHeaders);
+}
+
+// ---------- Aktion: Linksammlung (seit 2026-08-14) ----------
+//
+// Eine gepflegte Liste von Adressen fremder Webseiten, die auf der Startseite
+// unter den Kacheln steht. Ablage im links-Key von sichtbarkeit.json -- dieselbe
+// Ueberlegung wie beim materialcontainer-Key: die Datei wird beim GET ohnehin
+// gelesen, die Liste kostet damit KEINEN zusaetzlichen Nextcloud-Read. Sie ist
+// klein und aendert sich selten; fuer etwas Wachsendes waere eine eigene Datei
+// richtig (siehe die Begruendung bei den Neuigkeiten-Medien).
+const LINKS_MAX = 40;
+const LINKS_MAX_TITEL = 80;
+const LINKS_MAX_URL = 500;
+const LINKS_MAX_BESCHREIBUNG = 200;
+const LINKS_MAX_ICON = 8;
+
+// Normiert die gespeicherte Liste in EINE verlaessliche Form. Wird beim Lesen
+// (GET) und beim Schreiben (save-links) benutzt, damit beide Seiten dasselbe
+// sehen -- ein von Hand in Nextcloud editierter Eintrag kann sonst eine Form
+// ausliefern, die der Client nicht erwartet.
+//
+// ⚠️ Die URL wird strikt gegen http/https geprueft. Ohne das koennte ein
+// manipulierter Client `javascript:...` eintragen, und der Link stuende danach
+// als anklickbares Element auf der oeffentlichen Startseite -- fuer jeden
+// Besucher, auch ohne Konto. Ein Eintrag ohne gueltige URL faellt ganz weg
+// statt als toter Link stehenzubleiben.
+function linksNormieren(rohe) {
+  if (!Array.isArray(rohe)) return [];
+  const clean = [];
+  for (const l of rohe.slice(0, LINKS_MAX)) {
+    if (!l || typeof l !== "object") continue;
+    const titel = String(l.titel == null ? "" : l.titel).trim().slice(0, LINKS_MAX_TITEL);
+    const url = String(l.url == null ? "" : l.url).trim().slice(0, LINKS_MAX_URL);
+    if (!titel) continue;
+    if (!/^https?:\/\/[^\s]+$/i.test(url)) continue;
+    const eintrag = {
+      id: /^[a-z0-9-]{1,40}$/i.test(String(l.id || "")) ? String(l.id) : (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      titel,
+      url
+    };
+    const beschreibung = String(l.beschreibung == null ? "" : l.beschreibung).trim().slice(0, LINKS_MAX_BESCHREIBUNG);
+    if (beschreibung) eintrag.beschreibung = beschreibung;
+    // Das Symbol ist frei getippt (ein Emoji). Nur gelaengt, nicht gegen eine
+    // Liste geprueft: es wird im Client escaped und ist reine Zierde.
+    const icon = String(l.icon == null ? "" : l.icon).trim().slice(0, LINKS_MAX_ICON);
+    if (icon) eintrag.icon = icon;
+    clean.push(eintrag);
+  }
+  return clean;
+}
+
+// Admin speichert die ganze Liste. Read-modify-write wie handleSaveNews und
+// handleSetMaterialcontainerCode, damit tools/news/materialcontainer erhalten
+// bleiben. Ein leeres Array ist erlaubt und heisst "keine Links" -- so laesst
+// sich der Bereich auch wieder ganz abschalten.
+async function handleSaveLinks(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  if (!Array.isArray(body.links)) {
+    return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+  }
+
+  const clean = linksNormieren(body.links);
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  config.version = config.version || 1;
+  config.links = clean;
+  try {
+    await writeJson(env.NEXTCLOUD_URL, authHeader, config);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ links: config.links }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Persönliche Aufgaben ----------
