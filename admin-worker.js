@@ -635,7 +635,6 @@ const RAUMNUTZUNG_MAIL_TEXT = [
   "Leineberg 2",
   "37308 Heilbad Heiligenstadt",
   "Telefon: 03606/ 612206",
-  "Mobil: 01719530102",
   "Mail: Info@sc1911-heiligenstadt.de"
 ].join("\n");
 
@@ -10969,15 +10968,16 @@ function sessionUserFromDoc(payload, usersDoc) {
 
 function normalizeUsername(raw) {
   // Umlaute EXAKT wie beim Anlegen transliterieren (generateUsername -> slugifyNamePart
-  // -> transliterate: ö->oe usw.), sonst wird "Uwe Förster" beim Login zu "uwe.förster",
-  // der Account liegt aber unter "uwe.foerster" -> Konto nie gefunden, 401 statt
+  // -> transliterate: ö->oe usw.), sonst wird "Jörg Müller" (erfundenes Beispiel) beim
+  // Login zu "jörg.müller", der Account liegt aber unter "joerg.mueller" -> Konto nie gefunden, 401 statt
   // needsPasswordSetup (Login zeigt fälschlich das Passwort-Feld statt "Konto einrichten").
   return transliterate(String(raw || "")).trim().toLowerCase().replace(/\s+/g, ".");
 }
 
-// Anmeldung mit E-Mail-Adresse und Schreibvarianten (seit 2026-08-03, Michel-Vorgabe:
-// "Michel Brunner", "michel.brunner", "michel_brunner", "MichelBrunner" und
-// "Michel_Brunner@gmx.de" sollen alle dasselbe Konto treffen).
+// Anmeldung mit E-Mail-Adresse und Schreibvarianten (seit 2026-08-03, Michel-Vorgabe;
+// Beispiel erfunden, dieses Repo ist oeffentlich: "Max Mustermann", "max.mustermann",
+// "max_mustermann", "MaxMustermann" und "Max_Mustermann@example.invalid" sollen alle
+// dasselbe Konto treffen).
 //
 // ⚠️ Die REIHENFOLGE ist bindend: der exakte Treffer (normalizeUsername wie bisher)
 // steht immer vorn. Nutzernamen dürfen laut USERNAME_RE selbst "_" und "-" enthalten
@@ -11044,7 +11044,7 @@ async function resolveLoginUser(raw, usersDoc, authHeader) {
     if (treffer.length === 1) return treffer[0];
   }
 
-  // 3. Rückfall für Adressen, die nichts mit dem Namen zu tun haben ("mb1985@web.de"):
+  // 3. Rückfall für Adressen, die nichts mit dem Namen zu tun haben ("fussballfan99@example.invalid"):
   //    die echte E-Mail-Adresse steht in den Trainerdaten -- nutzer.json führt keine.
   //    ⚠️ Das ist der EINZIGE unangemeldete Weg, der PROVISION_ONLY_PATHS.trainerdaten
   //    liest (die Datei enthält IBAN-Daten). Michel-Entscheidung 2026-08-03. Bedingungen,
