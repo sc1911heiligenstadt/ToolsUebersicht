@@ -5581,6 +5581,394 @@ function meineFeedbacksLeeren() {
   if (liste) liste.innerHTML = "";
 }
 
+// ---- Ideen (seit 2026-08-16) ----
+//
+// Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was die Tools koennen
+// sollten -- sichtbar fuer ALLE, anders als der Typ "wunsch" im Feedback-Tab
+// (der bewusst bestehen bleibt). Die tragenden Entscheidungen stehen im
+// Worker-Block am Ende von admin-worker.js; hier nur, was die Oberflaeche
+// betrifft.
+//
+// ⚠️ Alles, was ein Nutzer NICHT sehen darf, filtert der Worker -- diese Datei
+// zeigt nur an, was sie bekommt. Der Verfassername einer anonymen Idee und die
+// Antwort an einen Fremden kommen hier gar nicht erst an.
+
+const IDEE_STATUS_TEXT = {
+  neu: "Neu",
+  arbeit: "In Arbeit",
+  umgesetzt: "Umgesetzt",
+  abgelehnt: "Nicht geplant"
+};
+
+// Welche Zustaende oben in der Hauptliste stehen. Der Rest rutscht in den
+// zugeklappten Block darunter (Michel-Entscheidung).
+const IDEE_STATUS_OFFEN = ["neu", "arbeit"];
+
+let ideenState = { geladen: false, laeuft: false, verfuegbar: true, ideen: [], istAdmin: false };
+// Welche Idee gerade im Formular liegt (Bearbeiten). null = neue Idee.
+let ideeBearbeiteId = null;
+
+// Gleiche Linie wie im Worker (ideenSession) und wie todosTabOffen():
+// angemeldetes Personal, keine Spielerkonten.
+function ideenTabOffen() {
+  return !!currentUser && currentUser.art !== "spieler";
+}
+
+function ideenLeeren() {
+  ideenState = { geladen: false, laeuft: false, verfuegbar: true, ideen: [], istAdmin: false };
+  ideeBearbeiteId = null;
+  // ⚠️ innerHTML mitleeren, nicht nur ausblenden: die Ideen des vorherigen
+  // Nutzers blieben sonst im DOM lesbar -- an einem geteilten Geraet stuenden
+  // dort nach dem Abmelden fremde Eintraege samt Namen (dieselbe Falle wie bei
+  // renderNews und der Kontaktfreigabe-Karte).
+  const liste = document.getElementById("ideen-liste");
+  if (liste) liste.innerHTML = "";
+  const erledigt = document.getElementById("ideen-erledigt-liste");
+  if (erledigt) erledigt.innerHTML = "";
+  const panel = document.getElementById("ideen-erledigt-panel");
+  if (panel) panel.style.display = "none";
+  ideeFormularZuruecksetzen();
+}
+
+function renderIdeenTab() {
+  const emptyEl = document.getElementById("ideen-empty");
+  const contentEl = document.getElementById("ideen-content");
+  if (!emptyEl || !contentEl) return;
+  if (!ideenTabOffen()) {
+    emptyEl.style.display = "block";
+    contentEl.style.display = "none";
+    ideenLeeren();
+    return;
+  }
+  emptyEl.style.display = "none";
+  contentEl.style.display = "block";
+}
+
+// Der Wegweiser unter den Kacheln. Haengt an derselben Bedingung wie der Tab --
+// ein Knopf, der ins Leere fuehrt, waere schlimmer als keiner.
+function renderIdeenHinweis() {
+  const el = document.getElementById("ideen-hinweis");
+  if (el) el.style.display = ideenTabOffen() ? "" : "none";
+}
+
+// ⚠️ Haengt an activateTab("ideen"), NICHT am Seitenaufbau. Die Aktion liest
+// eine eigene Nextcloud-Datei -- beim Seitenaufbau waere das ein Roundtrip
+// (200-450 ms) fuer jeden Nutzer bei jedem Aufruf der Startseite, auch wenn er
+// den Tab nie oeffnet. Gleiche Ueberlegung wie bei loadMeineFeedbacks() und
+// ladeKontaktFreigabe(). Aus demselben Grund gibt es bewusst kein Abzeichen am
+// Tab (Michel-Entscheidung nach vorgelegtem Preis).
+async function ladeIdeen() {
+  if (!ideenTabOffen() || ideenState.laeuft) return;
+  ideenState.laeuft = true;
+  const statusEl = document.getElementById("ideen-status");
+  if (statusEl && !ideenState.geladen) {
+    statusEl.style.display = "";
+    statusEl.textContent = "Wird geladen …";
+  }
+  try {
+    const data = await callWorker("ideen-load", {});
+    ideenState.ideen = (data && Array.isArray(data.ideen)) ? data.ideen : [];
+    ideenState.istAdmin = !!(data && data.istAdmin);
+    ideenState.verfuegbar = true;
+    ideenState.geladen = true;
+  } catch (e) {
+    // Ein aelterer Worker kennt die Aktion noch nicht. Dann bleibt es bei einer
+    // ruhigen Zeile statt eines roten Fehlers -- Pages ist sofort live, der
+    // Worker braucht einen eigenen Deploy (Linie wie bei push-status).
+    ideenState.verfuegbar = false;
+    ideenState.ideen = [];
+    if (statusEl) {
+      statusEl.style.display = "";
+      statusEl.textContent = /Unbekannte Aktion/i.test(String(e && e.message))
+        ? "Die Ideenliste wird gerade eingerichtet. Schau gleich noch einmal vorbei."
+        : ("Die Ideen konnten nicht geladen werden: " + (e && e.message ? e.message : "unbekannter Fehler"));
+    }
+  } finally {
+    ideenState.laeuft = false;
+  }
+  if (ideenState.verfuegbar) renderIdeen();
+}
+
+function ideeStatusText(status) {
+  return IDEE_STATUS_TEXT[String(status)] || IDEE_STATUS_TEXT.neu;
+}
+
+function ideeKarte(i) {
+  const status = String(i.status || "neu");
+  const autor = i.autor
+    ? escapeHtml(i.autor) + (i.anonym ? " <span class=\"idee-anonym-vermerk\">(anonym eingereicht)</span>" : "")
+    : "Anonym";
+  const datum = fmtDatumKurz(i.erstelltAm);
+  const adminBlock = ideenState.istAdmin ? `
+      <details class="idee-admin">
+        <summary>Bearbeiten</summary>
+        <div class="idee-admin-inhalt">
+          <label class="idee-admin-label" for="idee-status-${escapeHtml(i.id)}">Status</label>
+          <select class="form-select idee-status-select" id="idee-status-${escapeHtml(i.id)}" data-idee-status="${escapeHtml(i.id)}">
+            ${Object.keys(IDEE_STATUS_TEXT).map((s) => `<option value="${s}"${s === status ? " selected" : ""}>${escapeHtml(IDEE_STATUS_TEXT[s])}</option>`).join("")}
+          </select>
+          <label class="idee-admin-label" for="idee-antwort-${escapeHtml(i.id)}">Antwort (liest nur der Einreicher)</label>
+          <textarea class="idee-antwort-feld" id="idee-antwort-${escapeHtml(i.id)}" rows="2" maxlength="2000">${escapeHtml(i.antwort || "")}</textarea>
+          <div class="idee-admin-knoepfe">
+            <button type="button" class="btn small" data-idee-verwalten="${escapeHtml(i.id)}">Speichern</button>
+            <button type="button" class="btn small secondary" data-idee-loeschen="${escapeHtml(i.id)}">Löschen</button>
+          </div>
+        </div>
+      </details>` : "";
+  // Aendern und Loeschen bietet der Client nur an, wo der Worker es auch
+  // zulaesst -- die Schranke ist trotzdem dort, nicht hier.
+  const eigeneKnoepfe = (i.meins && !ideenState.istAdmin && i.darfAendern) ? `
+      <div class="idee-eigene-knoepfe">
+        <button type="button" class="btn small secondary" data-idee-bearbeiten="${escapeHtml(i.id)}">Ändern</button>
+        <button type="button" class="btn small secondary" data-idee-loeschen="${escapeHtml(i.id)}">Löschen</button>
+      </div>` : "";
+  const antwortBlock = i.antwort ? `
+      <div class="idee-antwort">
+        <strong>Antwort:</strong> ${escapeHtml(i.antwort)}
+        <span class="muted idee-antwort-meta">${escapeHtml(i.antwortVon || "")}${i.antwortAm ? " · " + escapeHtml(fmtDatumKurz(i.antwortAm)) : ""}</span>
+      </div>` : "";
+
+  return `
+    <article class="idee-karte">
+      <div class="idee-kopf">
+        <span class="idee-status idee-status-${escapeHtml(status)}">${escapeHtml(ideeStatusText(status))}</span>
+        <h3 class="idee-titel">${escapeHtml(i.titel || "")}</h3>
+      </div>
+      ${i.text ? `<p class="idee-text">${escapeHtml(i.text)}</p>` : ""}
+      <div class="idee-fuss">
+        <button type="button" class="idee-daumen${i.meinDaumen ? " aktiv" : ""}" data-idee-daumen="${escapeHtml(i.id)}"
+                aria-pressed="${i.meinDaumen ? "true" : "false"}"
+                title="${i.meinDaumen ? "Zustimmung zurücknehmen" : "Finde ich gut"}">
+          👍 <span class="idee-daumen-zahl">${Number(i.daumen) || 0}</span>
+        </button>
+        <span class="muted idee-meta">${autor}${datum ? " · " + escapeHtml(datum) : ""}${i.meins ? " · <strong>deine Idee</strong>" : ""}</span>
+      </div>
+      ${antwortBlock}
+      ${eigeneKnoepfe}
+      ${adminBlock}
+    </article>`;
+}
+
+function renderIdeen() {
+  const liste = document.getElementById("ideen-liste");
+  const statusEl = document.getElementById("ideen-status");
+  const panel = document.getElementById("ideen-erledigt-panel");
+  const erledigtListe = document.getElementById("ideen-erledigt-liste");
+  const erledigtTitel = document.getElementById("ideen-erledigt-titel");
+  if (!liste) return;
+
+  const alle = Array.isArray(ideenState.ideen) ? ideenState.ideen : [];
+  const offen = alle.filter((i) => IDEE_STATUS_OFFEN.includes(String(i.status || "neu")));
+  const fertig = alle.filter((i) => !IDEE_STATUS_OFFEN.includes(String(i.status || "neu")));
+
+  liste.innerHTML = offen.map(ideeKarte).join("");
+  if (statusEl) {
+    if (offen.length) {
+      statusEl.style.display = "none";
+    } else {
+      statusEl.style.display = "";
+      statusEl.textContent = ideenState.geladen
+        ? "Noch keine offene Idee. Schreib die erste auf."
+        : "Wird geladen …";
+    }
+  }
+
+  if (panel && erledigtListe && erledigtTitel) {
+    if (fertig.length) {
+      panel.style.display = "";
+      erledigtTitel.textContent = `Umgesetzt & nicht geplant (${fertig.length})`;
+      erledigtListe.innerHTML = fertig.map(ideeKarte).join("");
+    } else {
+      panel.style.display = "none";
+      erledigtListe.innerHTML = "";
+    }
+  }
+}
+
+function ideeFormularZuruecksetzen() {
+  ideeBearbeiteId = null;
+  const titel = document.getElementById("idee-titel");
+  const text = document.getElementById("idee-text");
+  const anonym = document.getElementById("idee-anonym");
+  const abbrechen = document.getElementById("btn-idee-abbrechen");
+  const absenden = document.getElementById("btn-idee-absenden");
+  if (titel) titel.value = "";
+  if (text) text.value = "";
+  if (anonym) anonym.checked = false;
+  if (abbrechen) abbrechen.style.display = "none";
+  if (absenden) absenden.textContent = "Idee absenden";
+}
+
+function ideeMeldung(fehler, ok) {
+  const fEl = document.getElementById("idee-form-fehler");
+  const oEl = document.getElementById("idee-form-ok");
+  if (fEl) {
+    fEl.textContent = fehler || "";
+    fEl.style.display = fehler ? "" : "none";
+  }
+  if (oEl) {
+    oEl.textContent = ok || "";
+    oEl.style.display = ok ? "" : "none";
+  }
+}
+
+async function ideeAbsenden(e) {
+  if (e) e.preventDefault();
+  const titelEl = document.getElementById("idee-titel");
+  const textEl = document.getElementById("idee-text");
+  const anonymEl = document.getElementById("idee-anonym");
+  const knopf = document.getElementById("btn-idee-absenden");
+  const titel = titelEl ? titelEl.value.trim() : "";
+  // Ohne Ueberschrift gar nicht erst zum Worker -- er lehnte ohnehin ab, und
+  // eine Fehlermeldung nach einem Rundlauf sieht wie ein Serverproblem aus.
+  if (!titel) {
+    ideeMeldung("Bitte gib deiner Idee eine Überschrift.", "");
+    if (titelEl) titelEl.focus();
+    return;
+  }
+  ideeMeldung("", "");
+  if (knopf) knopf.disabled = true;
+  try {
+    const payload = {
+      titel: titel,
+      text: textEl ? textEl.value.trim() : "",
+      anonym: !!(anonymEl && anonymEl.checked)
+    };
+    if (ideeBearbeiteId) payload.id = ideeBearbeiteId;
+    await callWorker("idee-speichern", payload);
+    ideeFormularZuruecksetzen();
+    ideeMeldung("", "Danke, deine Idee steht jetzt in der Liste.");
+    await ladeIdeen();
+  } catch (err) {
+    ideeMeldung(err && err.message ? err.message : "Die Idee konnte nicht gespeichert werden.", "");
+  } finally {
+    if (knopf) knopf.disabled = false;
+  }
+}
+
+function ideeBearbeiten(id) {
+  const i = (ideenState.ideen || []).find((x) => String(x.id) === String(id));
+  if (!i) return;
+  ideeBearbeiteId = String(id);
+  const titel = document.getElementById("idee-titel");
+  const text = document.getElementById("idee-text");
+  const anonym = document.getElementById("idee-anonym");
+  const abbrechen = document.getElementById("btn-idee-abbrechen");
+  const absenden = document.getElementById("btn-idee-absenden");
+  if (titel) titel.value = i.titel || "";
+  if (text) text.value = i.text || "";
+  if (anonym) anonym.checked = !!i.anonym;
+  if (abbrechen) abbrechen.style.display = "";
+  if (absenden) absenden.textContent = "Änderung speichern";
+  ideeMeldung("", "");
+  if (titel) {
+    titel.focus();
+    titel.scrollIntoView({ block: "center" });
+  }
+}
+
+async function ideeLoeschen(id) {
+  if (!window.confirm("Diese Idee wirklich löschen? Das lässt sich nicht rückgängig machen.")) return;
+  try {
+    await callWorker("idee-loeschen", { id: String(id) });
+    // Lag die geloeschte Idee gerade im Formular, muss der Bearbeiten-Zustand
+    // mit weg -- sonst schickt der naechste Klick eine Aenderung an einen
+    // Eintrag, den es nicht mehr gibt.
+    if (ideeBearbeiteId === String(id)) ideeFormularZuruecksetzen();
+    await ladeIdeen();
+  } catch (err) {
+    ideeMeldung(err && err.message ? err.message : "Die Idee konnte nicht gelöscht werden.", "");
+  }
+}
+
+// Optimistisch wie bei den Neuigkeiten-Reaktionen: der Klick soll sofort
+// wirken. Der Server hat trotzdem das letzte Wort -- seine Zahl ersetzt die
+// geratene, und bei einem Fehler wird zurueckgerollt.
+async function ideeDaumen(id, knopf) {
+  const i = (ideenState.ideen || []).find((x) => String(x.id) === String(id));
+  if (!i) return;
+  const vorherMein = !!i.meinDaumen;
+  const vorherZahl = Number(i.daumen) || 0;
+  i.meinDaumen = !vorherMein;
+  i.daumen = vorherZahl + (vorherMein ? -1 : 1);
+  ideeDaumenZeichnen(knopf, i);
+  try {
+    const res = await callWorker("idee-daumen", { id: String(id) });
+    if (res) {
+      i.daumen = Number(res.daumen) || 0;
+      i.meinDaumen = !!res.meinDaumen;
+      ideeDaumenZeichnen(knopf, i);
+    }
+  } catch (err) {
+    i.meinDaumen = vorherMein;
+    i.daumen = vorherZahl;
+    ideeDaumenZeichnen(knopf, i);
+    ideeMeldung(err && err.message ? err.message : "Die Zustimmung konnte nicht gespeichert werden.", "");
+  }
+}
+
+// Nur den einen Knopf anfassen statt die ganze Liste neu zu bauen -- ein
+// vollstaendiges Neurendern risse jedes offene Admin-Feld und jede
+// Scrollposition mit weg.
+function ideeDaumenZeichnen(knopf, i) {
+  if (!knopf) return;
+  const zahl = knopf.querySelector(".idee-daumen-zahl");
+  if (zahl) zahl.textContent = String(Number(i.daumen) || 0);
+  knopf.classList.toggle("aktiv", !!i.meinDaumen);
+  knopf.setAttribute("aria-pressed", i.meinDaumen ? "true" : "false");
+  knopf.title = i.meinDaumen ? "Zustimmung zurücknehmen" : "Finde ich gut";
+}
+
+async function ideeVerwalten(id) {
+  const statusEl = document.getElementById("idee-status-" + id);
+  const antwortEl = document.getElementById("idee-antwort-" + id);
+  try {
+    await callWorker("idee-verwalten", {
+      id: String(id),
+      status: statusEl ? statusEl.value : undefined,
+      // Immer mitschicken: ein geleertes Feld MUSS die Antwort loeschen
+      // koennen (der Worker unterscheidet fehlend von leer).
+      antwort: antwortEl ? antwortEl.value.trim() : ""
+    });
+    await ladeIdeen();
+  } catch (err) {
+    ideeMeldung(err && err.message ? err.message : "Die Änderung konnte nicht gespeichert werden.", "");
+  }
+}
+
+function setupIdeenTab() {
+  const form = document.getElementById("idee-form");
+  if (form) form.addEventListener("submit", ideeAbsenden);
+  const abbrechen = document.getElementById("btn-idee-abbrechen");
+  if (abbrechen) abbrechen.addEventListener("click", () => { ideeFormularZuruecksetzen(); ideeMeldung("", ""); });
+  const emptyLogin = document.getElementById("btn-ideen-empty-login");
+  if (emptyLogin) emptyLogin.addEventListener("click", () => activateTab("konto"));
+  const hinweisKnopf = document.getElementById("btn-ideen-hinweis");
+  if (hinweisKnopf) hinweisKnopf.addEventListener("click", () => activateTab("ideen"));
+  const feedbackKnopf = document.getElementById("btn-feedback-zu-ideen");
+  if (feedbackKnopf) feedbackKnopf.addEventListener("click", () => activateTab("ideen"));
+
+  // Delegation: die Karten werden bei jedem Laden neu geschrieben, einzeln
+  // registrierte Handler waeren nach dem ersten Rendern verwaist. Beide Listen
+  // (offen und erledigt) haengen am selben Handler.
+  const klick = (e) => {
+    const ziel = e.target && e.target.closest ? e.target : null;
+    if (!ziel) return;
+    const daumen = ziel.closest("[data-idee-daumen]");
+    if (daumen) { ideeDaumen(daumen.getAttribute("data-idee-daumen"), daumen); return; }
+    const bearbeiten = ziel.closest("[data-idee-bearbeiten]");
+    if (bearbeiten) { ideeBearbeiten(bearbeiten.getAttribute("data-idee-bearbeiten")); return; }
+    const loeschen = ziel.closest("[data-idee-loeschen]");
+    if (loeschen) { ideeLoeschen(loeschen.getAttribute("data-idee-loeschen")); return; }
+    const verwalten = ziel.closest("[data-idee-verwalten]");
+    if (verwalten) { ideeVerwalten(verwalten.getAttribute("data-idee-verwalten")); return; }
+  };
+  const liste = document.getElementById("ideen-liste");
+  if (liste) liste.addEventListener("click", klick);
+  const erledigt = document.getElementById("ideen-erledigt-liste");
+  if (erledigt) erledigt.addEventListener("click", klick);
+}
+
 // ---- Freigabe fuer die Kontaktliste (seit 2026-08-13) ----
 //
 // Stand bis dahin in Trainerdaten und ist von dort hierher gezogen (Michel-Vorgabe):
@@ -6142,6 +6530,10 @@ function activateTab(name) {
   // Eigene Einreichungen erst beim Oeffnen des Tabs holen, nicht beim
   // Seitenaufbau — siehe loadMeineFeedbacks.
   if (name === "feedback") loadMeineFeedbacks();
+  // Gleiche Ueberlegung wie oben: ideen-load liest eine eigene Nextcloud-Datei.
+  // Beim Seitenaufbau waere das ein Roundtrip fuer jeden Nutzer bei jedem Aufruf
+  // der Startseite, auch wenn er den Tab nie oeffnet.
+  if (name === "ideen") ladeIdeen();
   // Gleiche Ueberlegung: my-kontakt-freigabe liest trainerdaten.json, also einen
   // echten Nextcloud-Read. Beim Seitenaufbau waere das ein Roundtrip fuer jeden
   // Nutzer bei jedem Aufruf der Startseite, auch wenn er den Tab nie oeffnet.
@@ -6414,6 +6806,11 @@ function renderNavTabs() {
   document.getElementById("nav-konto").textContent = currentUser ? "Mein Konto" : "Anmelden";
   document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
   document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
+  // Ideen sind Personalsache (im Worker mit 403 fuer Spielerkonten abgesichert).
+  const ideenOffen = ideenTabOffen();
+  const navIdeen = document.getElementById("nav-ideen");
+  if (navIdeen) navIdeen.style.display = ideenOffen ? "" : "none";
+  renderIdeenHinweis();
   // Unterschriften UND ToDos sind Personalsache: Spielerkonten bekommen auf allen
   // zugehoerigen Aktionen ohnehin 403, die Fenster haben fuer sie also nichts zu
   // zeigen. Beide Zugaenge sitzen im Header, nicht in der Nav -- Unterschriften
@@ -6431,7 +6828,14 @@ function renderNavTabs() {
     activateTab("konto");
   } else if (!infoOffen && aktiv && aktiv.id === "tab-info") {
     activateTab("uebersicht");
+  } else if (!ideenOffen && aktiv && aktiv.id === "tab-ideen") {
+    // Anders als beim Feedback-Tab bleibt hier kein Nav-Knopf stehen -- man
+    // saehe eine aktive Sektion ohne markierten Tab. Deshalb wie beim Info-Tab
+    // auf die Startseite statt in die Anmeldemaske.
+    activateTab("uebersicht");
   }
+  // Beim Abmelden raeumt das die Liste aus dem DOM (nicht nur ausblenden).
+  renderIdeenTab();
 
   // Wer sich bei offenem Fenster abmeldet, stuende sonst weiter vor der zuletzt
   // geladenen Liste -- die Eintraege bleiben im DOM, bis etwas sie ersetzt.
@@ -9310,6 +9714,7 @@ async function init() {
   setupKontaktFreigabe();
   setupMannschaftenPanel();
   setupLinksPanel();
+  setupIdeenTab();
   setupPunktePanel();
   setupWhatsappLink();
   setupWikiFrage();

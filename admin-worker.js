@@ -247,6 +247,14 @@
 //     und schickt dem Einreicher eine Push-Nachricht; leerer Text entfernt die Antwort wieder, dann ohne Push)
 //   POST { action: "meine-feedbacks" } (jeder eingeloggte Nutzer) -> { entries } (nur die EIGENEN Einreichungen samt
 //     Antwort — der Weg, auf dem der Einreicher die Antwort liest, zu der die Push-Nachricht führt)
+//   POST { action: "ideen-load" } (angemeldetes Personal)        -> { ideen, istAdmin } (alle Ideen in der Sicht des
+//     Aufrufers: Verfassername nur wenn nicht anonym, Antwort nur für den Einreicher, Zustimmung nur als ZAHL)
+//   POST { action: "idee-speichern", id?, titel, text?, anonym? } (angemeldetes Personal) -> { idee }
+//     (ohne id neu, mit id die EIGENE ändern — und nur solange sie auf "neu" steht)
+//   POST { action: "idee-loeschen", id } (Verfasser solange "neu", oder Admin) -> { ok:true }
+//   POST { action: "idee-daumen", id } (angemeldetes Personal)   -> { id, daumen, meinDaumen } (Zustimmung umschalten)
+//   POST { action: "idee-verwalten", id, status?, antwort? } (admin) -> { idee } (Status setzen und antworten;
+//     fehlendes Feld heißt unverändert, mitgeschicktes leeres antwort löscht die Antwort)
 //   POST { action: "get-admin-stats" } (admin)                   -> { users, trainerGroup, trainervertrag, trainerkodex,
 //     jugendschutz, feedbackOpen, materialbedarfOpen, busplanOpen } — Kennzahlen fürs Admin-Dashboard, aus bestehenden
 //     Datenquellen berechnet (nutzer.json, feedback.json, trainerdaten/trainerkodex/materialbedarf/busplan via
@@ -1294,6 +1302,16 @@ export default {
         return handleFeedbackAntwort(request, body, env, authHeader, corsHeaders, ctx);
       case "meine-feedbacks":
         return handleMeineFeedbacks(request, env, authHeader, corsHeaders);
+      case "ideen-load":
+        return handleIdeenLoad(request, env, authHeader, corsHeaders);
+      case "idee-speichern":
+        return handleIdeeSpeichern(request, body, env, authHeader, corsHeaders);
+      case "idee-loeschen":
+        return handleIdeeLoeschen(request, body, env, authHeader, corsHeaders);
+      case "idee-daumen":
+        return handleIdeeDaumen(request, body, env, authHeader, corsHeaders);
+      case "idee-verwalten":
+        return handleIdeeVerwalten(request, body, env, authHeader, corsHeaders);
       case "get-admin-stats":
         return handleGetAdminStats(request, env, authHeader, corsHeaders);
       case "personalakte-overview":
@@ -12217,6 +12235,11 @@ const PUNKTE_IGNORIERT = new Set([
   // Laeuft beim Oeffnen des Feedback-Tabs von selbst, ist also eine Anzeige und
   // keine Handlung -- das Einreichen (submit-feedback) zaehlt ohnehin fuer sich.
   "meine-feedbacks",
+  // Gleiche Lage beim Ideen-Tab: das Laden ist eine Anzeige. ⚠️ Der Daumen bleibt
+  // ebenfalls draussen, obwohl er eine Handlung ist -- er schaltet um, ein Klick
+  // hin und her waere sonst eine beliebig oft nachfuellbare Punktequelle (genau
+  // die Begruendung, aus der toggle-news-reaction nicht im Katalog steht).
+  "ideen-load", "idee-daumen",
   // Die eigene Ansicht der Startseite. Das Lesen laeuft bei jedem Seitenaufbau von
   // selbst. ⚠️ Auch das SPEICHERN bleibt draussen, obwohl es eine Handlung ist: es ist
   // eine reine Anzeige-Vorliebe ohne Vereinsarbeit dahinter, und Hin- und Herschalten
@@ -12286,6 +12309,10 @@ const PUNKTE_TATEN = new Map([
   // Antwort auf eine Rueckmeldung -- dasselbe Muster wie ein Kommentar an einer
   // Vereinsaufgabe: eine echte Rueckmeldung an eine Person, nicht wiederholbar.
   ["feedback-antwort", PUNKTE_PRO_TAT],
+  // Eine Idee aufschreiben ist eine echte Handlung, das Abarbeiten (Status
+  // setzen, antworten) ebenso -- gleiche Linie wie feedback-antwort.
+  ["idee-speichern", PUNKTE_PRO_TAT],
+  ["idee-verwalten", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-uebergabe", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-ressort-speichern", PUNKTE_PRO_TAT],
   // Zu-/Absage zu einem Terminvorschlag im Vereinskalender (die Oberflaeche dort
@@ -15177,4 +15204,367 @@ async function handleMannschaftenUmschreiben(request, body, env, authHeader, cor
     alleApps: Object.keys(DAV_APPS),
     ergebnisse: ergebnisse
   }, 200, corsHeaders);
+}
+
+// ============================================================================
+// Ideen (seit 2026-08-16)
+//
+// Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was die Vereins-Tools
+// koennen sollten -- sichtbar fuer ALLE, nicht nur fuer den Admin. Genau das ist
+// der Unterschied zum vorhandenen Typ "wunsch" im Feedback-Tab, der bewusst
+// bestehen bleibt (Michel-Entscheidung vom 2026-08-16, die Doppelung ist
+// benannt und in Kauf genommen).
+//
+// Der Block steht geschlossen am Dateiende und ist am Stueck wieder
+// herausloesbar -- wie die Aktivitaetspunkte und die Kleiderbestellung darueber,
+// aus demselben Grund.
+//
+// Neun Michel-Entscheidungen aus einem Grill-me-Interview:
+//   Sichtbarkeit  alle Angemeldeten sehen alle Ideen (nicht nur der Admin)
+//   Ort           Tab in der Tools-Uebersicht, KEINE eigene App
+//   Teilnehmer    nur Personal, Spielerkonten bekommen 403
+//   Name          Haekchen "anonym" je Idee -- der Admin sieht ihn trotzdem
+//   Formular      Titel Pflicht, Text freiwillig, kein Tool-Feld
+//   Status        neu / arbeit / umgesetzt / abgelehnt, gesetzt nur vom Admin
+//   Zustimmung    Daumen hoch, einer je Person, NUR die Zahl ist sichtbar
+//   Antwort       schreibt der Admin, liest nur der Einreicher
+//   Aendern       der Verfasser darf, solange die Idee auf "neu" steht
+// Bewusst NICHT gebaut: Push (Michel-Entscheidung), Abzeichen am Tab
+// (kostete einen Nextcloud-Read bei JEDEM Aufruf der Startseite), Kommentare.
+// ============================================================================
+
+// Eigene Datei, bewusst NICHT der links/materialcontainer-Weg in
+// sichtbarkeit.json: dort ersetzt save-visibility den ganzen Inhalt, waehrend
+// hier jeder Angemeldete laufend schreibt (jeder Daumen ist ein Schreibvorgang).
+// Gleiche Ueberlegung wie bei aufgaben.json und neuigkeiten-reaktionen.json.
+const IDEEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/ideen.json";
+
+const IDEEN_MAX = 300;
+const IDEEN_MAX_TITEL = 120;
+const IDEEN_MAX_TEXT = 2000;
+const IDEEN_MAX_ANTWORT = 2000;
+
+// "neu" ist der einzige Zustand, in dem der Verfasser seine Idee noch aendern
+// darf -- ab "arbeit" ist sie ein Auftrag, und ein Auftrag, der sich unter der
+// laufenden Arbeit aendert, ist keiner mehr.
+const IDEEN_STATUS = ["neu", "arbeit", "umgesetzt", "abgelehnt"];
+
+// Wie aufgabenSession: angemeldetes PERSONAL. Spielerkonten bekommen 403 --
+// gleiche Linie wie Materialcontainer-Code, ToDos und Kontaktliste. Bei ~200
+// Spielerkonten waere eine fuer alle lesbare und beschreibbare Ideenliste etwas
+// anderes als das, was hier bestellt wurde.
+async function ideenSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (session.art === USER_ART_SPIELER) {
+    return { fehler: json({ error: "Kein Zugriff auf die Ideen" }, 403, corsHeaders) };
+  }
+  return { session, fehler: null };
+}
+
+function ideenListe(doc) {
+  return (doc && Array.isArray(doc.eintraege)) ? doc.eintraege : [];
+}
+
+// Ein Eintrag entsteht IMMER aus benannten Einzelfeldern, nie durch Uebernehmen
+// eines Objekts aus dem Koerper. Gleiche Linie wie linksNormieren: eine von Hand
+// in Nextcloud editierte Datei darf keine Form ausliefern, die der Client nicht
+// erwartet.
+function ideeNormieren(roh) {
+  if (!roh || typeof roh !== "object") return null;
+  const titel = capStr(roh.titel, IDEEN_MAX_TITEL).trim();
+  if (!titel) return null;
+  const id = /^[a-z0-9-]{1,40}$/i.test(String(roh.id || "")) ? String(roh.id) : null;
+  if (!id) return null;
+  const eintrag = {
+    id: id,
+    titel: titel,
+    text: capStr(roh.text, IDEEN_MAX_TEXT).trim(),
+    username: capStr(roh.username, 64).trim(),
+    anonym: roh.anonym === true,
+    erstelltAm: /^\d{4}-\d{2}-\d{2}T/.test(String(roh.erstelltAm || "")) ? String(roh.erstelltAm) : new Date().toISOString(),
+    status: IDEEN_STATUS.includes(String(roh.status)) ? String(roh.status) : "neu",
+    stimmen: {}
+  };
+  // Object.create(null) statt {}: ein Konto namens __proto__ traefe sonst den
+  // Prototyp und faelle spurlos aus der Zaehlung (dieselbe Falle wie in
+  // rundErreichbar).
+  const stimmen = Object.create(null);
+  const rohStimmen = (roh.stimmen && typeof roh.stimmen === "object") ? roh.stimmen : {};
+  for (const name of Object.keys(rohStimmen)) {
+    if (name === "__proto__" || !name || name.length > 64) continue;
+    if (rohStimmen[name]) stimmen[name] = true;
+  }
+  eintrag.stimmen = stimmen;
+  const antwort = capStr(roh.antwort, IDEEN_MAX_ANTWORT).trim();
+  if (antwort) {
+    eintrag.antwort = antwort;
+    eintrag.antwortVon = capStr(roh.antwortVon, 100).trim() || null;
+    eintrag.antwortAm = /^\d{4}-\d{2}-\d{2}T/.test(String(roh.antwortAm || "")) ? String(roh.antwortAm) : new Date().toISOString();
+  }
+  return eintrag;
+}
+
+function ideenDokNormieren(doc) {
+  const sauber = [];
+  for (const roh of ideenListe(doc).slice(0, IDEEN_MAX)) {
+    const e = ideeNormieren(roh);
+    if (e) sauber.push(e);
+  }
+  return { version: 1, eintraege: sauber };
+}
+
+// ⚠️ Die Sicht wird HIER gebaut, nicht im Client. Ein Name, den der Betrachter
+// nicht sehen soll, verlaesst den Worker gar nicht erst -- Ausblenden waere kein
+// Zurueckhalten. Betrifft drei Dinge:
+//   1. den Verfassernamen bei anonymen Ideen
+//   2. die Antwort des Admins (liest nur der Einreicher, Michel-Entscheidung)
+//   3. WER zugestimmt hat -- nach aussen geht ausschliesslich die ZAHL
+function ideeFuerNutzer(e, session, usersDoc) {
+  const ich = normalizeUsername(session.username);
+  const meins = normalizeUsername(e.username || "") === ich;
+  const istAdmin = !!session.isAdmin;
+  const stimmen = e.stimmen || {};
+  const sicht = {
+    id: e.id,
+    titel: e.titel,
+    text: e.text || "",
+    erstelltAm: e.erstelltAm,
+    status: e.status,
+    daumen: Object.keys(stimmen).length,
+    meinDaumen: !!getOwn(stimmen, ich),
+    meins: meins,
+    anonym: !!e.anonym,
+    // Aendern und Loeschen sind an denselben Zustand gebunden wie im Handler --
+    // der Client blendet danach nur die Knoepfe, die Schranke ist der Handler.
+    darfAendern: (meins && e.status === "neu") || istAdmin,
+    autor: null
+  };
+  // Der eigene Name steht auch bei einer anonymen Idee dran (man soll die eigene
+  // wiederfinden), der Admin sieht ihn ebenfalls -- genau das sagt der Text am
+  // Haekchen zu. Fuer alle anderen bleibt er weg.
+  if (!e.anonym || meins || istAdmin) {
+    sicht.autor = aufgabenAnzeigeName(usersDoc, e.username || "");
+  }
+  if (e.antwort && (meins || istAdmin)) {
+    sicht.antwort = e.antwort;
+    sicht.antwortVon = e.antwortVon || null;
+    sicht.antwortAm = e.antwortAm || null;
+  }
+  return sicht;
+}
+
+// Alle Ideen in der Sicht des Aufrufers. Neueste zuerst (Michel-Entscheidung);
+// der Client trennt offen/abgeschlossen selbst, dafuer reicht das Statusfeld.
+async function handleIdeenLoad(request, env, authHeader, corsHeaders) {
+  const { session, fehler } = await ideenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const doc = await readJson(IDEEN_URL, authHeader, { version: 1, eintraege: [] });
+  const sauber = ideenDokNormieren(doc).eintraege;
+  const sicht = sauber
+    .map((e) => ideeFuerNutzer(e, session, session.usersDoc))
+    .sort((a, b) => String(b.erstelltAm || "").localeCompare(String(a.erstelltAm || "")));
+
+  return json({ ideen: sicht, istAdmin: !!session.isAdmin }, 200, corsHeaders);
+}
+
+// Neu anlegen (ohne id) oder die EIGENE Idee aendern (mit id). Der Verfasser
+// kommt immer aus der Sitzung, nie aus dem Koerper.
+async function handleIdeeSpeichern(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await ideenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const titel = capStr(body && body.titel, IDEEN_MAX_TITEL).trim();
+  if (!titel) return json({ error: "Bitte gib deiner Idee eine Überschrift" }, 400, corsHeaders);
+  const text = capStr(body && body.text, IDEEN_MAX_TEXT).trim();
+  const anonym = !!(body && body.anonym);
+  const id = String((body && body.id) || "").trim();
+  if (id && !/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
+
+  let ergebnis = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: roh, rev } = await readJsonWithRev(IDEEN_URL, authHeader, { version: 1, eintraege: [] });
+    const doc = ideenDokNormieren(roh);
+
+    if (id) {
+      const vorhanden = doc.eintraege.find((e) => e.id === id);
+      if (!vorhanden) return json({ error: "Idee nicht gefunden" }, 404, corsHeaders);
+      const meins = normalizeUsername(vorhanden.username || "") === normalizeUsername(session.username);
+      if (!meins && !session.isAdmin) return json({ error: "Das ist nicht deine Idee" }, 403, corsHeaders);
+      // ⚠️ Ab "in Arbeit" ist die Idee festgeschrieben (Michel-Entscheidung).
+      // Sonst aendert sich der Auftrag, waehrend daran gearbeitet wird -- und
+      // bereits gegebene Daumen gaelten ploetzlich fuer etwas anderes.
+      if (!meins || vorhanden.status === "neu") {
+        vorhanden.titel = titel;
+        vorhanden.text = text;
+        vorhanden.anonym = anonym;
+      } else {
+        return json({ error: "Diese Idee ist schon in Arbeit und lässt sich nicht mehr ändern" }, 409, corsHeaders);
+      }
+      ergebnis = vorhanden;
+    } else {
+      if (doc.eintraege.length >= IDEEN_MAX) {
+        return json({ error: `Es sind schon ${IDEEN_MAX} Ideen gespeichert. Bitte erst welche aufräumen.` }, 400, corsHeaders);
+      }
+      const neu = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        titel: titel,
+        text: text,
+        username: session.username,
+        anonym: anonym,
+        erstelltAm: new Date().toISOString(),
+        status: "neu",
+        stimmen: Object.create(null)
+      };
+      doc.eintraege.push(neu);
+      ergebnis = neu;
+    }
+
+    try {
+      await writeJson(IDEEN_URL, authHeader, doc, rev || undefined);
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) { ergebnis = null; continue; }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  if (!ergebnis) return json({ error: "Idee konnte nicht gespeichert werden" }, 502, corsHeaders);
+
+  return json({ idee: ideeFuerNutzer(ergebnis, session, session.usersDoc) }, 200, corsHeaders);
+}
+
+// Die eigene Idee zuruecknehmen (nur solange "neu"), oder als Admin jede.
+async function handleIdeeLoeschen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await ideenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = String((body && body.id) || "").trim();
+  if (!/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
+
+  let entfernt = false;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: roh, rev } = await readJsonWithRev(IDEEN_URL, authHeader, { version: 1, eintraege: [] });
+    const doc = ideenDokNormieren(roh);
+    const vorhanden = doc.eintraege.find((e) => e.id === id);
+    if (!vorhanden) return json({ error: "Idee nicht gefunden" }, 404, corsHeaders);
+    const meins = normalizeUsername(vorhanden.username || "") === normalizeUsername(session.username);
+    if (!session.isAdmin) {
+      if (!meins) return json({ error: "Das ist nicht deine Idee" }, 403, corsHeaders);
+      if (vorhanden.status !== "neu") {
+        return json({ error: "Diese Idee ist schon in Arbeit und lässt sich nicht mehr löschen" }, 409, corsHeaders);
+      }
+    }
+    doc.eintraege = doc.eintraege.filter((e) => e.id !== id);
+    try {
+      await writeJson(IDEEN_URL, authHeader, doc, rev || undefined);
+      entfernt = true;
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  if (!entfernt) return json({ error: "Idee konnte nicht gelöscht werden" }, 502, corsHeaders);
+
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// Daumen hoch, einer je Person. Eigene schmale Aktion und NICHT ueber
+// idee-speichern: das ist der einzige Schreibweg, der einen FREMDEN Eintrag
+// anfasst -- er darf deshalb ausschliesslich das eigene Stimmfeld beruehren.
+// Gleiche Ueberlegung wie toggle-news-reaction gegenueber save-news.
+//
+// If-Match mit drei Versuchen, weil hier wirklich mehrere Leute gleichzeitig
+// klicken koennen (anders als bei den uebrigen Ideen-Wegen).
+async function handleIdeeDaumen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await ideenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = String((body && body.id) || "").trim();
+  if (!/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
+
+  const ich = normalizeUsername(session.username);
+  let ergebnis = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: roh, rev } = await readJsonWithRev(IDEEN_URL, authHeader, { version: 1, eintraege: [] });
+    const doc = ideenDokNormieren(roh);
+    const eintrag = doc.eintraege.find((e) => e.id === id);
+    if (!eintrag) return json({ error: "Idee nicht gefunden" }, 404, corsHeaders);
+    if (getOwn(eintrag.stimmen, ich)) delete eintrag.stimmen[ich];
+    else eintrag.stimmen[ich] = true;
+    try {
+      await writeJson(IDEEN_URL, authHeader, doc, rev || undefined);
+      ergebnis = eintrag;
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  if (!ergebnis) return json({ error: "Zustimmung konnte nicht gespeichert werden" }, 502, corsHeaders);
+
+  // Nach aussen geht die ZAHL, nie die Namensliste (Michel-Entscheidung: nur die
+  // Zahl ist sichtbar, auch fuer Admins gibt es hier keine Namen).
+  return json({
+    id: ergebnis.id,
+    daumen: Object.keys(ergebnis.stimmen).length,
+    meinDaumen: !!getOwn(ergebnis.stimmen, ich)
+  }, 200, corsHeaders);
+}
+
+// Status setzen und antworten -- nur globale Admins (Michel-Entscheidung; die
+// Alternative "waehlbare Gruppe" lag vor und wurde verworfen).
+//
+// Leerer Antworttext nimmt die Antwort zurueck, wie bei feedback-antwort.
+async function handleIdeeVerwalten(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const id = String((body && body.id) || "").trim();
+  if (!/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
+  const status = (body && body.status != null) ? String(body.status) : null;
+  if (status !== null && !IDEEN_STATUS.includes(status)) {
+    return json({ error: "Unbekannter Status" }, 400, corsHeaders);
+  }
+  // Ein FEHLENDES Feld heisst "unveraendert", ein mitgeschicktes leeres heisst
+  // "loeschen" -- gleiche Unterscheidung wie bei set-aufgaben-gruppen.
+  const antwortGesetzt = !!(body && body.antwort != null);
+  const antwort = antwortGesetzt ? capStr(body.antwort, IDEEN_MAX_ANTWORT).trim() : null;
+
+  const antworter = getOwn(session.usersDoc.users, session.username) || {};
+  let ergebnis = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: roh, rev } = await readJsonWithRev(IDEEN_URL, authHeader, { version: 1, eintraege: [] });
+    const doc = ideenDokNormieren(roh);
+    const eintrag = doc.eintraege.find((e) => e.id === id);
+    if (!eintrag) return json({ error: "Idee nicht gefunden" }, 404, corsHeaders);
+
+    if (status !== null) eintrag.status = status;
+    if (antwortGesetzt) {
+      if (antwort) {
+        eintrag.antwort = antwort;
+        eintrag.antwortVon = (antworter.vorname && antworter.nachname)
+          ? `${antworter.vorname} ${antworter.nachname}`
+          : session.username;
+        eintrag.antwortAm = new Date().toISOString();
+      } else {
+        delete eintrag.antwort;
+        delete eintrag.antwortVon;
+        delete eintrag.antwortAm;
+      }
+    }
+
+    try {
+      await writeJson(IDEEN_URL, authHeader, doc, rev || undefined);
+      ergebnis = eintrag;
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  if (!ergebnis) return json({ error: "Änderung konnte nicht gespeichert werden" }, 502, corsHeaders);
+
+  return json({ idee: ideeFuerNutzer(ergebnis, session, session.usersDoc) }, 200, corsHeaders);
 }

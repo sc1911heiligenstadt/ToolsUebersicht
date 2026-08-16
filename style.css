@@ -2305,3 +2305,108 @@ nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
    Mindestbreite und ziehen die ganze Seite seitlich auf (dieselbe Falle wie bei
    .gr-header am 2026-08-07). */
 .links-admin-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+
+/* ---------- Ideen (seit 2026-08-16) ----------
+   Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was die Tools koennen
+   sollten. Eigener Tab; hier nur, was die Karten und der Wegweiser brauchen. */
+
+/* Wegweiser unter den Kacheln. Bewusst schmal und einzeilig -- er soll auf den
+   Tab zeigen, nicht selbst zum Inhalt werden. flex-wrap, damit der Knopf am
+   Handy unter den Text bricht statt die Seite seitlich aufzuziehen. */
+.ideen-hinweis {
+  margin-top: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--gold-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ideen-hinweis-text { flex: 1 1 240px; min-width: 0; font-weight: 600; }
+
+/* ⚠️ Bewusst NICHT in .form-field (siehe index.html): dort greift
+   input { width: 100% } und macht aus dem Kaestchen einen Balken. */
+.idee-anonym-feld { margin-top: 2px; }
+.idee-anonym-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.idee-anonym-label input[type="checkbox"] { width: 17px; height: 17px; flex-shrink: 0; }
+.idee-anonym-hinweis { font-size: 13px; margin: 4px 0 0 25px; }
+
+.idee-karte {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.idee-karte:first-child { border-top: none; padding-top: 0; }
+
+.idee-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.idee-titel { font-size: 16px; font-weight: 600; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.idee-text { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.idee-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--gray);
+  color: var(--muted);
+}
+.idee-status-neu { background: var(--blue-light); color: var(--blue); }
+.idee-status-arbeit { background: var(--gold-light); color: var(--gold); }
+.idee-status-umgesetzt { background: var(--green-light); color: var(--green); }
+.idee-status-abgelehnt { background: var(--gray); color: var(--muted); }
+
+.idee-fuss { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.idee-meta { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.idee-anonym-vermerk { font-style: italic; }
+
+/* Der Daumen ist der einzige Knopf, den jeder an jeder Idee drueckt -- er darf
+   deshalb ruhig auffallen, aber nicht wie die Hauptaktion der Seite aussehen. */
+.idee-daumen {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.2;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text);
+  cursor: pointer;
+}
+.idee-daumen:hover { border-color: var(--blue); }
+.idee-daumen.aktiv { background: var(--blue-light); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+.idee-daumen-zahl { font-variant-numeric: tabular-nums; }
+
+.idee-antwort {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--green-light);
+  border-radius: 8px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.idee-antwort-meta { display: block; font-size: 12px; margin-top: 4px; }
+
+/* flex-wrap wie bei .links-admin-actions: ohne das erzwingen zwei Knoepfe am
+   Handy eine Mindestbreite und ziehen die Seite seitlich auf. */
+.idee-eigene-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.idee-admin { margin-top: 10px; }
+.idee-admin > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.idee-admin-inhalt { margin-top: 8px; }
+.idee-admin-label { display: block; font-size: 13px; font-weight: 600; margin: 8px 0 4px; }
+.idee-status-select { max-width: 100%; }
+.idee-antwort-feld {
+  width: 100%;
+  max-width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.idee-admin-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }

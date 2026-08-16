@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.65" />
+<link rel="stylesheet" href="style.css?v=1.66" />
 </head>
 <body>
 
@@ -57,6 +57,11 @@
 <nav>
   <button data-tab="uebersicht" class="active">Dashboard</button>
   <button data-tab="feedback">Feedback & Hilfe</button>
+  <!-- Ideen (seit 2026-08-16). Nur für angemeldetes Personal — Spielerkonten
+       bekommen auf jede Ideen-Aktion 403, für sie hätte der Tab nichts zu zeigen.
+       Default versteckt wie nav-info, damit er beim Erstladen nicht kurz
+       aufblitzt, bevor die Sitzung geprüft ist. -->
+  <button data-tab="ideen" id="nav-ideen" style="display:none;">💡 Ideen</button>
   <div class="nav-right">
     <!-- Beschriftung wechselt mit dem Anmeldestatus (renderNavTabs) -->
     <button data-tab="konto" id="nav-konto">Anmelden</button>
@@ -131,6 +136,17 @@
       <h2 class="links-titel">🔗 Nützliche Links</h2>
       <div class="links-liste" id="links-liste"></div>
     </section>
+
+    <!-- Wegweiser zum Ideen-Tab (seit 2026-08-16). Bewusst nur ein Hinweis und
+         kein zweiter Inhalt: die Ideen selbst stehen im eigenen Tab, hier soll
+         die Startseite nicht länger werden. Ohne diese Zeile findet den Tab in
+         den ersten Wochen fast niemand (Michel-Entscheidung).
+         Sichtbar nur für angemeldetes Personal — dieselbe Bedingung wie der
+         Nav-Tab, gepflegt in renderIdeenHinweis(). -->
+    <section class="ideen-hinweis" id="ideen-hinweis" style="display:none;">
+      <span class="ideen-hinweis-text">💡 Du hast eine Idee für die Vereins-Tools? Schreib sie auf.</span>
+      <button type="button" class="btn small" id="btn-ideen-hinweis">Zu den Ideen</button>
+    </section>
   </section>
 
   <section class="tab-section" id="tab-feedback">
@@ -198,6 +214,71 @@
         <p class="muted" style="margin-bottom:14px;">Dringende Frage oder direkter Kontakt gewünscht? Schreib Michel auf WhatsApp.</p>
         <a class="btn-link" id="feedback-whatsapp-link" href="#" target="_blank" rel="noopener">💬 Auf WhatsApp schreiben</a>
       </div>
+
+      <!-- Der Typ „Wunsch“ oben bleibt bewusst bestehen (Michel-Entscheidung
+           2026-08-16), obwohl der Ideen-Tab dasselbe abdeckt und zusätzlich für
+           alle sichtbar ist. Damit niemand die zweite Möglichkeit übersieht,
+           steht hier der Weg dorthin. -->
+      <div class="card">
+        <h2>💡 Ideen für die Tools</h2>
+        <p class="muted" style="margin-bottom:14px;">Wenn du dir etwas Neues wünschst, schreib es lieber in die Ideenliste: Dort sehen alle deine Idee, können ihr zustimmen, und du siehst, was daraus wird.</p>
+        <button type="button" class="btn" id="btn-feedback-zu-ideen">💡 Zu den Ideen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Ideen (seit 2026-08-16) ---------- -->
+  <section class="tab-section" id="tab-ideen">
+    <div class="empty-state" id="ideen-empty" style="display:none;">
+      <p style="margin:0;">Melde dich an, um Ideen für die Vereins-Tools zu sehen und selbst welche aufzuschreiben.</p>
+      <button type="button" class="btn" id="btn-ideen-empty-login" style="margin-top:14px;">Jetzt anmelden</button>
+    </div>
+
+    <div id="ideen-content" style="display:none;">
+      <div class="card">
+        <h2>Neue Idee</h2>
+        <p class="muted" style="margin-bottom:14px;">Was sollten die Vereins-Tools können? Ein Satz reicht. Alle Angemeldeten sehen deine Idee und können ihr zustimmen — was viele wollen, wird eher gebaut.</p>
+        <form id="idee-form" class="form-grid">
+          <div class="form-field" style="grid-column:1 / -1;">
+            <label for="idee-titel">Überschrift</label>
+            <input type="text" id="idee-titel" maxlength="120" placeholder="z. B. Kalender soll Feiertage anzeigen" required />
+          </div>
+          <div class="form-field" style="grid-column:1 / -1;">
+            <label for="idee-text">Mehr dazu (freiwillig)</label>
+            <textarea id="idee-text" rows="3" maxlength="2000" placeholder="Warum wäre das gut? Wie stellst du dir das vor?"></textarea>
+          </div>
+          <!-- ⚠️ NICHT in .form-field: dort greift input { width: 100% } und macht
+               aus dem Kästchen einen Balken quer durch die Karte (dieselbe Falle
+               wie bei .push-schalter und .news-push-feld). -->
+          <div class="idee-anonym-feld" style="grid-column:1 / -1;">
+            <label class="idee-anonym-label">
+              <input type="checkbox" id="idee-anonym" />
+              <span>Anonym einreichen</span>
+            </label>
+            <p class="muted idee-anonym-hinweis">Dein Name wird den anderen dann nicht angezeigt. Die Vereinsleitung sieht ihn.</p>
+          </div>
+          <div class="form-field">
+            <button type="submit" class="btn" id="btn-idee-absenden">Idee absenden</button>
+            <button type="button" class="btn secondary" id="btn-idee-abbrechen" style="display:none;">Abbrechen</button>
+          </div>
+        </form>
+        <p class="muted" id="idee-form-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+        <p class="muted" id="idee-form-ok" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+      </div>
+
+      <div class="card">
+        <h2>Ideen</h2>
+        <div id="ideen-liste"></div>
+        <p class="muted" id="ideen-status" style="margin-top:10px;">Wird geladen …</p>
+      </div>
+
+      <!-- Erledigtes steht unten und zugeklappt (Michel-Entscheidung): die
+           Hauptliste bleibt kurz, und trotzdem sieht jeder, dass etwas passiert
+           ist. Der ganze Block bleibt weg, solange nichts abgeschlossen ist. -->
+      <details class="card collapsible" id="ideen-erledigt-panel" style="display:none;">
+        <summary id="ideen-erledigt-titel">Umgesetzt &amp; nicht geplant</summary>
+        <div id="ideen-erledigt-liste" style="margin-top:14px;"></div>
+      </details>
     </div>
   </section>
 
@@ -1509,7 +1590,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=3.0"></script>
-<script src="app.js?v=1.84"></script>
+<script src="config.js?v=3.1"></script>
+<script src="app.js?v=1.85"></script>
 </body>
 </html>
