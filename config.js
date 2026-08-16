@@ -453,16 +453,17 @@ const APP_CHANGELOG = [
     version: "1.18",
     groups: [
       {
-        title: "💡 Ideen — schreib auf, was die Tools können sollten",
+        title: "💡 Ideen — was sollten wir im Verein anpacken?",
         items: [
           "Neuer Tab „💡 Ideen“ oben neben „Feedback & Hilfe“: Überschrift eintippen, absenden, fertig. Der Text darunter ist freiwillig.",
+          "Gemeint ist alles rund um den Verein — ein Fest, eine Aktion, etwas für die Jugend, für die Mitglieder oder ums Gelände. Was an den Werkzeugen selbst hakt oder fehlt, gehört weiterhin in „Feedback & Hilfe“.",
           "Alle angemeldeten Mitarbeiter sehen alle Ideen — man erkennt also sofort, ob jemand dasselbe schon vorgeschlagen hat. Spielerkonten sehen den Tab nicht.",
           "Mit 👍 kannst du einer Idee zustimmen. Sichtbar ist nur die Zahl, nie wer geklickt hat.",
           "Wer möchte, kreuzt „Anonym einreichen“ an. Den anderen wird der Name dann nicht angezeigt — die Vereinsleitung sieht ihn, damit Rückfragen möglich bleiben.",
           "Jede Idee hat einen Zustand: Neu, In Arbeit, Umgesetzt oder Nicht geplant. Umgesetztes und Abgelehntes rutscht in einen zugeklappten Block ans Ende der Liste.",
           "Solange deine Idee auf „Neu“ steht, kannst du sie noch ändern oder zurückziehen. Sobald daran gearbeitet wird, steht sie fest.",
           "Eine Antwort der Vereinsleitung liest nur, wer die Idee eingereicht hat — sie steht bei der Idee im Tab. Es gibt dazu bewusst keine Push-Nachricht, schau also ab und zu rein.",
-          "Der Tab „Feedback & Hilfe“ bleibt unverändert bestehen: dort meldest du, was stört oder kaputt ist."
+          "Der Tab „Feedback & Hilfe“ bleibt unverändert bestehen: dort meldest du, was an den Werkzeugen stört oder kaputt ist."
         ]
       }
     ]

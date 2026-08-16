@@ -5583,11 +5583,17 @@ function meineFeedbacksLeeren() {
 
 // ---- Ideen (seit 2026-08-16) ----
 //
-// Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was die Tools koennen
-// sollten -- sichtbar fuer ALLE, anders als der Typ "wunsch" im Feedback-Tab
-// (der bewusst bestehen bleibt). Die tragenden Entscheidungen stehen im
-// Worker-Block am Ende von admin-worker.js; hier nur, was die Oberflaeche
-// betrifft.
+// Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was der VEREIN
+// anpacken sollte -- Fest, Aktion, Jugend, Mitglieder, Gelaende. Sichtbar fuer
+// ALLE Angemeldeten.
+//
+// ⚠️ NICHT fuer die Vereins-Tools (Michel-Klarstellung vom 2026-08-16): was an
+// den Werkzeugen hakt, gehoert weiter in den Feedback-Tab. Genau darum bleibt
+// dessen Typ "wunsch" bestehen. Die Texte in index.html tragen diese Trennung --
+// wer sie anfasst, haelt sie durch.
+//
+// Die tragenden Entscheidungen stehen im Worker-Block am Ende von
+// admin-worker.js; hier nur, was die Oberflaeche betrifft.
 //
 // ⚠️ Alles, was ein Nutzer NICHT sehen darf, filtert der Worker -- diese Datei
 // zeigt nur an, was sie bekommt. Der Verfassername einer anonymen Idee und die

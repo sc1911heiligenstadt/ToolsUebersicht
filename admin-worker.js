@@ -15209,11 +15209,16 @@ async function handleMannschaftenUmschreiben(request, body, env, authHeader, cor
 // ============================================================================
 // Ideen (seit 2026-08-16)
 //
-// Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was die Vereins-Tools
-// koennen sollten -- sichtbar fuer ALLE, nicht nur fuer den Admin. Genau das ist
-// der Unterschied zum vorhandenen Typ "wunsch" im Feedback-Tab, der bewusst
-// bestehen bleibt (Michel-Entscheidung vom 2026-08-16, die Doppelung ist
-// benannt und in Kauf genommen).
+// Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was der VEREIN
+// anpacken sollte -- ein Fest, eine Aktion, etwas fuer die Jugend, fuer die
+// Mitglieder oder ums Gelaende. Sichtbar fuer ALLE, nicht nur fuer den Admin.
+//
+// ⚠️ Es geht NICHT um die Vereins-Tools (Michel-Klarstellung vom 2026-08-16,
+// nach der ersten Fassung). Das ist die Trennlinie zum Feedback-Tab und der
+// Grund, warum dessen Typ "wunsch" bestehen bleibt: dort meldet man, was an den
+// WERKZEUGEN hakt oder fehlt, hier geht es um die Vereinsarbeit. Wer die Texte
+// je anfasst, haelt diese Trennung durch -- sonst laufen beide Kanaele wieder
+// ineinander und niemand weiss, wo etwas hingehoert.
 //
 // Der Block steht geschlossen am Dateiende und ist am Stueck wieder
 // herausloesbar -- wie die Aktivitaetspunkte und die Kleiderbestellung darueber,
