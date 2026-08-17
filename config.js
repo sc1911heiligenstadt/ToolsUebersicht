@@ -455,11 +455,11 @@ const APP_CHANGELOG = [
       {
         title: "Unterlagen zum Herunterladen — jetzt im Tab „Mein Konto“",
         items: [
-          "Neue Karte „Unterlagen zum Herunterladen“ im Tab „Mein Konto“: Dort legt der Verein Dateien für dich ab — Merkblätter, Vordrucke, Formulare. Ansehen, ausdrucken, weitergeben.",
+          "Neue Karte „Unterlagen zum Herunterladen“ im Tab „Mein Konto“: Dort legt der Verein Dateien für dich ab. Ansehen, ausdrucken, weitergeben — alles kommt als PDF.",
+          "Zwei Bereiche: „Für dich persönlich“ (zum Beispiel dein Vertrag oder die Bestätigung fürs erweiterte Führungszeugnis) und „Für alle“ (Merkblätter, Vordrucke, Formulare).",
+          "Persönliches sieht nur der, für den es bestimmt ist — niemand sonst kann es abrufen.",
           "Liegt etwas Neues für dich bereit, steht am Tab „Mein Konto“ eine kleine rote Zahl. Sie verschwindet, sobald du hineingeschaut hast.",
-          "Wer sein erweitertes Führungszeugnis selbst beantragen muss, findet dort den Knopf „Mein Bestätigungsschreiben“. Das Schreiben kommt als PDF mit deinem Namen, Geburtsdatum und deiner Anschrift heraus, dazu Stempel und Unterschrift des Vereins — ausdrucken und beim Meldeamt vorlegen.",
-          "Der Knopf erscheint erst, wenn die Geschäftsstelle dich freigeschaltet hat. Fehlt bei dir noch das Geburtsdatum oder die Anschrift, sagt der Knopf das und bleibt gesperrt — trag es dann in den Trainerdaten nach.",
-          "Der Bereich lag zuvor kurzzeitig in den Trainerdaten und steht jetzt nur noch hier. Spielerkonten sehen ihn nicht."
+          "Bereitgestellt wird in den Dokumentenvorlagen. Der Bereich lag zuvor kurzzeitig in den Trainerdaten und steht jetzt nur noch hier. Spielerkonten sehen ihn nicht."
         ]
       }
     ]
