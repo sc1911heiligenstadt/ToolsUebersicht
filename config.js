@@ -450,6 +450,21 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.20",
+    groups: [
+      {
+        title: "Tab „Mein Konto“ — vier Bereiche zum Aufklappen",
+        items: [
+          "„Kontaktliste des Vereins“, „Unterlagen zum Herunterladen“, „Benachrichtigungen aufs Handy“ und „Meine Punkte“ sind jetzt zugeklappt. Ein Klick auf die Überschrift öffnet den Bereich, ein zweiter schließt ihn wieder.",
+          "Damit passt die Seite wieder auf einen Blick — vorher musste man an allem vorbeiscrollen, um sein Passwort oder sein Foto zu erreichen.",
+          "Inhalte und Einstellungen sind unverändert. Nichts ist weg, es steht nur eingeklappt da.",
+          "Liegt eine neue Unterlage für dich bereit, klappt der Bereich „Unterlagen zum Herunterladen“ von selbst auf — die rote Zahl am Tab verschwindet also weiterhin erst, wenn du sie wirklich vor dir hattest.",
+          "Beim Abmelden klappen alle vier wieder zu. An einem gemeinsam genutzten Gerät sieht der Nächste nichts von dir stehen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.19",
     groups: [
       {

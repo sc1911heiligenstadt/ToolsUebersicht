@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.67" />
+<link rel="stylesheet" href="style.css?v=1.68" />
 </head>
 <body>
 
@@ -509,8 +509,8 @@
          trainerdaten.json -- sie bezieht sich auf DIESE Felder -- weshalb diese
          Karte Trainerdatens eigenen Worker direkt anspricht (gleicher Direktweg
          wie die Personalakte bei den Dokumenten), nicht das Gateway hier. -->
-    <div class="card" id="kontakt-freigabe-panel" style="display:none;">
-      <h2>Kontaktliste des Vereins</h2>
+    <details class="card collapsible" id="kontakt-freigabe-panel" style="display:none;">
+      <summary>Kontaktliste des Vereins</summary>
       <p class="muted" style="margin-bottom:10px; line-height:1.5;">
         Im Werkzeug <strong>Kontakte</strong> können sich die Mitarbeiterinnen und Mitarbeiter
         des Vereins gegenseitig erreichen. Du entscheidest selbst, ob und mit welchen Angaben
@@ -559,15 +559,15 @@
           <a class="btn-link secondary" id="kf-link-kontakte" href="https://sc1911heiligenstadt.github.io/kontakte/">📇 Zur Kontaktliste</a>
         </div>
       </div>
-    </div>
+    </details>
 
     <!-- Downloadbereich (seit 2026-08-17). Lag zuerst als eigener Tab in
          Trainerdaten und ist auf Michel-Vorgabe hierher gezogen -- es ist
          etwas, das man abholt, kein Vertragsdatum. Dort ersatzlos entfernt,
          nicht dupliziert. Verwaltet (Dateien hochladen, Schreiben freigeben)
          wird weiterhin in Trainerdaten. -->
-    <div class="card" id="downloads-panel" style="display:none;">
-      <h2>Unterlagen zum Herunterladen</h2>
+    <details class="card collapsible" id="downloads-panel" style="display:none;">
+      <summary>Unterlagen zum Herunterladen</summary>
       <p class="muted" style="margin-bottom:14px; line-height:1.5;">
         Was der Verein für dich bereitstellt — zum Ansehen, Ausdrucken oder Weitergeben.
         Alles kommt als PDF und öffnet sich in einem neuen Tab.
@@ -595,14 +595,14 @@
         Bereitgestellt wird in den
         <a href="https://sc1911heiligenstadt.github.io/dokumentenvorlagen/">Dokumentenvorlagen</a>.
       </p>
-    </div>
+    </details>
 
     <!-- Push-Benachrichtigungen (seit 2026-08-03). Bewusst hier und nicht als
          Kopf-Knopf: die Kopfzeile ist am Handy am Anschlag, und vor allem ist
          das eine dauerhafte Einstellung, die man auch wiederfinden muss -- zum
          Abstellen und zum Einschalten auf einem zweiten Geraet. -->
-    <div class="card" id="push-panel" style="display:none;">
-      <h2>Benachrichtigungen aufs Handy</h2>
+    <details class="card collapsible" id="push-panel" style="display:none;">
+      <summary>Benachrichtigungen aufs Handy</summary>
       <p class="muted" style="margin-bottom:14px;">
         Statt oder zusätzlich zur E-Mail meldet sich die App direkt auf dem Gerät, wenn ein
         Termin geteilt wird, eine Aufgabe für dich hereinkommt oder ein Dokument auf deine
@@ -630,14 +630,14 @@
       </div>
 
       <p class="muted" id="push-meldung" style="display:none; margin-top:10px;"></p>
-    </div>
+    </details>
 
     <!-- Aktivitätspunkte (seit 2026-08-04). Steht bewusst unter den
          Benachrichtigungen: das hier ist nichts, was man einstellt, sondern etwas,
          das man sich ansieht. Für Spielerkonten bleibt die Karte ausgeblendet —
          sie werden gar nicht erst erfasst. -->
-    <div class="card" id="punkte-panel" style="display:none;">
-      <h2>Meine Punkte</h2>
+    <details class="card collapsible" id="punkte-panel" style="display:none;">
+      <summary>Meine Punkte</summary>
       <p class="muted" style="margin-bottom:14px;">
         Für die Arbeit mit den Vereins-Tools sammelst du Punkte. Wozu sie einmal gut sein
         werden, entscheidet der Verein später — im Moment geht es erst einmal ums Sammeln.
@@ -689,7 +689,7 @@
       </div>
 
       <p class="muted" id="punkte-meldung" style="display:none; margin-top:10px;"></p>
-    </div>
+    </details>
 
   </section>
 
@@ -1650,7 +1650,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=3.4"></script>
-<script src="app.js?v=1.87"></script>
+<script src="config.js?v=3.5"></script>
+<script src="app.js?v=1.88"></script>
 </body>
 </html>

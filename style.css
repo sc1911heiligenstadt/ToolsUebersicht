@@ -1927,17 +1927,29 @@ main { flex: 1; min-width: 0; }
 
 /* ---------- Aufklappbare Bereiche ---------- */
 
-.collapsible summary {
+/* ⚠️ Ueberall `>` und NIE der Nachfahren-Selektor `.collapsible summary`.
+   Der traf auch jedes summary in einem VERSCHACHTELTEN <details> -- und weil
+   `[open]` dabei am aeusseren Element haengt, zeigte ein zugeklappter innerer
+   Aufklapper das Zeichen "▾" fuer "offen", sobald die Karte darum offen war.
+   Am 2026-08-17 beim Aufklappbar-Machen der vier Konto-Karten gemessen (die
+   beiden Aufklapper in "Meine Punkte"); den Bestand traf es genauso
+   (#users-list-details in der Nutzerverwaltung, #rund-eingrenzen).
+   Zweiter Gewinn: `.punkte-details > summary` behaelt so unveraendert seine
+   eigene, bewusst dezentere Optik statt Blau und Fettdruck der Kartenzeile zu
+   erben. Alle 19 summary-Elemente der Seite sind direkte Kinder ihres
+   .collapsible -- die vier per JS gebauten (buildUserArtSection,
+   buildVisibilityRow, rund-wer-block, rund-verlauf) ebenfalls. */
+.collapsible > summary {
   cursor: pointer;
   font-weight: 700;
   color: var(--blue);
   padding: 6px 0;
   list-style: none;
 }
-.collapsible summary::-webkit-details-marker { display: none; }
-.collapsible summary::before { content: "▸ "; }
-.collapsible[open] summary::before { content: "▾ "; }
-.collapsible[open] summary { margin-bottom: 8px; }
+.collapsible > summary::-webkit-details-marker { display: none; }
+.collapsible > summary::before { content: "▸ "; }
+.collapsible[open] > summary::before { content: "▾ "; }
+.collapsible[open] > summary { margin-bottom: 8px; }
 .card.collapsible > summary { font-size: 17px; }
 
 /* ---------- Nutzerverwaltung ---------- */

@@ -6157,6 +6157,7 @@ function kfKarteLeeren() {
   if (!card) return;
   kontaktFreigabeState = null;
   card.style.display = "none";
+  card.open = false; // zugeklappt zurueckgeben, siehe renderAdminPanels()
   const wrap = document.getElementById("kf-felder-wrap");
   if (wrap) wrap.style.display = "none";
   ["kf-name", "kf-telefon", "kf-email", "kf-adresse"].forEach((id) => {
@@ -7536,6 +7537,14 @@ function renderAdminPanels() {
   document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("push-panel").style.display = "none";
   document.getElementById("punkte-panel").style.display = "none";
+  // ⚠️ Seit die vier Karten im Konto-Tab aufklappbar sind (2026-08-17), muessen
+  // sie beim Abmelden auch wieder ZUgeklappt werden. Sonst stuenden sie beim
+  // naechsten Anmelden -- an einem geteilten Geraet also fuer die naechste
+  // Person -- alle offen da, und der ganze Zweck (kuerzere Seite) waere weg.
+  ["push-panel", "punkte-panel"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.open = false;
+  });
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
   // Der Knopf im Kopfbereich haengt nicht an isAdmin, sondern am Angemeldetsein --
   // ihn sehen alle ausser Spielerkonten. Der Worker prueft dasselbe noch einmal.
@@ -9885,7 +9894,20 @@ async function ladeUnterlagen() {
   unterlagenState = data;
   card.style.display = "block";
   renderUnterlagen();
-  unterlagenGesehenMelden();
+
+  // ⚠️ Die Karte ist seit 2026-08-17 zugeklappt -- und damit ist der Zaehler
+  // nicht mehr allein am Oeffnen des Tabs faellig. Wuerde hier weiter
+  // bedingungslos "gesehen" gemeldet, waere das rote Abzeichen am Konto-Tab
+  // weg, ohne dass jemand die Unterlage je zu Gesicht bekommen haette -- und
+  // es kommt nicht wieder. Deshalb zwei Dinge: liegt etwas Neues bereit,
+  // klappt die Karte von selbst auf; und gemeldet wird nur aus einem wirklich
+  // offenen Bereich, auch beim spaeteren Aufklappen von Hand.
+  if (unterlagenNeuAnzahl()) card.open = true;
+  if (!card.dataset.gesehenGebunden) {
+    card.dataset.gesehenGebunden = "1";
+    card.addEventListener("toggle", () => { if (card.open) unterlagenGesehenMelden(); });
+  }
+  if (card.open) unterlagenGesehenMelden();
 }
 
 function renderUnterlagen() {
@@ -9981,6 +10003,7 @@ function downloadsKarteLeeren() {
   const card = document.getElementById("downloads-panel");
   if (!card) return;
   card.style.display = "none";
+  card.open = false; // zugeklappt zurueckgeben, siehe renderAdminPanels()
   ["dl-persoenlich-liste", "dl-allgemein-liste"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = "";
