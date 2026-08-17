@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.66" />
+<link rel="stylesheet" href="style.css?v=1.67" />
 </head>
 <body>
 
@@ -64,7 +64,12 @@
   <button data-tab="ideen" id="nav-ideen" style="display:none;">💡 Ideen</button>
   <div class="nav-right">
     <!-- Beschriftung wechselt mit dem Anmeldestatus (renderNavTabs) -->
-    <button data-tab="konto" id="nav-konto">Anmelden</button>
+    <!-- Die rote Zahl meldet neue Unterlagen im Downloadbereich. Sie steht im
+         Knopf, damit sie mit ihm zusammen aus- und eingeblendet wird. -->
+    <!-- ⚠️ Die Beschriftung steht in einem EIGENEN Span. renderNavTabs() setzte
+         früher `textContent` am Knopf selbst — das hätte das Abzeichen daneben
+         bei jedem Rendern mit weggeräumt. -->
+    <button data-tab="konto" id="nav-konto"><span id="nav-konto-text">Anmelden</span><span class="nav-badge" id="nav-konto-badge" style="display:none;"></span></button>
     <!-- Nur für Admins. Default versteckt, damit ein Fehler beim Rendern den Tab
          nicht versehentlich für alle öffnet. -->
     <button data-tab="admin" id="nav-admin" style="display:none;">Einstellungen</button>
@@ -554,6 +559,331 @@
           <a class="btn-link secondary" id="kf-link-kontakte" href="https://sc1911heiligenstadt.github.io/kontakte/">📇 Zur Kontaktliste</a>
         </div>
       </div>
+    </div>
+
+    <!-- Downloadbereich (seit 2026-08-17). Lag zuerst als eigener Tab in
+         Trainerdaten und ist auf Michel-Vorgabe hierher gezogen -- es ist
+         etwas, das man abholt, kein Vertragsdatum. Dort ersatzlos entfernt,
+         nicht dupliziert. Verwaltet (Dateien hochladen, Schreiben freigeben)
+         wird weiterhin in Trainerdaten. -->
+    <div class="card" id="downloads-panel" style="display:none;">
+      <h2>Unterlagen zum Herunterladen</h2>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Was der Verein für dich bereitstellt — zum Ansehen, Ausdrucken oder Weitergeben.
+        Alles kommt als PDF und öffnet sich in einem neuen Tab.
+      </p>
+      <p class="muted" id="dl-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <!-- Persönliches steht oben: das ist das, was jemand wirklich erwartet
+           (sein Bestätigungsschreiben, sein Vertrag). Der Server liefert einen
+           persönlichen Eintrag nur an seinen Empfänger — das Ausblenden hier ist
+           Bequemlichkeit, nicht das Gate. -->
+      <div id="dl-persoenlich-block" style="display:none;">
+        <h3 style="margin:0 0 10px;">Für dich persönlich</h3>
+        <div id="dl-persoenlich-liste"></div>
+      </div>
+
+      <div id="dl-allgemein-block" style="display:none;">
+        <h3 style="margin:18px 0 10px;">Für alle</h3>
+        <div id="dl-allgemein-liste"></div>
+      </div>
+
+      <p class="muted" id="dl-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+      <!-- Nur für die, die verteilen dürfen — sonst sucht man den Ort dafür. -->
+      <p class="muted" id="dl-verteilen-hinweis" style="display:none; margin-top:14px; font-size:13px;">
+        Bereitgestellt wird in den
+        <a href="https://sc1911heiligenstadt.github.io/dokumentenvorlagen/">Dokumentenvorlagen</a>.
+      </p>
+    </div>
+
+    <!-- Push-Benachrichtigungen (seit 2026-08-03): neuer Empfaenger, deshalb
+           auskunftspflichtig. Steht bewusst NUR hier -- eingeschaltet wird der
+           Dienst ausschliesslich in dieser App, nicht in den 34 anderen. -->
+      <p><strong>Benachrichtigungen auf dem Gerät.</strong> Wer im Tab „Mein Konto“
+      Benachrichtigungen einschaltet, meldet damit sein Gerät beim Zustelldienst
+      seines Browser-Herstellers an — auf dem iPhone bei Apple, auf Android und in
+      Chrome bei Google. Dabei entsteht eine Geräteadresse, die der Verein
+      speichert, um Nachrichten dorthin schicken zu können; Apple beziehungsweise
+      Google erfahren, dass an dieses Gerät etwas zugestellt wird. <strong>Den Inhalt
+      der Nachricht können sie nicht lesen</strong> — er wird auf dem Vereinsserver
+      verschlüsselt und erst auf dem Gerät wieder entschlüsselt. Die Nachrichten
+      selbst nennen weder Namen noch Termin- oder Dokumenttitel. Das Abmelden ist
+      jederzeit an derselben Stelle möglich und löscht die Geräteadresse.</p>
+      <!-- Aktivitätspunkte (seit 2026-08-04). Muss stehen, BEVOR das erste
+           Ereignis geschrieben wird -- es ist eine Verhaltensdatenverarbeitung,
+           und ein Teil der Betroffenen ist beim Verein angestellt oder bekommt
+           eine Übungsleiterpauschale. Wie beim Push-Absatz gilt der Text nur für
+           diese Seite: gezählt wird zwar die Nutzung aller Tools, erfasst und
+           abgeschaltet wird sie aber ausschließlich hier.
+
+           ⚠️ Korrigiert am 2026-08-04. Hier stand "ein Punktestand, den nur du
+           selbst siehst; eine Rangliste oder einen Vergleich zwischen Personen
+           gibt es nicht" -- das war unzutreffend, solange `aktivitaet-auswertung`
+           jedem Admin `username`, Punktzahl UND die Nutzung je Werkzeug liefert.
+           Michel-Entscheidung: die Auswertung bleibt (sie beantwortet "welches
+           Tool nutzt eigentlich niemand"), dafür sagt der Text jetzt, was sie
+           zeigt. Wer die Auswertung je enger zieht, zieht diesen Satz mit. -->
+      <p><strong>Aktivitätspunkte.</strong> Für Konten des Vereinspersonals (nicht für
+      Spielerkonten) hält der Verein fest, <strong>wann welches Werkzeug benutzt wurde</strong> —
+      Zeitpunkt auf fünf Minuten genau, das betroffene Werkzeug und die Art des Vorgangs,
+      nicht dessen Inhalt. Daraus entsteht ein Punktestand, den außer dir nur die
+      <strong>Administratoren der Tools-Übersicht</strong> sehen; ihnen wird dabei auch
+      angezeigt, wer welches Werkzeug wie oft benutzt hat. Eine für alle sichtbare
+      Rangliste gibt es nicht. Zweck ist, die Arbeit
+      mit den Vereins-Tools zu würdigen und zu erkennen, welche Werkzeuge gebraucht werden.
+      Grundlage ist das berechtigte Interesse des Vereins. Die <strong>Einzelaufzeichnungen
+      werden nach 13 Monaten gelöscht</strong> und nur noch als Monatssumme fortgeführt. Im
+      Tab „Mein Konto“ lässt sich einsehen, was gespeichert ist, und die Erfassung mit dem
+      Schalter <em>Nicht mitzählen</em> jederzeit beenden — die bis dahin gespeicherten
+      Aufzeichnungen werden dabei gelöscht.</p>
+      <!-- Ideen (seit 2026-08-16). Auskunftspflichtig, weil hier zum ersten Mal
+           ein frei geschriebener Beitrag samt Namen für die ganze Belegschaft
+           sichtbar wird -- Feedback und Wünsche liest bis heute nur der Admin.
+           ⚠️ Der Absatz muss ehrlich beschreiben, was „anonym" wirklich bedeutet
+           (der Name wird gespeichert und dem Admin gezeigt) und dass umgekehrt
+           bei der Zustimmung NIEMAND die Namen sieht, auch kein Admin. Wer eines
+           von beidem je ändert, zieht diesen Absatz mit. -->
+      <p><strong>Ideen.</strong> Wer im Tab „💡 Ideen“ eine Idee einreicht, dessen
+      <strong>Name steht für alle angemeldeten Mitarbeiter dabei</strong>, zusammen mit dem
+      geschriebenen Text und dem Datum. Wird beim Einreichen <em>Anonym</em> angekreuzt,
+      wird der Name den anderen nicht angezeigt — <strong>gespeichert wird er trotzdem</strong>
+      und die Administratoren der Tools-Übersicht sehen ihn, damit Rückfragen möglich
+      bleiben und niemand unter fremdem Namen schreiben kann. Bei der Zustimmung
+      („Daumen hoch“) ist es umgekehrt: gespeichert wird, wer zugestimmt hat, angezeigt
+      wird aber <strong>nur die Anzahl — auch den Administratoren</strong>. Zweck ist es,
+      Anregungen für die Vereinsarbeit zu sammeln; Grundlage ist das berechtigte Interesse
+      des Vereins.
+      Eine eigene Idee lässt sich selbst löschen, solange noch nicht an ihr gearbeitet wird;
+      danach und für die Zustimmung genügt eine Nachricht an die oben genannte Anschrift.</p>
+      <p><a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung des Vereins</a>
+      &middot;
+      <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a></p>
+    </div>
+</section>
+
+  <!-- Eigenes Konto und alle Anmeldewege. Bewusst NICHT im Einstellungen-Tab:
+       der ist seit dem Umbau admin-only, der Login muss aber jedem offenstehen. -->
+  <section class="tab-section" id="tab-konto">
+
+    <!-- Bootstrap: nur sichtbar, solange noch kein Nutzer existiert -->
+    <div class="pin-gate" id="admin-bootstrap-panel" style="display:none;">
+      <div class="card">
+        <h2>Admin-Konto einrichten</h2>
+        <p class="muted" style="margin-bottom:14px;">Es existiert noch kein Nutzerkonto. Hier einmalig das erste Admin-Konto anlegen.</p>
+        <form id="bootstrap-form">
+          <div class="form-field" style="margin-bottom:10px;">
+            <label>Nutzername</label>
+            <input type="text" id="bootstrap-username" autocomplete="username" required />
+          </div>
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort</label>
+            <input type="password" id="bootstrap-password" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
+          </div>
+          <p class="muted" id="bootstrap-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-bootstrap-submit">Admin-Konto anlegen</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Login-Gate: Schritt 1, nur Nutzername -->
+    <div class="pin-gate" id="admin-login-gate">
+      <div class="card">
+        <h2>Anmelden</h2>
+        <p class="muted" style="margin-bottom:14px;">Mit Nutzername oder E-Mail-Adresse anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
+        <form id="login-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Nutzername oder E-Mail-Adresse</label>
+            <input type="text" id="login-username" autocomplete="username" required />
+            <small class="muted" style="display:block; margin-top:6px;">Egal ob „Max Mustermann“, „max.mustermann“ oder die eigene E-Mail-Adresse.</small>
+          </div>
+          <p class="muted" id="login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-login-submit">Weiter</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Login-Gate: Schritt 2, Passwort für bestehenden Account -->
+    <div class="pin-gate" id="login-password-panel" style="display:none;">
+      <div class="card">
+        <h2>Anmelden</h2>
+        <p class="muted" style="margin-bottom:14px;">Passwort für <strong id="login-password-username"></strong> eingeben.</p>
+        <form id="login-password-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort</label>
+            <input type="password" id="login-password" autocomplete="current-password" required />
+          </div>
+          <p class="muted" id="login-password-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-login-password-submit">Anmelden</button>
+          <button type="button" class="btn secondary" id="btn-login-back">Zurück</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Erstlogin: neuen Account anlegen und mit Passwort verknüpfen -->
+    <div class="pin-gate" id="first-login-panel" style="display:none;">
+      <div class="card">
+        <h2>Konto einrichten</h2>
+        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> gibt es noch keinen aktiven Zugang. Lege jetzt ein Passwort fest, um das Konto damit zu verknüpfen — danach kannst du dich immer mit diesem Nutzernamen (oder deiner E-Mail-Adresse) und dem Passwort anmelden.</p>
+        <form id="first-login-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Neues Passwort</label>
+            <input type="password" id="first-login-password" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
+          </div>
+          <p class="muted" id="first-login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-first-login-submit">Konto anlegen &amp; Passwort verknüpfen</button>
+          <button type="button" class="btn secondary" id="btn-first-login-back">Zurück</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Eigenes Konto (jeder Nutzer). Abmelden sitzt im Header, nicht hier. -->
+    <div class="card" id="admin-logged-in-panel" style="display:none;">
+      <h2>Mein Konto</h2>
+      <p class="muted" style="margin-bottom:14px;">Diese Angaben pflegt die Vereinsverwaltung. Stimmt etwas nicht, gib im Tab „Feedback &amp; Hilfe“ Bescheid.</p>
+      <dl class="konto-grid" id="konto-details"></dl>
+
+      <!-- Nutzerfoto. Steht bewusst UNTER der Angabenliste: der Hinweis darüber
+           ("pflegt die Vereinsverwaltung") gilt für das Foto gerade nicht — das
+           hinterlegt jeder selbst. -->
+      <div class="konto-foto">
+        <div class="konto-foto-vorschau" id="konto-foto-vorschau"></div>
+        <div class="konto-foto-text">
+          <h3>Mein Foto</h3>
+          <p class="muted">Ein Bild von dir, das in den Tools neben deinem Namen erscheint — im Kadermanager in Kaderliste und Aufstellung, in der Besprechung auf deiner Teilnehmerkachel.</p>
+          <div class="konto-foto-btns">
+            <button type="button" class="btn secondary small" id="btn-foto-waehlen">Bild auswählen</button>
+            <!-- Nur auf Geräten mit grobem Zeiger sichtbar (CSS): am Rechner ohne
+                 Kamera führte der Knopf bloß in denselben Dateidialog. -->
+            <button type="button" class="btn secondary small nur-touch" id="btn-foto-kamera">📷 Foto aufnehmen</button>
+            <button type="button" class="btn secondary small" id="btn-foto-entfernen" style="display:none;">Entfernen</button>
+          </div>
+          <!-- Zwei getrennte Eingaben: capture="user" springt direkt in die
+               Frontkamera, ohne Umweg über die Mediathek. Ein einzelnes Feld
+               könnte nur eines von beidem. -->
+          <input type="file" id="foto-datei" accept="image/*" style="display:none;" />
+          <input type="file" id="foto-kamera-datei" accept="image/*" capture="user" style="display:none;" />
+          <p class="muted foto-status" id="foto-status" style="display:none;"></p>
+        </div>
+      </div>
+
+      <div class="konto-passwort">
+        <button type="button" class="btn secondary small" id="btn-passwort-aendern">Passwort ändern</button>
+        <form id="passwort-form" style="display:none; margin-top:14px;">
+          <div class="form-field" style="margin-bottom:10px;">
+            <label for="passwort-alt">Bisheriges Passwort</label>
+            <input type="password" id="passwort-alt" autocomplete="current-password" required />
+          </div>
+          <div class="form-field" style="margin-bottom:14px;">
+            <label for="passwort-neu">Neues Passwort</label>
+            <input type="password" id="passwort-neu" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
+          </div>
+          <p class="muted" id="passwort-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-passwort-speichern">Passwort ändern</button>
+          <button type="button" class="btn secondary" id="btn-passwort-abbrechen">Abbrechen</button>
+        </form>
+        <p class="muted" id="passwort-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+      </div>
+    </div>
+
+    <!-- Freigabe für die Kontaktliste (seit 2026-08-13). Stand bis dahin in
+         Trainerdaten und ist von dort hierher gezogen: es ist eine Einstellung am
+         eigenen Konto, kein Vertragsdatum. Gespeichert bleibt sie in
+         trainerdaten.json -- sie bezieht sich auf DIESE Felder -- weshalb diese
+         Karte Trainerdatens eigenen Worker direkt anspricht (gleicher Direktweg
+         wie die Personalakte bei den Dokumenten), nicht das Gateway hier. -->
+    <div class="card" id="kontakt-freigabe-panel" style="display:none;">
+      <h2>Kontaktliste des Vereins</h2>
+      <p class="muted" style="margin-bottom:10px; line-height:1.5;">
+        Im Werkzeug <strong>Kontakte</strong> können sich die Mitarbeiterinnen und Mitarbeiter
+        des Vereins gegenseitig erreichen. Du entscheidest selbst, ob und mit welchen Angaben
+        du dort erscheinst — von uns aus steht dort nichts über dich.
+      </p>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Deine Freigabe gilt nur für <strong>angemeldete Personen des Vereins</strong>. Nach
+        außen wird nichts veröffentlicht, und Bankverbindung, Geburtsdatum und Dokumente sind
+        dort grundsätzlich nie zu sehen. Du kannst jedes Häkchen jederzeit wieder entfernen —
+        die Angabe verschwindet dann sofort aus der Liste.
+      </p>
+      <p class="muted" id="kf-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <div id="kf-felder-wrap" style="display:none;">
+        <label class="kf-check kf-haupt">
+          <input type="checkbox" id="kf-name" />
+          <span><strong>Ich möchte in der Kontaktliste stehen</strong>
+            <span class="kf-wert" id="kf-wert-name"></span></span>
+        </label>
+        <p class="muted kf-hinweis">
+          Ohne dieses Häkchen erscheinst du gar nicht in der Liste — auch dann nicht, wenn du
+          unten etwas angekreuzt hast.
+        </p>
+        <div id="kf-felder">
+          <label class="kf-check">
+            <input type="checkbox" id="kf-telefon" />
+            <span>Telefonnummer zeigen <span class="kf-wert" id="kf-wert-telefon"></span></span>
+          </label>
+          <label class="kf-check">
+            <input type="checkbox" id="kf-email" />
+            <span>E-Mail-Adresse zeigen <span class="kf-wert" id="kf-wert-email"></span></span>
+          </label>
+          <label class="kf-check">
+            <input type="checkbox" id="kf-adresse" />
+            <span>Anschrift zeigen <span class="kf-wert" id="kf-wert-adresse"></span></span>
+          </label>
+        </div>
+        <p class="muted" id="kf-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+        <!-- ⚠️ NICHT `.btn-row`: diese Klasse gibt es in DIESEM Repo gar nicht (sie
+             stammt aus den App-Repos und war hier wirkungslos, das <div> blieb
+             `display: block`). Deshalb eine eigene Reihe. -->
+        <div class="kf-knopfreihe">
+          <button type="button" class="btn" id="btn-kf-speichern">Freigabe speichern</button>
+          <!-- ⚠️ `btn-link`, NICHT `btn`: die Knopf-Optik haengt hier am ELEMENT
+               (`button.btn`), ein <a class="btn"> saehe wie ein normaler Link aus. -->
+          <a class="btn-link secondary" id="kf-link-kontakte" href="https://sc1911heiligenstadt.github.io/kontakte/">📇 Zur Kontaktliste</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Downloadbereich (seit 2026-08-17). Lag zuerst als eigener Tab in
+         Trainerdaten und ist auf Michel-Vorgabe hierher gezogen -- es ist
+         etwas, das man abholt, kein Vertragsdatum. Dort ersatzlos entfernt,
+         nicht dupliziert. Verwaltet (Dateien hochladen, Schreiben freigeben)
+         wird weiterhin in Trainerdaten. -->
+    <div class="card" id="downloads-panel" style="display:none;">
+      <h2>Unterlagen zum Herunterladen</h2>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Was der Verein für dich bereitstellt — zum Ansehen, Ausdrucken oder Weitergeben.
+      </p>
+      <p class="muted" id="dl-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <!-- Bestätigungsschreiben: nur für Freigegebene. Der Worker weist einen
+           Direktaufruf ohne Freigabe ohnehin ab -- das Ausblenden hier ist
+           Bequemlichkeit, nicht das Gate. -->
+      <div id="dl-efz-block" style="display:none;">
+        <h3 style="margin:0 0 6px;">Bestätigungsschreiben für die Meldebehörde</h3>
+        <p class="muted" style="line-height:1.5; margin-bottom:12px;">
+          Damit beantragst du beim Meldeamt dein <strong>erweitertes Führungszeugnis</strong>.
+          Das Schreiben bestätigt, dass du für den Verein ehrenamtlich mit Kindern und
+          Jugendlichen arbeitest — davon hängt auch ab, dass du keine Gebühr zahlst.
+          Deine Angaben, Stempel und Unterschrift sind schon eingetragen: herunterladen,
+          ausdrucken, mitnehmen.
+        </p>
+        <p class="muted" id="dl-efz-hinweis" style="display:none; margin-bottom:10px;"></p>
+        <div class="kf-knopfreihe">
+          <button type="button" class="btn" id="btn-dl-efz">Mein Bestätigungsschreiben (PDF)</button>
+        </div>
+        <p class="muted" id="dl-efz-geholt" style="display:none; margin-top:10px; font-size:12px;"></p>
+      </div>
+
+      <div id="dl-dateien-block" style="display:none;">
+        <h3 style="margin:18px 0 10px;">Dateien des Vereins</h3>
+        <div id="dl-dateien-liste"></div>
+      </div>
+
+      <p class="muted" id="dl-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
     </div>
 
     <!-- Push-Benachrichtigungen (seit 2026-08-03). Bewusst hier und nicht als
@@ -1609,7 +1939,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=3.2"></script>
-<script src="app.js?v=1.86"></script>
+<script src="config.js?v=3.3"></script>
+<script src="app.js?v=1.87"></script>
 </body>
 </html>

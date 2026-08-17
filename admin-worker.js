@@ -1161,8 +1161,6 @@ export default {
         return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
       case "vorgang-push":
         return handleVorgangPush(request, body, env, authHeader, corsHeaders, ctx);
-      case "trainerdaten-push":
-        return handleTrainerdatenPush(request, body, env, authHeader, corsHeaders, ctx);
       case "fotoauftrag-push":
         return handleFotoauftragPush(request, body, env, authHeader, corsHeaders, ctx);
       case "my-trainercheckliste-status":
@@ -1207,6 +1205,20 @@ export default {
         return handleMeineAnsicht(request, env, authHeader, corsHeaders);
       case "meine-ansicht-speichern":
         return handleMeineAnsichtSpeichern(request, body, env, authHeader, corsHeaders);
+      case "downloads-gesehen":
+        return handleDownloadsGesehen(request, env, authHeader, corsHeaders);
+      // Unterlagen zum Herunterladen (Block am Dateiende). Abgeholt im Konto-Tab,
+      // befuellt aus den Dokumentenvorlagen.
+      case "unterlagen-meine":
+        return handleUnterlagenMeine(request, env, authHeader, corsHeaders);
+      case "unterlagen-datei":
+        return handleUnterlagenDatei(request, body, env, authHeader, corsHeaders);
+      case "unterlagen-alle":
+        return handleUnterlagenAlle(request, env, authHeader, corsHeaders);
+      case "unterlage-verteilen":
+        return handleUnterlageVerteilen(request, body, env, authHeader, corsHeaders, ctx);
+      case "unterlage-entfernen":
+        return handleUnterlageEntfernen(request, body, env, authHeader, corsHeaders);
       case "aufgaben-load":
         return handleAufgabenLoad(request, env, authHeader, corsHeaders);
       case "aufgabe-speichern":
@@ -3730,7 +3742,77 @@ async function handleMeineAnsicht(request, env, authHeader, corsHeaders) {
   const eigen = Object.prototype.hasOwnProperty.call(byUser, session.username) ? byUser[session.username] : null;
   const modus = (eigen && ANSICHT_MODI.includes(eigen.modus)) ? eigen.modus : "kacheln";
   const reihenfolge = ansichtReihenfolgeSaeubern(eigen && eigen.reihenfolge);
-  return json({ ansicht: { modus, reihenfolge } }, 200, corsHeaders);
+  // ⚠️ Der Zaehler fuers rote Abzeichen liegt HIER und nicht bei den Unterlagen
+  // selbst. Grund: `ansicht.json` wird beim Seitenaufbau ohnehin gelesen
+  // (`ladeAnsicht` im selben Promise.all wie die Sitzungspruefung), waehrend
+  // `unterlagen.json` nur beim Oeffnen des Konto-Tabs geholt wird. Ein Abzeichen,
+  // das seine Zahl aus den Unterlagen zoege, kostete einen zweiten Nextcloud-Read
+  // bei JEDEM Aufruf der Startseite -- genau daran ist das Abzeichen am Ideen-Tab
+  // gescheitert. Hochgezaehlt wird beim Verteilen (siehe unterlagenZaehlerErhoehen).
+  const unterlagenNeu = Number.isFinite(eigen && eigen.unterlagenNeu) ? Math.max(0, eigen.unterlagenNeu) : 0;
+  return json({ ansicht: { modus, reihenfolge, unterlagenNeu } }, 200, corsHeaders);
+}
+
+// Merkt sich, dass der Downloadbereich im Konto-Tab gerade offen war -- danach ist
+// das rote Abzeichen weg, bis wieder etwas dazukommt.
+//
+// ⚠️ Eigene schmale Aktion statt eines Feldes in meine-ansicht-speichern: dort
+// haengen Anzeige-Vorlieben, die der Nutzer bewusst setzt. Das Oeffnen einer Karte
+// ist etwas anderes und darf nicht Modus und Reihenfolge mitschreiben (der Aufruf
+// dort schickt beide immer mit und wuerde sie beim blossen Hinschauen ueberschreiben).
+async function handleDownloadsGesehen(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const username = session.username;
+  if (username === "__proto__") return json({ error: "Ungültiger Nutzer" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(ANSICHT_URL, authHeader, leeresAnsichtDoc());
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    const bisher = (Object.prototype.hasOwnProperty.call(doc.byUser, username) && typeof doc.byUser[username] === "object")
+      ? doc.byUser[username] : {};
+    doc.byUser[username] = { ...bisher, unterlagenNeu: 0 };
+    try {
+      await writeJson(ANSICHT_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Konnte nicht gespeichert werden" }, 502, corsHeaders);
+}
+
+// Zaehlt beim Verteilen bei jedem Empfaenger hoch. Eigene Funktion, weil sie aus
+// dem Unterlagen-Block am Dateiende gerufen wird und `ansicht.json` sonst nur
+// diese beiden Handler anfassen.
+//
+// ⚠️ Fehler werden GESCHLUCKT: die Unterlage ist zu dem Zeitpunkt schon abgelegt.
+// Ein fehlendes Abzeichen ist ein kleineres Uebel als ein Verteilvorgang, der
+// wegen einer Anzeige-Notiz scheitert.
+async function unterlagenZaehlerErhoehen(authHeader, empfaenger) {
+  const namen = (Array.isArray(empfaenger) ? empfaenger : []).map((n) => normalizeUsername(String(n || "")))
+    .filter((n) => n && n !== "__proto__");
+  if (!namen.length) return;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    try {
+      const { data: doc, rev } = await readJsonWithRev(ANSICHT_URL, authHeader, leeresAnsichtDoc());
+      doc.version = doc.version || 1;
+      if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+      for (const n of namen) {
+        const bisher = (Object.prototype.hasOwnProperty.call(doc.byUser, n) && typeof doc.byUser[n] === "object")
+          ? doc.byUser[n] : {};
+        const alt = Number.isFinite(bisher.unterlagenNeu) ? Math.max(0, bisher.unterlagenNeu) : 0;
+        doc.byUser[n] = { ...bisher, unterlagenNeu: Math.min(99, alt + 1) };
+      }
+      await writeJson(ANSICHT_URL, authHeader, doc, rev || undefined);
+      return;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return;
+    }
+  }
 }
 
 // Schreibt ausschließlich den eigenen Eintrag. Der Nutzername kommt aus der Sitzung,
@@ -3754,7 +3836,12 @@ async function handleMeineAnsichtSpeichern(request, body, env, authHeader, corsH
     const { data: doc, rev } = await readJsonWithRev(ANSICHT_URL, authHeader, leeresAnsichtDoc());
     doc.version = doc.version || 1;
     if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
-    doc.byUser[username] = { modus, reihenfolge, gespeichertAm: new Date().toISOString() };
+    // ⚠️ Bestehende Felder erhalten statt den Eintrag zu ersetzen: seit dem
+    // Downloadbereich steht hier auch downloadsGesehenAm, und ein Umschalten von
+    // Kacheln auf Liste darf das rote Abzeichen nicht zurueckholen.
+    const bisher = (Object.prototype.hasOwnProperty.call(doc.byUser, username) && typeof doc.byUser[username] === "object")
+      ? doc.byUser[username] : {};
+    doc.byUser[username] = { ...bisher, modus, reihenfolge, gespeichertAm: new Date().toISOString() };
     try {
       await writeJson(ANSICHT_URL, authHeader, doc, rev || undefined);
       return json({ ok: true, ansicht: { modus, reihenfolge } }, 200, corsHeaders);
@@ -11191,13 +11278,12 @@ const PUSH_ANLAESSE = [
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
   { id: "feedback", titel: "Feedback & Wünsche", ziel: "/ToolsUebersicht/",
     label: "Feedback & Wünsche — Antworten auf meine Einreichungen" },
-  // Ausgeloest von Trainerdaten (Worker "trainerdaten1", Aktion efz-push), wenn
-  // die Geschaeftsstelle jemandem das Bestaetigungsschreiben fuer das erweiterte
-  // Fuehrungszeugnis freigibt. Ohne diese Meldung erfuehre die Person von der
-  // Freigabe nur, wenn sie zufaellig in den Tab schaut -- und der Brief ist der
-  // eine Schritt, der bei ihr liegt.
-  { id: "trainerdaten", titel: "Trainerdaten", ziel: "/Trainerdaten/",
-    label: "Trainerdaten — Unterlagen, die für mich bereitliegen" },
+  // Ausgeloest vom Bereitstellen in den Dokumentenvorlagen. Ziel ist die
+  // Uebersicht selbst (wie "unterschriften" und "feedback"): die Unterlagen
+  // liegen im Tab "Mein Konto", nicht in einer verlinkten App -- deshalb traegt
+  // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
+  { id: "unterlagen", titel: "Unterlagen", ziel: "/ToolsUebersicht/",
+    label: "Unterlagen — Dokumente, die für mich bereitliegen" },
   // Von Hand ausgeloest im Einstellungen-Tab (push-rundnachricht, seit
   // 2026-08-06). Der einzige Anlass, dessen TITEL nicht von hier kommt: bei
   // einer freien Mitteilung ist die Ueberschrift Teil der Nachricht. Der
@@ -11652,36 +11738,6 @@ async function handleVorgangPush(request, body, env, authHeader, corsHeaders, ex
   }
 
   pushSenden(env, authHeader, execCtx, empfaenger, cfg.anlass, cfg[art]);
-  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
-}
-
-// Trainerdaten: die Geschaeftsstelle hat jemandem das Bestaetigungsschreiben fuers
-// erweiterte Fuehrungszeugnis freigegeben. Gerufen NICHT vom Browser, sondern vom
-// Worker "trainerdaten1" (Aktion efz-push), der den Admin-Token durchreicht --
-// trainerdaten.json steht bewusst nicht in DAV_APPS, das Gateway soll sie also
-// weder lesen noch schreiben. Deshalb bringt der Aufrufer den Empfaenger mit,
-// nachdem er ihn dort selbst nachgeschlagen und die Freigabe geprueft hat.
-//
-// ⚠️ Der Text steht HIER, nicht im Request. Damit ist das Schlimmste, was diese
-// Aktion in falschen Haenden anrichten kann, eine gegenstandslose Meldung an ein
-// Konto -- kein frei formulierter Text im Namen des Vereins. Der Kreis, der sie
-// ueberhaupt ausloesen kann, ist die Administrieren-Stufe fuer Trainerdaten.
-const TRAINERDATEN_PUSH_TEXT = "Dein Bestätigungsschreiben liegt zum Herunterladen bereit";
-
-async function handleTrainerdatenPush(request, body, env, authHeader, corsHeaders, execCtx) {
-  const session = await getVerifiedSession(request, env, authHeader);
-  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveAdminPermission("trainerdaten", session, env, authHeader))) {
-    return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
-  }
-
-  const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
-  // Deckel bei 5: freigegeben wird eine Person nach der anderen. Eine lange Liste
-  // waere ein Zeichen dafuer, dass die Aktion zweckentfremdet wird.
-  const empfaenger = roh.map((n) => normalizeUsername(String(n || ""))).filter(Boolean).slice(0, 5);
-  if (!empfaenger.length) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
-
-  pushSenden(env, authHeader, execCtx, empfaenger, "trainerdaten", TRAINERDATEN_PUSH_TEXT);
   return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
 }
 
@@ -12284,6 +12340,11 @@ const PUNKTE_IGNORIERT = new Set([
   // eine reine Anzeige-Vorliebe ohne Vereinsarbeit dahinter, und Hin- und Herschalten
   // zwischen Kacheln und Liste waere sonst der billigste Weg zu Punkten.
   "meine-ansicht", "meine-ansicht-speichern",
+  // Merkt nur, dass der Downloadbereich offen war -- ein Nebeneffekt des
+  // Hinschauens, keine Handlung. Ein Punkt dafuer waere durch blosses Auf- und
+  // Zuklappen des Konto-Tabs beliebig nachfuellbar. Dasselbe gilt fuer die
+  // beiden Leseaktionen der Unterlagen; das Verteilen zaehlt dagegen mit.
+  "downloads-gesehen", "unterlagen-meine", "unterlagen-datei", "unterlagen-alle",
   // Laeuft beim Oeffnen des Info-Tabs im Vereinskalender von selbst. Das Erzeugen
   // und Entwerten des Abo-Links sind Handlungen und zaehlen weiter mit.
   "vereinskalender-abo-status",
@@ -15611,4 +15672,268 @@ async function handleIdeeVerwalten(request, body, env, authHeader, corsHeaders) 
   if (!ergebnis) return json({ error: "Änderung konnte nicht gespeichert werden" }, 502, corsHeaders);
 
   return json({ idee: ideeFuerNutzer(ergebnis, session, session.usersDoc) }, 200, corsHeaders);
+}
+
+// ---------- Unterlagen zum Herunterladen (seit 2026-08-17) ----------
+//
+// Was der Verein einzelnen Personen oder allen bereitstellt. Abgeholt wird es im
+// Tab "Mein Konto", befuellt aus den Dokumentenvorlagen: dort waehlt man ohnehin
+// schon Vorlage und Empfaenger, und dort liegt der gepflegte Brieftext.
+//
+// ⚠️ Die Dateien kommen FERTIG herein, sie entstehen nicht hier. Der Weg von der
+// Word-Vorlage zum PDF laeuft ueber `dokumentenvorlagen/docx-zu-pdf.ps1` auf
+// Michels Rechner (Word-COM) -- im Browser gibt es keine verlaessliche
+// Umwandlung, und ein nachgebautes Layout waere fuer ein Behoerdenschreiben mit
+// Vereinsstempel zu wenig. Michel-Entscheidung vom 2026-08-17 nach vorgelegter
+// Alternative.
+//
+// Block steht geschlossen am Dateiende und ist am Stueck wieder herausloesbar --
+// wie die Aktivitaetspunkte, die Kleiderbestellung und die Ideen davor.
+
+const UNTERLAGEN_URL = DAV_APPS.dokumentenvorlagen.replace(/[^/]+$/, "unterlagen.json");
+const UNTERLAGEN_DIR = DAV_APPS.dokumentenvorlagen.replace(/\/[^/]+$/, "") + "/verteilt";
+const UNTERLAGEN_MAX = 400;                    // Deckel ueber alle Eintraege
+const UNTERLAGEN_MAX_BYTES = 10 * 1024 * 1024; // je Datei
+const UNTERLAGEN_MAX_JE_LAUF = 60;             // Empfaenger je Verteilvorgang
+
+function leeresUnterlagenDoc() {
+  return { version: 1, eintraege: [] };
+}
+
+// ⚠️ Nur PDF. Erkannt an den ersten Bytes, NIE an einer Angabe des Clients --
+// gleiche Linie wie `erkenneNachweisTyp` bei den Anmelde-Nachweisen. Michel-
+// Vorgabe: was hier verteilt wird, soll jeder oeffnen und ausdrucken koennen,
+// und eine Word-Datei mit Vereinsstempel waere nachtraeglich aenderbar.
+function istPdfBytes(bytes) {
+  return bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
+function unterlagenText(wert, maxLaenge) {
+  const s = typeof wert === "string" ? wert : "";
+  return s.slice(0, maxLaenge);
+}
+
+// Sicht des Nutzers auf einen Eintrag. Ein persoenlicher Eintrag verlaesst den
+// Worker nur fuer seinen Empfaenger -- Ausblenden im Client waere kein
+// Zurueckhalten. Der Verteiler-Name bleibt drin (er steht ohnehin im Brief).
+function unterlageFuerNutzer(e, username, istAdmin) {
+  const fuer = unterlagenText(e && e.fuer, 100);
+  if (fuer && fuer !== username && !istAdmin) return null;
+  return {
+    id:            unterlagenText(e && e.id, 60),
+    name:          unterlagenText(e && e.name, 200) || "Unterlage",
+    dateiName:     unterlagenText(e && e.dateiName, 200) || "unterlage.pdf",
+    groesse:       Number.isFinite(e && e.groesse) ? e.groesse : 0,
+    hochgeladenAm: unterlagenText(e && e.hochgeladenAm, 40),
+    persoenlich:   !!fuer,
+    // Nur fuer Admins von Belang: an wen der Eintrag geht. Fuer den Empfaenger
+    // selbst waere es die eigene Kennung, also ohne Wert.
+    fuer:          istAdmin ? fuer : ""
+  };
+}
+
+// ⚠️ Spielerkonten bleiben aussen vor -- gleiche Linie wie beim
+// Materialcontainer-Code und bei `list-directory`. Hier gehen Vertraege und
+// Behoerdenschreiben des Personals um.
+function unterlagenZugang(session) {
+  return session && session.art !== USER_ART_SPIELER;
+}
+
+async function handleUnterlagenMeine(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!unterlagenZugang(session)) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
+
+  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
+  const name = normalizeUsername(session.username);
+  const darfVerteilen = await resolveEditPermission("dokumentenvorlagen", session, env, authHeader);
+
+  const meine = alle.map((e) => unterlageFuerNutzer(e, name, false)).filter(Boolean);
+  // Neueste zuerst -- wer hereinschaut, sucht das gerade Dazugekommene.
+  meine.sort((a, b) => String(b.hochgeladenAm).localeCompare(String(a.hochgeladenAm)));
+  return json({
+    persoenlich: meine.filter((e) => e.persoenlich),
+    allgemein:   meine.filter((e) => !e.persoenlich),
+    darfVerteilen
+  }, 200, corsHeaders);
+}
+
+// ⚠️ Die Zugriffspruefung laeuft ueber DENSELBEN Filter wie die Liste
+// (`unterlageFuerNutzer`). Zwei getrennte Regeln liefen unweigerlich auseinander,
+// und ein Eintrag, der in der Liste fehlt, muss auch einzeln unerreichbar sein.
+async function handleUnterlagenDatei(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!unterlagenZugang(session)) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
+
+  const id = String((body && body.id) || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
+
+  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
+  const roh = alle.find((e) => e && e.id === id);
+  const istAdmin = await resolveEditPermission("dokumentenvorlagen", session, env, authHeader);
+  if (!roh || !unterlageFuerNutzer(roh, normalizeUsername(session.username), istAdmin)) {
+    return json({ error: "Nicht gefunden" }, 404, corsHeaders);
+  }
+
+  let resp;
+  try {
+    resp = await fetch(UNTERLAGEN_DIR + "/" + encodeURIComponent(id), {
+      method: "GET", headers: { Authorization: authHeader }
+    });
+  } catch (_) {
+    return json({ error: "Nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: "Lesefehler " + resp.status }, 502, corsHeaders);
+
+  return new Response(resp.body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/pdf",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store"
+    }
+  });
+}
+
+// Eine Datei bereitstellen. Gerufen aus den Dokumentenvorlagen, je Datei einmal.
+//
+// ⚠️ Reihenfolge bindend: erst die Datei nach Nextcloud, dann der Eintrag. Bricht
+// Schritt 2 ab, liegt eine Datei ohne Verweis herum (unerreichbar, weil die Liste
+// die Schranke ist); andersherum stuende ein Eintrag da, dessen Download 404 gibt.
+async function handleUnterlageVerteilen(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader))) {
+    return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+  }
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String((body && body.dataBase64) || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (!bytes.length) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > UNTERLAGEN_MAX_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+  if (!istPdfBytes(bytes)) return json({ error: "Nur PDF-Dateien" }, 415, corsHeaders);
+
+  // ⚠️ Der Empfaenger muss ein existierendes Personal-Konto sein. Ohne diese
+  // Pruefung landete eine Unterlage unter einem Tippfehler und waere fuer
+  // niemanden abrufbar -- ohne dass es jemand merkt.
+  const fuerRoh = normalizeUsername(String((body && body.fuer) || ""));
+  let fuer = "";
+  if (fuerRoh) {
+    const u = getOwn(session.usersDoc.users || {}, fuerRoh);
+    if (!u) return json({ error: "Unbekannter Empfänger: " + fuerRoh }, 404, corsHeaders);
+    if (!istPersonal(u)) return json({ error: "Kein Personal-Konto: " + fuerRoh }, 400, corsHeaders);
+    fuer = fuerRoh;
+  }
+
+  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  if (!Array.isArray(doc.eintraege)) doc.eintraege = [];
+  if (doc.eintraege.length >= UNTERLAGEN_MAX) {
+    return json({ error: "Es liegen bereits " + UNTERLAGEN_MAX + " Unterlagen bereit. Bitte zuerst aufräumen." }, 409, corsHeaders);
+  }
+
+  const id = crypto.randomUUID();
+  try {
+    let resp = await fetch(UNTERLAGEN_DIR + "/" + id, {
+      method: "PUT",
+      headers: { Authorization: authHeader, "Content-Type": "application/pdf" },
+      body: bytes
+    });
+    // 404/409 = Unterordner fehlt noch -> anlegen und EINMAL wiederholen
+    // (gleiches Muster wie handleUploadDocument in Trainerdaten).
+    if (resp.status === 404 || resp.status === 409) {
+      await fetch(UNTERLAGEN_DIR, { method: "MKCOL", headers: { Authorization: authHeader } });
+      resp = await fetch(UNTERLAGEN_DIR + "/" + id, {
+        method: "PUT",
+        headers: { Authorization: authHeader, "Content-Type": "application/pdf" },
+        body: bytes
+      });
+    }
+    if (!resp.ok) throw new Error("PUT " + resp.status);
+  } catch (e) {
+    return json({ error: "Datei konnte nicht abgelegt werden: " + e.message }, 502, corsHeaders);
+  }
+
+  doc.eintraege.push({
+    id,
+    name:          unterlagenText(body && body.name, 200) || unterlagenText(body && body.dateiName, 200) || "Unterlage",
+    dateiName:     unterlagenText(body && body.dateiName, 200) || "unterlage.pdf",
+    groesse:       bytes.length,
+    hochgeladenAm: new Date().toISOString(),
+    von:           normalizeUsername(session.username),
+    fuer
+  });
+
+  try {
+    await writeJson(UNTERLAGEN_URL, authHeader, doc);
+  } catch (e) {
+    return json({ error: "Datei abgelegt, aber Liste nicht gespeichert: " + e.message }, 502, corsHeaders);
+  }
+
+  // Abzeichen und Meldung nur bei persoenlichen Unterlagen an genau diese Person.
+  // Bei "fuer alle" waere ein Push je Datei eine Rundnachricht an die ganze
+  // Belegschaft -- dafuer gibt es das Panel im Einstellungen-Tab.
+  if (fuer) {
+    execCtx.waitUntil(unterlagenZaehlerErhoehen(authHeader, [fuer]));
+    if (body && body.push === true && fuer !== normalizeUsername(session.username)) {
+      pushSenden(env, authHeader, execCtx, [fuer], "unterlagen",
+        "Ein Dokument liegt für dich zum Herunterladen bereit");
+    }
+  }
+  return json({ ok: true, id }, 200, corsHeaders);
+}
+
+async function handleUnterlageEntfernen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader))) {
+    return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+  }
+  const id = String((body && body.id) || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
+
+  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
+  if (!alle.some((e) => e && e.id === id)) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
+
+  // Erst den Eintrag, dann die Datei: der Eintrag ist die Schranke, ohne ihn ist
+  // die Datei bereits unerreichbar. Scheitert das DELETE danach, bleibt nur eine
+  // Leiche liegen (gleiche Linie wie beim Aufraeumen der Neuigkeiten-Medien).
+  doc.eintraege = alle.filter((e) => !(e && e.id === id));
+  try {
+    await writeJson(UNTERLAGEN_URL, authHeader, doc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+  try {
+    await fetch(UNTERLAGEN_DIR + "/" + encodeURIComponent(id), {
+      method: "DELETE", headers: { Authorization: authHeader }
+    });
+  } catch (_) { /* siehe Kommentar */ }
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// Liste fuer die Verteil-Seite in den Dokumentenvorlagen: alles, auch fremde
+// persoenliche Eintraege. Eigene Aktion statt eines Schalters an
+// `unterlagen-meine`, damit der Lese-Weg des Konto-Tabs keinen Admin-Zweig traegt.
+async function handleUnterlagenAlle(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader))) {
+    return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+  }
+  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const alle = (Array.isArray(doc.eintraege) ? doc.eintraege : [])
+    .map((e) => unterlageFuerNutzer(e, normalizeUsername(session.username), true))
+    .filter(Boolean);
+  alle.sort((a, b) => String(b.hochgeladenAm).localeCompare(String(a.hochgeladenAm)));
+  return json({ eintraege: alle, deckel: UNTERLAGEN_MAX, maxJeLauf: UNTERLAGEN_MAX_JE_LAUF }, 200, corsHeaders);
 }

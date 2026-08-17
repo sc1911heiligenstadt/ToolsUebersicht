@@ -302,6 +302,33 @@ nav button {
 nav button:hover { background: var(--gray); }
 nav button.active { color: var(--blue); border-bottom-color: var(--blue); }
 
+/* Rote Zahl am Konto-Tab: neue Unterlagen im Downloadbereich.
+   ⚠️ `margin-block: -2px` ist Pflicht, keine Kosmetik. Die Pille ist 17 px hoch
+   und damit höher als die Textzeile des Knopfes — gemessen zog sie die GANZE
+   Nav-Leiste von 47 auf 49 px auf, samt aller Nachbarknöpfe (das höchste
+   Element einer Flex-Leiste zieht alle mit). Mit -2 px steht die Leiste wieder
+   bei 47 px, die Pille bleibt voll 17 px und mittig zum Text. Die Werte 0/-1/-2/-3
+   wurden durchgemessen: -2 ist der kleinste, der die Leiste nicht mehr anhebt.
+   ⚠️ `min-width` gleich der Höhe: eine einstellige Zahl bleibt dadurch rund,
+   eine zweistellige wächst nur in die Breite (gemessen 22 px). */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  margin-left: 6px;
+  margin-block: -2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 .tab-section { display: none; }
 .tab-section.active { display: block; }
@@ -548,6 +575,37 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
   flex-wrap: wrap;
   margin-top: 16px;
 }
+
+/* Eine bereitgestellte Unterlage im Downloadbereich.
+   ⚠️ `flex-wrap` plus `flex: 1 1 260px` am Textteil ist Pflicht, nicht Kosmetik:
+   ohne beides legt sich der Knopf am Handy neben einen 20 Pixel breiten Text
+   statt darunter (gleiche Gegenmaßnahme wie bei .links-admin-row und
+   .feedback-admin-row).
+   ⚠️ `min-width: 0` am Textteil, sonst sprengt ein langer Dateiname die Zeile —
+   ein Flex-Kind schrumpft ohne das nie unter seinen Inhalt. */
+.dl-zeile {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.dl-zeile:first-child { border-top: none; }
+.dl-zeile-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+/* ⚠️ `> *`, NICHT `span`: der Anzeigename steht in einem <strong>, und genau der
+   ist der lange (ein Dateiname wie „merkblatt-fuehrungszeugnis-2026.pdf" hat
+   keine Trennstelle). Mit der span-Regel allein zog eine solche Zeile die Karte
+   bei 375 px auf 459 px und die GANZE Seite um 116 px seitlich auf — `main`
+   hängt in einem Flex-Container und wächst mit der Wunschbreite seines Inhalts
+   (dieselbe Falle wie bei der Protokoll-Tabelle der Aktivitätspunkte). */
+.dl-zeile-text > * { overflow-wrap: anywhere; min-width: 0; }
 
 .push-geraete { list-style: none; margin: 0; padding: 0; }
 .push-geraete li {

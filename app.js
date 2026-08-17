@@ -1136,7 +1136,7 @@ function isVisibleToUser(toolId, user) {
 // localStorage bleibt ausschliesslich als Zwischenspeicher fuer den Seitenaufbau.
 
 function ansichtStandard() {
-  return { modus: "kacheln", reihenfolge: {} };
+  return { modus: "kacheln", reihenfolge: {}, unterlagenNeu: 0 };
 }
 
 // Nimmt an, was vom Server oder aus dem Zwischenspeicher kommt, und baut daraus einen
@@ -1150,7 +1150,11 @@ function ansichtUebernehmen(roh) {
     const ids = rohReihenfolge[kategorie];
     if (Array.isArray(ids)) reihenfolge[kategorie] = ids.map((id) => String(id || "")).filter(Boolean);
   });
-  ansichtState = { modus, reihenfolge };
+  // Zähler fürs rote Abzeichen am Konto-Tab. Steht hier, weil ansicht.json beim
+  // Seitenaufbau ohnehin gelesen wird -- das Abzeichen kostet damit keinen
+  // zusätzlichen Roundtrip (siehe unterlagenNeuAnzahl).
+  const unterlagenNeu = Number.isFinite(roh && roh.unterlagenNeu) ? Math.max(0, roh.unterlagenNeu) : 0;
+  ansichtState = { modus, reihenfolge, unterlagenNeu };
 }
 
 function ansichtCacheLesen(username) {
@@ -6544,6 +6548,9 @@ function activateTab(name) {
   // echten Nextcloud-Read. Beim Seitenaufbau waere das ein Roundtrip fuer jeden
   // Nutzer bei jedem Aufruf der Startseite, auch wenn er den Tab nie oeffnet.
   if (name === "konto") ladeKontaktFreigabe();
+  // Gleiche Ueberlegung: my-downloads liest trainerdaten.json. Holt zugleich das
+  // rote Abzeichen ab -- wer hineinschaut, hat es gesehen.
+  if (name === "konto") ladeUnterlagen();
 }
 
 function setupTabs() {
@@ -6809,7 +6816,11 @@ function setupPasswortForm() {
 function renderNavTabs() {
   const istAdmin = !!(currentUser && currentUser.isAdmin);
   const infoOffen = infoTabOffen();
-  document.getElementById("nav-konto").textContent = currentUser ? "Mein Konto" : "Anmelden";
+  // ⚠️ Nur den Text-Span anfassen, NICHT den Knopf: `textContent` am Knopf würde
+  // das Abzeichen daneben mit wegräumen (beim Bauen genau so passiert — das
+  // Element war nach dem ersten Rendern nicht mehr im DOM).
+  document.getElementById("nav-konto-text").textContent = currentUser ? "Mein Konto" : "Anmelden";
+  downloadsBadgeZeichnen();
   document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
   document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
   // Ideen sind Personalsache (im Worker mit 403 fuer Spielerkonten abgesichert).
@@ -8666,8 +8677,10 @@ async function afterAuthChange() {
   // activateTab("konto") nach. Nur wenn der Konto-Tab gerade offen steht, muesste
   // ihn sonst jemand von Hand neu oeffnen.
   kfKarteLeeren();
+  downloadsKarteLeeren();
   const kontoOffen = document.getElementById("tab-konto");
   if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeKontaktFreigabe();
+  if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeUnterlagen();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
   await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
@@ -9809,3 +9822,175 @@ document.addEventListener("visibilitychange", () => {
   // ohne manuellen Reload verschwinden sehen.
   if (Date.now() - _testspielplanerStatusLastFetch >= 10000) loadTestspielplanerStatus();
 });
+
+
+// ---------- Unterlagen zum Herunterladen, Konto-Tab (seit 2026-08-17) ----------
+//
+// Die Empfangsseite. Bereitgestellt wird in den Dokumentenvorlagen, dort waehlt
+// man ohnehin Vorlage und Empfaenger.
+//
+// ⚠️ Laeuft ueber das GATEWAY (`callWorker`), nicht ueber Trainerdatens eigenen
+// Worker wie die Kontaktfreigabe darueber. Die Unterlagen liegen im
+// Dokumentenvorlagen-Ordner, und der steht in `DAV_APPS` -- es braucht also
+// keinen Direktweg an einer App vorbei. Ein erster Entwurf lag in Trainerdaten
+// und ist genau deswegen wieder ausgezogen.
+
+let unterlagenState = null; // Antwort von unterlagen-meine (erst beim Öffnen des Tabs geholt)
+
+// Wie viele Unterlagen sind seit dem letzten Hineinschauen dazugekommen?
+// ⚠️ Der Zähler kommt aus `ansicht.json` (`unterlagenNeu`), die beim Seitenaufbau
+// ohnehin gelesen wird -- NICHT aus der Unterlagen-Datei. Sonst kostete das
+// Abzeichen einen zweiten Nextcloud-Read bei jedem Aufruf der Startseite, und
+// genau daran ist das Abzeichen am Ideen-Tab gescheitert.
+function unterlagenNeuAnzahl() {
+  if (!currentUser || currentUser.art === "spieler") return 0;
+  const n = ansichtState && ansichtState.unterlagenNeu;
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+function downloadsBadgeZeichnen() {
+  const el = document.getElementById("nav-konto-badge");
+  if (!el) return;
+  const n = unterlagenNeuAnzahl();
+  if (!n) { el.style.display = "none"; el.textContent = ""; el.removeAttribute("title"); return; }
+  el.textContent = String(n);
+  el.title = n === 1 ? "Eine neue Unterlage für dich" : n + " neue Unterlagen für dich";
+  el.style.display = "";
+}
+
+// Setzt den Zähler zurück -- der Bereich war gerade offen. Fehler werden
+// geschluckt: das Abzeichen ist Beiwerk, sein Stehenbleiben darf nichts stören.
+async function unterlagenGesehenMelden() {
+  if (!unterlagenNeuAnzahl()) return;
+  if (ansichtState) ansichtState.unterlagenNeu = 0;
+  downloadsBadgeZeichnen();
+  try { await callWorker("downloads-gesehen", {}); } catch (_) { /* siehe Kommentar */ }
+}
+
+// ⚠️ Wie ladeKontaktFreigabe: NUR der Worker-Aufruf steht im stillen try. Kennt
+// ein noch nicht deployter Worker die Aktion nicht, bleibt die Karte weg, statt
+// einen roten Hinweis auf etwas zu zeigen, das es serverseitig noch nicht gibt.
+async function ladeUnterlagen() {
+  const card = document.getElementById("downloads-panel");
+  if (!card || !currentUser) return;
+  if (currentUser.art === "spieler") { card.style.display = "none"; return; }
+
+  let data;
+  try {
+    data = await callWorker("unterlagen-meine", {});
+  } catch (e) {
+    card.style.display = "none";
+    return;
+  }
+  unterlagenState = data;
+  card.style.display = "block";
+  renderUnterlagen();
+  unterlagenGesehenMelden();
+}
+
+function renderUnterlagen() {
+  const d = unterlagenState;
+  if (!d) return;
+  const persoenlich = Array.isArray(d.persoenlich) ? d.persoenlich : [];
+  const allgemein   = Array.isArray(d.allgemein) ? d.allgemein : [];
+  const status = document.getElementById("dl-status");
+  const fehler = document.getElementById("dl-fehler");
+  fehler.style.display = "none";
+
+  const block = (id, listeId, eintraege) => {
+    document.getElementById(id).style.display = eintraege.length ? "" : "none";
+    document.getElementById(listeId).innerHTML = eintraege.map((f) => `
+      <div class="dl-zeile">
+        <div class="dl-zeile-text">
+          <strong>${escapeHtml(f.name)}</strong>
+          <span class="muted" style="font-size:12px;">${escapeHtml(f.dateiName)}${f.groesse ? " · " + dlGroesse(f.groesse) : ""} · seit ${escapeHtml(fmtDatumKurz(f.hochgeladenAm))}</span>
+        </div>
+        <button type="button" class="btn secondary" data-dl-id="${escapeHtml(f.id)}">Öffnen</button>
+      </div>`).join("");
+  };
+  block("dl-persoenlich-block", "dl-persoenlich-liste", persoenlich);
+  block("dl-allgemein-block", "dl-allgemein-liste", allgemein);
+
+  document.querySelectorAll("#downloads-panel button[data-dl-id]").forEach((b) => {
+    b.addEventListener("click", () => holeUnterlage(b.dataset.dlId, b));
+  });
+
+  if (!persoenlich.length && !allgemein.length) {
+    status.textContent = "Zurzeit liegt nichts für dich bereit.";
+    status.style.display = "";
+  } else {
+    status.style.display = "none";
+  }
+  // Wer verteilen darf, bekommt den Weg dorthin -- sonst sucht er ihn.
+  const hinweis = document.getElementById("dl-verteilen-hinweis");
+  if (hinweis) hinweis.style.display = d.darfVerteilen ? "" : "none";
+}
+
+function dlGroesse(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
+  return Math.max(1, Math.round(bytes / 1024)) + " KB";
+}
+
+// ⚠️ Das leere Fenster muss SYNCHRON im Klick-Callstack aufgehen, sonst blockt
+// Safari es nach dem await lautlos (dieselbe Falle wie bei den PDF-Wegen der
+// App-Repos). Erst danach die Adresse nachreichen.
+function dlBlobTab() {
+  const win = window.open("", "_blank");
+  return {
+    zeigen(blob) {
+      const url = URL.createObjectURL(blob);
+      if (win) win.location.href = url; else window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    },
+    abbrechen() { if (win) win.close(); }
+  };
+}
+
+async function holeUnterlage(id, btn) {
+  const tab = dlBlobTab();
+  const fehler = document.getElementById("dl-fehler");
+  fehler.style.display = "none";
+  btn.disabled = true;
+  try {
+    const token = loadStoredToken();
+    if (!token) throw new Error("Nicht angemeldet");
+    // Eigener fetch statt callWorker: die Antwort ist die PDF-Datei, kein JSON.
+    const resp = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ action: "unterlagen-datei", id })
+    });
+    if (!resp.ok) throw new Error("Nicht abrufbar (HTTP " + resp.status + ")");
+    tab.zeigen(await resp.blob());
+  } catch (e) {
+    tab.abbrechen();
+    fehler.textContent = "Datei konnte nicht geöffnet werden: " + e.message;
+    fehler.style.display = "block";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ⚠️ Beim Abmelden reicht `display: none` NICHT -- dieselbe Falle wie bei
+// kfKarteLeeren(). Die Liste führt die Namen der bereitgestellten Unterlagen als
+// Text im DOM, und ob für jemanden ein Behördenschreiben bereitliegt, geht den
+// nächsten Nutzer eines geteilten Geräts nichts an.
+function downloadsKarteLeeren() {
+  unterlagenState = null;
+  downloadsBadgeZeichnen();
+  const card = document.getElementById("downloads-panel");
+  if (!card) return;
+  card.style.display = "none";
+  ["dl-persoenlich-liste", "dl-allgemein-liste"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = "";
+  });
+  ["dl-persoenlich-block", "dl-allgemein-block", "dl-verteilen-hinweis"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+  const f = document.getElementById("dl-fehler");
+  if (f) { f.textContent = ""; f.style.display = "none"; }
+  const st = document.getElementById("dl-status");
+  if (st) { st.textContent = "Wird geladen …"; st.style.display = ""; }
+}
