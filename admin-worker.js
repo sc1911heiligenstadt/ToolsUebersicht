@@ -1289,6 +1289,28 @@ export default {
         return handleVaDateiLoeschen(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgaben-uebergabe":
         return handleVaUebergabe(request, body, env, authHeader, corsHeaders);
+      // ---- Klubzertifizierung: Tab in derselben App, eigene Datei
+      //      (Handler am Dateiende, Katalog liegt im Client) ----
+      case "zertifizierung-load":
+        return handleZertLoad(request, env, authHeader, corsHeaders);
+      case "zertifizierung-status":
+        return handleZertStatus(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-notiz":
+        return handleZertNotiz(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-aufgabe-anlegen":
+        return handleZertAufgabeAnlegen(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-aufgabe-aendern":
+        return handleZertAufgabeAendern(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-aufgabe-status":
+        return handleZertAufgabeStatus(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-aufgabe-loeschen":
+        return handleZertAufgabeLoeschen(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-datei-put":
+        return handleZertDateiPut(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-datei-get":
+        return handleZertDateiGet(request, body, env, authHeader, corsHeaders);
+      case "zertifizierung-datei-loeschen":
+        return handleZertDateiLoeschen(request, body, env, authHeader, corsHeaders);
       // ---- Spieltagscrew (Handler am Dateiende) ----
       case "spieltagscrew-load":
         return handleScLoad(request, env, authHeader, corsHeaders);
@@ -12407,6 +12429,7 @@ const PUNKTE_IGNORIERT = new Set([
   // Dateien, die eine Liste beim Rendern selbsttaetig nachlaedt
   "nutzerfoto-get", "nutzerfoto-versionen", "dav-file-get", "dav-restricted-get",
   "dokument-datei-get", "news-datei-get", "vereinsaufgabe-datei-get",
+  "zertifizierung-datei-get",
   "fahrtenbuch-beleg-file-get",
   // Die Sammel-Lader der Startseiten-Fenster "Meine ToDos" und "Unterschriften".
   // ⚠️ Beide laufen beim Seitenaufbau von selbst und werden nach jeder Aenderung
@@ -12464,6 +12487,13 @@ const PUNKTE_TATEN = new Map([
   ["idee-verwalten", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-uebergabe", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-ressort-speichern", PUNKTE_PRO_TAT],
+  // Klubzertifizierung: ein Kriterium auf "erfuellt" zu setzen und eine Aufgabe
+  // daraus abzuleiten sind echte Vereinsarbeit. ⚠️ Das ABHAKEN einer
+  // Zertifizierungs-Aufgabe steht bewusst NICHT hier -- es ist ein Umschalter und
+  // waere damit beliebig nachfuellbar, gleiche Ueberlegung wie bei
+  // toggle-news-reaction. Notiz und Loeschen ebenso nicht.
+  ["zertifizierung-status", PUNKTE_PRO_TAT],
+  ["zertifizierung-aufgabe-anlegen", PUNKTE_PRO_TAT],
   // Zu-/Absage zu einem Terminvorschlag im Vereinskalender (die Oberflaeche dort
   // nennt es woertlich "Zusagen"/"Absagen"). Seit Regelversion 4 hoeher bewertet.
   ["vereinskalender-vote", PUNKTE_TAT_TERMIN_ANTWORT],
@@ -12515,7 +12545,12 @@ const PUNKTE_APP_PRAEFIXE = [
   // Die Kontakte-App hat genau EINE Aktion und speichert nichts Eigenes (kein
   // DAV_APPS-Eintrag). Ohne diesen Eintrag liefe ihre Nutzung unter keiner App und
   // taeuchte in der Admin-Auswertung als "von niemandem benutzt" auf.
-  ["kontakte", "kontakte"]
+  ["kontakte", "kontakte"],
+  // Die Klubzertifizierung ist ein Tab in "Vereinsaufgaben" und laeuft unter
+  // deren Kachel. Ohne diesen Eintrag griffe das Praefix "vereinsaufgabe" nicht
+  // (die Aktionen heissen "zertifizierung-*"), die Nutzung liefe unter keiner App
+  // und die Admin-Auswertung wiese sie nirgends aus.
+  ["zertifizierung", "vereinsaufgaben"]
 ];
 
 // Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht
@@ -16332,4 +16367,535 @@ async function handleBusplanErinnerungen(request, env, authHeader, corsHeaders) 
   const merker = await readJson(BUSPLAN_ERINNERT_URL, authHeader, { version: 1, ids: {} });
   const lauf = (merker && merker.lauf && typeof merker.lauf === "object") ? merker.lauf : null;
   return json({ lauf, vorlaufTage: BUSPLAN_VORLAUF_TAGE }, 200, corsHeaders);
+}
+
+// ==========================================================================
+// Klubzertifizierung — Tab in der App "Vereinsaufgaben"
+// ==========================================================================
+//
+// Michel-Auftrag vom 2026-08-17: ein Werkzeug fuer die Klubzertifizierung des
+// Verbandes, mit der Moeglichkeit, daraus Aufgaben zu verteilen. Grundlage sind die
+// zwei PDF-Anhaenge der Clubberatung vom 28.04.2026: 29 Basis- und 49
+// Zusatzkriterien in je drei Bereichen.
+//
+// Michel-Entscheidungen aus dem Grill-me-Interview (jede einzeln vorgelegt und
+// bestaetigt, in dieser Reihenfolge):
+//
+//   Ort         Tab in "Vereinsaufgaben", KEINE eigene App (Alternative lag vor)
+//   Aufgaben    eigene leichte Mini-Aufgaben im Tab, NICHT echte Vereinsaufgaben
+//   Status      offen / erfuellt / passt nicht zu uns -- kein gespeichertes "in Arbeit"
+//   Nachweise   Notizfeld plus Dateien, beides freiwillig
+//   Rechte      Status setzen nur Administrieren; alles andere ab Bearbeiten
+//   Katalog     fest im Code (kriterien.js), nicht in der App pflegbar
+//   Empfaenger  nur Personen mit Zugang zu dieser App
+//   Nachricht   KEINE -- kein Mail, kein Push (bewusst, siehe unten)
+//   Frist       freiwillig
+//   Ziel        nur den Stand zeigen, keine Schwelle "geschafft"
+//   Protokoll   Verlauf je Kriterium
+//   Ausgabe     Druckansicht (kein CSV)
+//   Aufbau      ein Tab, innen Umschalter Basis/Zusatz
+//   Ressort     optionales Zuordnungsfeld je Kriterium
+//
+// ⚠️ Bewusst KEINE Benachrichtigung. Michel hat das ausdruecklich so entschieden,
+// obwohl er dieselbe Festlegung bei den Vereinsaufgaben einen Tag spaeter gekippt
+// hat. Daraus folgt eine benannte Luecke, die kein Fehler ist: eine
+// Zertifizierungs-Aufgabe kann monatelang unbemerkt liegen. Wer sie schliessen
+// will, haengt sich an `pushSenden` mit dem bestehenden Anlass `aufgaben` -- der
+// Empfaenger steht im Datensatz.
+//
+// ⚠️ Der Katalog steht NICHT hier, sondern in `E:\Vereinsaufgaben\kriterien.js`.
+// Der Worker kennt die 78 Kriterien absichtlich nicht: eine zweite Kopie liefe
+// unweigerlich auseinander (gleiche Lage wie NEWS_REACTION_EMOJIS, nur andersherum
+// geloest). Was er stattdessen prueft, ist die FORM der Kriterium-Id -- und leitet
+// aus deren Praefix ab, ob es ein Basis- oder ein Zusatzkriterium ist. Die Id-Form
+// ist damit Teil des Vertrags zwischen kriterien.js und diesem Block; wer sie dort
+// aendert, muss ZERT_KRIT_RE mitziehen.
+
+// Eigene Datei neben vereinsaufgaben.json. ⚠️ Bewusst NICHT in dieselbe Datei:
+// die Aufgaben werden im Alltag laufend geschrieben, der Zertifizierungsstand
+// selten -- ein If-Match-Konflikt beim Abhaken einer Aufgabe soll nicht den
+// Kriterienstand zurueckwerfen und umgekehrt.
+const ZERT_URL = VEREINSAUFGABEN_URL.slice(0, VEREINSAUFGABEN_URL.lastIndexOf("/")) + "/zertifizierung.json";
+
+// Nachweis-Dateien in eigenem Unterordner, denselben zwei Schranken unterworfen wie
+// die Aufgaben-Anhaenge: davFileDir() zeigt fest auf "dateien", und ohne
+// DAV_APPS-Eintrag gibt es keine App-Id, ueber die man den Ordner adressieren
+// koennte.
+const ZERT_NACHWEIS_DIR = VEREINSAUFGABEN_URL.slice(0, VEREINSAUFGABEN_URL.lastIndexOf("/")) + "/zertifizierung-nachweise";
+
+// ⚠️ Diese Regex ist die einzige Schranke gegen erfundene Kriterium-Ids -- und
+// zugleich der Weg, die Art zu bestimmen. Sie laesst weder Punkte noch Schraegstriche
+// noch `__proto__` durch; die Id wird Schluessel in der Datei, nie Teil eines Pfades.
+const ZERT_KRIT_RE = /^(basis|zusatz)-(spielbetrieb|organisation|kultur)-\d{2}$/;
+
+const ZERT_MAX_NOTIZ = 4000;
+const ZERT_MAX_TITEL = 200;
+const ZERT_MAX_AUFGABEN = 1000;          // ueber alle Kriterien
+const ZERT_MAX_AUFGABEN_JE_KRIT = 20;
+const ZERT_MAX_NACHWEISE = 10;           // je Kriterium
+const ZERT_MAX_NACHWEIS_BYTES = 8 * 1024 * 1024;
+const ZERT_MAX_VERLAUF = 200;            // je Kriterium
+const ZERT_STATUS_WERTE = ["offen", "erfuellt", "nichtrelevant"];
+
+// ⚠️ "Passt nicht zu uns" gibt es nur bei Zusatzkriterien. Die 29 Basiskriterien
+// sind das Pflichtprogramm des Verbandes -- ein Basiskriterium wegzudruecken hiesse,
+// sich die eigene Bilanz schoenzurechnen. Der Client bietet es dort auch nicht an;
+// diese Zeile ist die Schranke, nicht die Anzeige.
+function zertStatusErlaubt(status, art) {
+  if (!ZERT_STATUS_WERTE.includes(status)) return false;
+  if (status === "nichtrelevant" && art !== "zusatz") return false;
+  return true;
+}
+
+// Form pruefen und Art zurueckgeben. Wirft, statt einen Vorgabewert zu liefern:
+// eine unbekannte Id ist immer ein Fehler des Aufrufers, nie ein Sonderfall.
+function zertKritId(roh) {
+  const id = capStr(roh, 64);
+  if (!ZERT_KRIT_RE.test(id)) throw new VaFehler("Unbekanntes Kriterium", 400);
+  return id;
+}
+
+function zertKritArt(id) {
+  return id.slice(0, id.indexOf("-"));
+}
+
+function zertLeer() {
+  return { version: 1, kriterien: Object.create(null), aufgaben: [] };
+}
+
+// ⚠️ `kriterien` wird als Object.create(null) aufgebaut, auch beim Einlesen einer
+// vorhandenen Datei: JSON.parse liefert ein normales Objekt, dessen Prototyp bei
+// einem Schluessel `__proto__` getroffen wuerde. Die Regex laesst den zwar nicht
+// durch, aber die Schranke soll nicht die einzige sein.
+function zertNormalisiere(doc) {
+  doc.version = doc.version || 1;
+  const roh = (doc.kriterien && typeof doc.kriterien === "object") ? doc.kriterien : {};
+  const sauber = Object.create(null);
+  Object.keys(roh).forEach((id) => {
+    if (!ZERT_KRIT_RE.test(id)) return;               // Altlast oder Handeintrag
+    const k = roh[id];
+    if (!k || typeof k !== "object") return;
+    sauber[id] = {
+      status: ZERT_STATUS_WERTE.includes(k.status) ? k.status : "offen",
+      notiz: typeof k.notiz === "string" ? k.notiz : "",
+      ressortId: typeof k.ressortId === "string" ? k.ressortId : "",
+      geaendertAm: k.geaendertAm || "",
+      geaendertVon: k.geaendertVon || "",
+      nachweise: Array.isArray(k.nachweise) ? k.nachweise : [],
+      verlauf: Array.isArray(k.verlauf) ? k.verlauf : []
+    };
+  });
+  doc.kriterien = sauber;
+  if (!Array.isArray(doc.aufgaben)) doc.aufgaben = [];
+  return doc;
+}
+
+// Read-modify-write mit If-Match und drei Versuchen -- dasselbe Muster wie
+// vaMutiere, nur auf der eigenen Datei.
+async function zertMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(ZERT_URL, authHeader, zertLeer());
+    zertNormalisiere(doc);
+    const ergebnis = fn(doc) || {};
+    try {
+      await writeJson(ZERT_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new VaFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+// Legt den Eintrag beim ERSTEN Schreiben an. Die Datei fuehrt damit nur die
+// Kriterien, an denen wirklich gearbeitet wurde -- 78 leere Objekte waeren
+// Ballast, den jeder Lesevorgang mitschleppt.
+function zertKritEintrag(doc, id) {
+  if (!doc.kriterien[id]) {
+    doc.kriterien[id] = {
+      status: "offen", notiz: "", ressortId: "",
+      geaendertAm: "", geaendertVon: "", nachweise: [], verlauf: []
+    };
+  }
+  return doc.kriterien[id];
+}
+
+// ⚠️ Der Verlauf fuehrt Status- und Ressortwechsel, NICHT jede Notizaenderung.
+// Michel wollte nachvollziehen koennen, seit wann ein Kriterium erfuellt ist; eine
+// Zeile je Tippkorrektur an der Notiz haette genau das unlesbar gemacht. Dass die
+// Notiz angefasst wurde, steht in geaendertAm/Von.
+function zertVerlauf(k, von, was, alt, neu) {
+  if (!Array.isArray(k.verlauf)) k.verlauf = [];
+  k.verlauf.push({
+    am: new Date().toISOString(), von, was,
+    alt: alt == null ? "" : String(alt),
+    neu: neu == null ? "" : String(neu)
+  });
+  if (k.verlauf.length > ZERT_MAX_VERLAUF) k.verlauf.splice(0, k.verlauf.length - ZERT_MAX_VERLAUF);
+}
+
+function zertAufgabeHolen(doc, id) {
+  const a = doc.aufgaben.find((x) => x && x.id === String(id || ""));
+  if (!a) throw new VaFehler("Aufgabe nicht gefunden", 404);
+  return a;
+}
+
+// Anders als bei den Vereinsaufgaben ist die Frist hier FREIWILLIG (leer erlaubt).
+// Michel-Entscheidung: bei einem Kriterium wie "Materialbestand pflegen" gibt es
+// keinen echten Termin, und ein Zwang zum Datum erzeugt nur Fantasiewerte.
+function zertDatum(roh) {
+  const s = capStr(roh, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+// ---------- Laden ----------
+
+// ⚠️ Eigene Aktion statt Mitliefern in `vereinsaufgaben-load`. Das waere ein
+// zusaetzlicher Nextcloud-Read (200-450 ms) bei JEDEM Oeffnen der Aufgaben-App,
+// auch fuer die Mehrheit, die den Zertifizierungs-Tab nie anfasst. Der Client holt
+// die Daten beim ersten Wechsel in den Tab -- gleiche Ueberlegung wie bei
+// loadMeineFeedbacks in der Tools-Uebersicht.
+//
+// Ressorts und die Personenliste kommen NICHT hier mit: der Tab lebt in derselben
+// App, der Client hat beides ohnehin aus `vereinsaufgaben-load` und
+// `list-tool-editors`.
+async function handleZertLoad(request, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    const doc = zertNormalisiere(await readJson(ZERT_URL, authHeader, zertLeer()));
+    const usersDoc = ctx.session.usersDoc;
+
+    // Anzeigenamen aus nutzer.json, nicht aus dem Datensatz -- eine Umbenennung
+    // soll nicht den alten Namen weiterzeigen. Ausgeschiedene bleiben mit ihrem
+    // Nutzernamen sichtbar, damit die Historie lesbar bleibt.
+    const namen = {};
+    const merke = (u) => { if (u && !namen[u]) namen[u] = aufgabenAnzeigeName(usersDoc, u); };
+    doc.aufgaben.forEach((a) => { merke(a.empfaenger); merke(a.erstelltVon); merke(a.erledigtVon); });
+    Object.keys(doc.kriterien).forEach((id) => {
+      const k = doc.kriterien[id];
+      merke(k.geaendertVon);
+      (k.nachweise || []).forEach((f) => merke(f.von));
+      (k.verlauf || []).forEach((v) => merke(v.von));
+    });
+
+    return json({
+      kriterien: doc.kriterien,
+      aufgaben: doc.aufgaben,
+      namen,
+      me: { username: ctx.session.username, isAdmin: !!ctx.session.isAdmin, canEdit: ctx.canEdit, canAdmin: ctx.canAdmin }
+    }, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ---------- Status eines Kriteriums ----------
+
+// ⚠️ Administrieren, nicht Bearbeiten. Michel-Entscheidung: "erfuellt" ist die
+// Aussage, die der Verein dem Verband gegenueber macht -- Zeugwart und
+// Foerdertrainer sollen mithelfen, aber nicht darueber entscheiden. Bei dieser App
+// sind Sehen und Bearbeiten deckungsgleich (fuenf Gruppen), Administrieren ist
+// enger (drei) -- die Trennung hat hier also wirklich eine Wirkung.
+async function handleZertStatus(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeAdmin(ctx);
+    const id = zertKritId(body && body.kritId);
+    const status = capStr(body && body.status, 20);
+    if (!zertStatusErlaubt(status, zertKritArt(id))) {
+      throw new VaFehler(status === "nichtrelevant"
+        ? "Ein Basiskriterium kann nicht als „passt nicht zu uns“ gesetzt werden — die Basiskriterien sind das Pflichtprogramm."
+        : "Unbekannter Status", 400);
+    }
+
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const k = zertKritEintrag(doc, id);
+      if (k.status === status) return { unveraendert: true };
+      zertVerlauf(k, ctx.session.username, "status", k.status, status);
+      k.status = status;
+      k.geaendertAm = new Date().toISOString();
+      k.geaendertVon = ctx.session.username;
+      return { status };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ---------- Notiz und Ressort ----------
+
+// Beides in einer Aktion: es ist dieselbe Maske und derselbe Speichern-Knopf. Ein
+// FEHLENDES Feld heisst "unveraendert", nur ein mitgeschicktes leeres leert --
+// gleiche Semantik wie set-aufgaben-gruppen.
+async function handleZertNotiz(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const id = zertKritId(body && body.kritId);
+    const hatNotiz = body && typeof body.notiz === "string";
+    const hatRessort = body && typeof body.ressortId === "string";
+    if (!hatNotiz && !hatRessort) throw new VaFehler("Es wurde nichts uebergeben", 400);
+
+    const notiz = hatNotiz ? capStr(body.notiz, ZERT_MAX_NOTIZ) : null;
+    let ressortId = hatRessort ? capStr(body.ressortId, 64) : null;
+
+    // ⚠️ Eine gesetzte Ressort-Id wird gegen die echten Ressorts geprueft. Ohne das
+    // stuende eine erfundene Id in der Datei und der Filter "alle Kriterien des
+    // Ressorts X" liefe lautlos ins Leere. Der Read passiert NUR, wenn wirklich ein
+    // Ressort gesetzt wird -- Leeren kostet nichts.
+    if (ressortId) {
+      const vaDoc = vaNormalisiere(await readJson(VEREINSAUFGABEN_URL, authHeader, vaLeer()));
+      if (!vaRessortHolen(vaDoc, ressortId)) throw new VaFehler("Ressort nicht gefunden", 404);
+    }
+
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const k = zertKritEintrag(doc, id);
+      let etwas = false;
+      if (notiz !== null && notiz !== k.notiz) { k.notiz = notiz; etwas = true; }
+      if (ressortId !== null && ressortId !== k.ressortId) {
+        zertVerlauf(k, ctx.session.username, "ressort", k.ressortId, ressortId);
+        k.ressortId = ressortId;
+        etwas = true;
+      }
+      if (!etwas) return { unveraendert: true };
+      k.geaendertAm = new Date().toISOString();
+      k.geaendertVon = ctx.session.username;
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ---------- Mini-Aufgaben ----------
+//
+// ⚠️ Das sind NICHT die Vereinsaufgaben aus derselben App, obwohl sie im selben
+// Repo wohnen. Michel-Entscheidung: hier bewusst ein leichteres Modell -- keine
+// Pflicht-Frist, keine Abnahme, kein Ablehnen, keine Benachrichtigung. Grund war
+// die Form der Sache: ein Kriterium hat keine Frist, es ist erfuellt oder nicht,
+// und die Schritte dorthin sind Notizzettel, keine Auftraege mit Fristenlauf.
+// Wer beides je zusammenlegen will, holt sich damit die Pflicht-Frist zurueck.
+
+async function handleZertAufgabeAnlegen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const id = zertKritId(body && body.kritId);
+    const titel = capStr(body && body.titel, ZERT_MAX_TITEL).trim();
+    if (!titel) throw new VaFehler("Ein Titel muss angegeben werden", 400);
+    const faellig = zertDatum(body && body.faellig);
+
+    // ⚠️ Derselbe Empfaengertest wie bei den Vereinsaufgaben: existiert, ist
+    // Personal UND darf diese App bearbeiten. Der letzte Teil ist keine
+    // Foermlichkeit -- wer die App nicht sieht, erfaehrt nie von seiner Aufgabe
+    // und koennte sie auch nicht abhaken. Michel hat den Empfaengerkreis genau
+    // deshalb auf die Berechtigten begrenzt.
+    const empfaenger = vaPruefeEmpfaenger(body && body.empfaenger, ctx, ctx.session.usersDoc);
+
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      if (doc.aufgaben.length >= ZERT_MAX_AUFGABEN) throw new VaFehler("Die Aufgabenliste ist voll", 400);
+      if (doc.aufgaben.filter((a) => a.kritId === id).length >= ZERT_MAX_AUFGABEN_JE_KRIT) {
+        throw new VaFehler(`An einem Kriterium sind hoechstens ${ZERT_MAX_AUFGABEN_JE_KRIT} Aufgaben moeglich`, 400);
+      }
+      const neu = {
+        id: crypto.randomUUID(),
+        kritId: id, titel, empfaenger, faellig,
+        erledigt: false, erledigtAm: "", erledigtVon: "",
+        erstelltAm: new Date().toISOString(), erstelltVon: ctx.session.username
+      };
+      doc.aufgaben.push(neu);
+      return { id: neu.id };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Titel, Frist und Empfaenger nachtraeglich korrigieren. Nur der Ersteller oder
+// Administrieren -- der Empfaenger darf abhaken, aber nicht den Auftrag
+// umschreiben (gleiche Linie wie bei handleVaAendern).
+async function handleZertAufgabeAendern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const titel = capStr(body && body.titel, ZERT_MAX_TITEL).trim();
+    if (!titel) throw new VaFehler("Der Titel darf nicht leer werden", 400);
+    const faellig = zertDatum(body && body.faellig);
+    const hatEmpfaenger = !!(body && body.empfaenger);
+    const empfaenger = hatEmpfaenger ? vaPruefeEmpfaenger(body.empfaenger, ctx, ctx.session.usersDoc) : "";
+
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const a = zertAufgabeHolen(doc, body && body.id);
+      if (a.erstelltVon !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer die Aufgabe angelegt hat, kann sie aendern", 403);
+      }
+      a.titel = titel;
+      a.faellig = faellig;
+      if (hatEmpfaenger) a.empfaenger = empfaenger;
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Abhaken und wieder aufmachen. Erlaubt sind der Empfaenger, der Ersteller und
+// Administrieren: es gibt hier bewusst keine Abnahme, ein Haken ist ein Haken.
+async function handleZertAufgabeStatus(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const erledigt = !!(body && body.erledigt);
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const a = zertAufgabeHolen(doc, body && body.id);
+      if (a.empfaenger !== ctx.session.username && a.erstelltVon !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Diese Aufgabe gehoert jemand anderem", 403);
+      }
+      if (!!a.erledigt === erledigt) return { unveraendert: true };
+      a.erledigt = erledigt;
+      a.erledigtAm = erledigt ? new Date().toISOString() : "";
+      a.erledigtVon = erledigt ? ctx.session.username : "";
+      return { erledigt };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleZertAufgabeLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const a = zertAufgabeHolen(doc, body && body.id);
+      if (a.erstelltVon !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer die Aufgabe angelegt hat, kann sie loeschen", 403);
+      }
+      doc.aufgaben.splice(doc.aufgaben.indexOf(a), 1);
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ---------- Nachweis-Dateien ----------
+
+async function handleZertDateiPut(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const id = zertKritId(body && body.kritId);
+    const rohDaten = String((body && body.daten) || "");
+    const komma = rohDaten.indexOf(",");
+    if (!rohDaten.startsWith("data:") || komma < 0) throw new VaFehler("Datei-Inhalt fehlt oder ist unlesbar", 400);
+    const mime = capStr(rohDaten.slice(5, rohDaten.indexOf(";")), 120) || "application/octet-stream";
+    let bytes;
+    try { bytes = base64ToBytes(rohDaten.slice(komma + 1)); }
+    catch (_) { throw new VaFehler("Datei-Inhalt ist kein gueltiges base64", 400); }
+    if (!bytes.length) throw new VaFehler("Leere Datei", 400);
+    if (bytes.length > ZERT_MAX_NACHWEIS_BYTES) throw new VaFehler("Datei zu gross (hoechstens 8 MB)", 413);
+
+    const name = capStr(body && body.name, 200).replace(/[\r\n]/g, "").trim() || "nachweis";
+    const fileId = crypto.randomUUID();
+
+    // Erst den Deckel pruefen, dann die Bytes ablegen, dann verbuchen: ein Eintrag,
+    // der auf eine nicht vorhandene Datei zeigt, waere schlimmer als eine verwaiste
+    // Datei (gleiche Reihenfolge wie handleVaDateiPut).
+    await zertMutiere(authHeader, (doc) => {
+      const k = zertKritEintrag(doc, id);
+      if ((k.nachweise || []).length >= ZERT_MAX_NACHWEISE) throw new VaFehler("Zu viele Nachweise an diesem Kriterium", 400);
+      return {};
+    });
+
+    const fileUrl = ZERT_NACHWEIS_DIR + "/" + fileId;
+    const headers = { Authorization: authHeader, "Content-Type": mime };
+    let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    // Gleicher MKCOL-Autofix wie ueberall: 409 = eine Ebene fehlt, 404 = mehrere
+    // (der Fall beim allerersten Upload).
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(ZERT_NACHWEIS_DIR, authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    }
+    if (!resp.ok) throw new VaFehler(`Upload fehlgeschlagen (Nextcloud ${resp.status})`, 502);
+
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const k = zertKritEintrag(doc, id);
+      if (!Array.isArray(k.nachweise)) k.nachweise = [];
+      k.nachweise.push({
+        fileId, name, mime, von: ctx.session.username,
+        hochgeladenAm: new Date().toISOString(), groesse: bytes.length
+      });
+      k.geaendertAm = new Date().toISOString();
+      k.geaendertVon = ctx.session.username;
+      return { fileId };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ⚠️ Lesen verlangt Bearbeiten, nicht bloss Sehen. Der Katalog selbst ist fuer
+// jeden Seher offen, ein hinterlegter Nachweis kann aber sehr wohl Personendaten
+// enthalten -- beim Kriterium "Fuehrungszeugnis" liegt das auf der Hand. Gleiche
+// Linie wie "Export erst ab Bearbeiten".
+//
+// ⚠️ Die Datei-Id wird IMMER aus dem Kriterium aufgeloest, nie aus dem Body
+// uebernommen -- sonst kaeme man mit einer geratenen Id an jeder Pruefung vorbei.
+async function handleZertDateiGet(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const id = zertKritId(body && body.kritId);
+    const doc = zertNormalisiere(await readJson(ZERT_URL, authHeader, zertLeer()));
+    const k = doc.kriterien[id];
+    const gesucht = String((body && body.fileId) || "");
+    const meta = k && (k.nachweise || []).find((f) => f && f.fileId === gesucht);
+    if (!meta) throw new VaFehler("Nachweis nicht gefunden", 404);
+    if (!FILE_ID_RE.test(meta.fileId)) throw new VaFehler("Ungueltige Datei-Id", 400);
+
+    let resp;
+    try { resp = await fetch(ZERT_NACHWEIS_DIR + "/" + meta.fileId, { method: "GET", headers: { Authorization: authHeader } }); }
+    catch (_) { throw new VaFehler("Nextcloud nicht erreichbar", 502); }
+    if (resp.status === 404) throw new VaFehler("Datei nicht gefunden", 404);
+    if (!resp.ok) throw new VaFehler(`Nextcloud GET ${resp.status}`, 502);
+
+    // Bytes durchreichen statt als base64 zu verpacken: bytesToBase64 baut den
+    // String zeichenweise auf und reisst bei mehreren Megabyte das CPU-Limit.
+    return new Response(resp.body, {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": meta.mime || "application/octet-stream", "Cache-Control": "private, no-store" }
+    });
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleZertDateiLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const id = zertKritId(body && body.kritId);
+    let fileId = "";
+    const ergebnis = await zertMutiere(authHeader, (doc) => {
+      const k = doc.kriterien[id];
+      const gesucht = String((body && body.fileId) || "");
+      const idx = (k && k.nachweise ? k.nachweise : []).findIndex((f) => f && f.fileId === gesucht);
+      if (idx < 0) throw new VaFehler("Nachweis nicht gefunden", 404);
+      const meta = k.nachweise[idx];
+      if (meta.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer den Nachweis hochgeladen hat, kann ihn entfernen", 403);
+      }
+      fileId = meta.fileId;
+      k.nachweise.splice(idx, 1);
+      k.geaendertAm = new Date().toISOString();
+      k.geaendertVon = ctx.session.username;
+      return {};
+    });
+    if (FILE_ID_RE.test(fileId)) {
+      try { await fetch(ZERT_NACHWEIS_DIR + "/" + fileId, { method: "DELETE", headers: { Authorization: authHeader } }); }
+      catch (_) { /* verwaiste Datei ist hinnehmbar */ }
+    }
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
