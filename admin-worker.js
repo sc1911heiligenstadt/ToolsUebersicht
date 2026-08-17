@@ -7484,7 +7484,25 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
   // sichtbarkeit.json (Tool-Rechte) hängt nicht an nutzer.json (Session) — beide
   // Reads parallel starten, statt den zweiten hinter dem ersten herlaufen zu
   // lassen. Spart bei kaltem jsonCache einen kompletten Nextcloud-Roundtrip.
+  //
+  // ⚠️ Seit 2026-08-17 laeuft die APP-DATEI in derselben Welle mit. Vorher lag sie
+  // hinter der Rechtepruefung, ein dav-load kostete also ZWEI serielle
+  // Nextcloud-Runden: [nutzer.json ∥ sichtbarkeit.json] → [app-datei]. Jetzt eine.
+  // Bei 200-450 ms je Read ist das der groesste Einzelposten beim Aufruf jeder App
+  // der Flotte (im Flotten-Check am 2026-08-17 gemessen: die Seite selbst ist nach
+  // 285 ms fertig, die Daten brauchten danach noch fast eine Sekunde).
+  //
+  // ⚠️ Der Preis, bewusst in Kauf genommen: ein Konto mit gueltigem Token aber OHNE
+  // Recht auf dieses Tool loest den Read jetzt ebenfalls aus. Herausgegeben wird
+  // nichts — die Antwort bleibt 403, der Prefetch wird verworfen. Es ist reine
+  // Last, und sie trifft nur den seltenen Fall "angemeldet, aber nicht berechtigt".
+  // Wer das nicht will, muesste die Rechte VOR den Daten kennen, und genau das
+  // kostet die Runde, die hier gespart wird.
+  const app = String(body.app || "");
+  const url = getOwn(DAV_APPS, app);
+
   let cfgPrefetch = null;
+  let datenPrefetch = null;
   const session = await getVerifiedSession(request, env, authHeader, (payload) => {
     // Admins überspringen die Rechteprüfung per Kurzschluss — für sie wäre der
     // Prefetch ein Read, den niemand liest. Bei aktiver Testansicht steht im
@@ -7493,18 +7511,24 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
     if (!payload.isAdmin) {
       cfgPrefetch = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
     }
+    // Nur bei bekannter App: eine unbekannte App-Id darf keinen Read auslösen.
+    if (url) datenPrefetch = prefetchJsonWithRev(url, authHeader, null);
   });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
-  const app = String(body.app || "");
-  const url = getOwn(DAV_APPS, app);
+  // ⚠️ Die Reihenfolge der Fehlerantworten bleibt unveraendert 401 → 400 → 403.
+  // app/url werden oben nur BERECHNET; wer nicht angemeldet ist, erfaehrt weiterhin
+  // nicht, ob eine App-Id existiert.
   if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
 
   if (!(await userMayAccessTool(app, session, env, authHeader, cfgPrefetch))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
 
-  let { data, rev } = await readJsonWithRev(url, authHeader, null);
+  // Der Prefetch ist der Normalfall; das direkte Lesen bleibt als Rückfall, falls
+  // getVerifiedSession den Callback nicht erreicht hat (kaputtes Token → dann sind
+  // wir hier ohnehin nie).
+  let { data, rev } = await (datenPrefetch || readJsonWithRev(url, authHeader, null));
 
   // Abgelaufene Eintraege entfernen, BEVOR gefiltert wird -- die Filterbloecke
   // unten liefern nur eine Teilsicht, geschrieben werden muss aber die komplette
@@ -10396,6 +10420,14 @@ async function readJson(url, authHeader, fallback) {
 // bekommt den Fehler ganz normal aus der Original-Promise.
 function prefetchJson(url, authHeader, fallback) {
   const p = readJson(url, authHeader, fallback);
+  p.catch(() => {});
+  return p;
+}
+
+// Gleiche Bauform, liefert aber zusaetzlich das ETag — gebraucht von handleDavLoad,
+// dessen Antwort das rev fuer den If-Match-PUT enthaelt (readJson wirft es weg).
+function prefetchJsonWithRev(url, authHeader, fallback) {
+  const p = readJsonWithRev(url, authHeader, fallback);
   p.catch(() => {});
   return p;
 }
