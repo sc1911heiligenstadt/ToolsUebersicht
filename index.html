@@ -108,11 +108,32 @@
         <button type="button" class="ansicht-btn" id="btn-ansicht-liste" aria-pressed="false" title="Werkzeuge als Liste anzeigen">☰ Liste</button>
       </div>
       <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern">✏️ Anordnen</button>
+      <!-- Das Suchfeld steht offen da, es gibt keinen Knopf zum Aufklappen mehr
+           (Michel-Vorgabe 2026-08-13): ein Knopf, der nur ein Feld einblendet,
+           kostet einen Klick und verrät nicht, dass man suchen kann.
+
+           ⚠️ Suchen und Anordnen schliessen sich weiterhin gegenseitig aus: eine
+           gefilterte Liste beim Verschieben wuerde die ausgeblendeten Werkzeuge
+           aus der gespeicherten Reihenfolge kippen (saveToolOrder liest die IDs
+           aus dem DOM). Wer tippt, beendet damit den Anordnen-Modus, und wer
+           "Anordnen" drueckt, leert damit die Suche. Das Feld wird dafuer NICHT
+           gesperrt -- ein totes Feld schluckt die Eingabe kommentarlos. -->
+      <div class="ansicht-suche" id="ansicht-suche-feld">
+        <span class="ansicht-suche-lupe" aria-hidden="true">🔎</span>
+        <input type="search" id="ansicht-suche-eingabe" placeholder="Werkzeug suchen…" autocomplete="off" aria-label="Werkzeuge durchsuchen" />
+        <button type="button" class="ansicht-suche-x" id="btn-ansicht-suche-schliessen" title="Suche zurücknehmen" aria-label="Suche zurücknehmen" style="display:none;">✕</button>
+      </div>
       <!-- Filter nach den beiden Kennzeichen der Kacheln (seit 2026-08-17):
            ✉️ verschickt E-Mails nach aussen, 🔔 meldet sich auf dem Handy. Beide
            Symbole standen bisher nur auf der Karte und erklaerten sich ueber einen
            title-Tooltip -- den es am Handy nicht gibt. Hier sind sie anklickbar und
            damit auch ohne Maus zu gebrauchen.
+
+           ⚠️ Sie stehen RECHTS neben dem Suchfeld (Michel-Vorgabe 2026-08-17, nachdem
+           die erste Fassung sie links davor gesetzt hatte). Das ist nicht nur Optik:
+           die Reihenfolge im Markup ist am Handy zugleich die Umbruch-Reihenfolge --
+           links davor bekaemen Feld und Knoepfe unter 560px getauschte Plaetze in der
+           zweiten Zeile.
 
            ⚠️ Die beiden Filter VERKLEINERN gemeinsam: wer beide drueckt, sieht die
            Werkzeuge, die beides tun. Ein Filter, der den Kreis erweitert, waere das
@@ -131,21 +152,6 @@
              reicht. Das aria-label traegt die Bedeutung in beiden Faellen. -->
         <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-mail" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die E-Mails verschicken" title="Nur Werkzeuge zeigen, die E-Mails nach außen verschicken">✉️<span class="filter-wort"> Mail</span></button>
         <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-push" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken" title="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken">🔔<span class="filter-wort"> Push</span></button>
-      </div>
-      <!-- Das Suchfeld steht offen da, es gibt keinen Knopf zum Aufklappen mehr
-           (Michel-Vorgabe 2026-08-13): ein Knopf, der nur ein Feld einblendet,
-           kostet einen Klick und verrät nicht, dass man suchen kann.
-
-           ⚠️ Suchen und Anordnen schliessen sich weiterhin gegenseitig aus: eine
-           gefilterte Liste beim Verschieben wuerde die ausgeblendeten Werkzeuge
-           aus der gespeicherten Reihenfolge kippen (saveToolOrder liest die IDs
-           aus dem DOM). Wer tippt, beendet damit den Anordnen-Modus, und wer
-           "Anordnen" drueckt, leert damit die Suche. Das Feld wird dafuer NICHT
-           gesperrt -- ein totes Feld schluckt die Eingabe kommentarlos. -->
-      <div class="ansicht-suche" id="ansicht-suche-feld">
-        <span class="ansicht-suche-lupe" aria-hidden="true">🔎</span>
-        <input type="search" id="ansicht-suche-eingabe" placeholder="Werkzeug suchen…" autocomplete="off" aria-label="Werkzeuge durchsuchen" />
-        <button type="button" class="ansicht-suche-x" id="btn-ansicht-suche-schliessen" title="Suche zurücknehmen" aria-label="Suche zurücknehmen" style="display:none;">✕</button>
       </div>
       <span class="ansicht-hinweis" id="ansicht-hinweis" style="display:none;">Am Greifpunkt ⠿ verschieben — innerhalb der eigenen Kategorie.</span>
       <span class="ansicht-status" id="ansicht-status" aria-live="polite"></span>
