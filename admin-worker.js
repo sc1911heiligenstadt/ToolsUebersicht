@@ -15881,9 +15881,16 @@ async function handleUnterlageVerteilen(request, body, env, authHeader, corsHead
   // Abzeichen und Meldung nur bei persoenlichen Unterlagen an genau diese Person.
   // Bei "fuer alle" waere ein Push je Datei eine Rundnachricht an die ganze
   // Belegschaft -- dafuer gibt es das Panel im Einstellungen-Tab.
+  //
+  // ⚠️ Der Verteilende ist hier bewusst NICHT ausgenommen -- anders als bei den
+  // uebrigen Anlaessen, gleiche Linie wie bei der Rundnachricht. Der Versand
+  // laeuft in waitUntil und meldet nichts zurueck; die eigene Nachricht auf dem
+  // eigenen Handy ist der einzige Zustellnachweis, den es gibt. Der Ausschluss
+  // stand hier zuerst drin und war genau deshalb falsch: Michel stellte sich
+  // die erste Unterlage selbst bereit und bekam nie eine Meldung (2026-08-17).
   if (fuer) {
     execCtx.waitUntil(unterlagenZaehlerErhoehen(authHeader, [fuer]));
-    if (body && body.push === true && fuer !== normalizeUsername(session.username)) {
+    if (body && body.push === true) {
       pushSenden(env, authHeader, execCtx, [fuer], "unterlagen",
         "Ein Dokument liegt für dich zum Herunterladen bereit");
     }
