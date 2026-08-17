@@ -1161,6 +1161,8 @@ export default {
         return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
       case "vorgang-push":
         return handleVorgangPush(request, body, env, authHeader, corsHeaders, ctx);
+      case "trainerdaten-push":
+        return handleTrainerdatenPush(request, body, env, authHeader, corsHeaders, ctx);
       case "fotoauftrag-push":
         return handleFotoauftragPush(request, body, env, authHeader, corsHeaders, ctx);
       case "my-trainercheckliste-status":
@@ -11189,6 +11191,13 @@ const PUSH_ANLAESSE = [
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
   { id: "feedback", titel: "Feedback & Wünsche", ziel: "/ToolsUebersicht/",
     label: "Feedback & Wünsche — Antworten auf meine Einreichungen" },
+  // Ausgeloest von Trainerdaten (Worker "trainerdaten1", Aktion efz-push), wenn
+  // die Geschaeftsstelle jemandem das Bestaetigungsschreiben fuer das erweiterte
+  // Fuehrungszeugnis freigibt. Ohne diese Meldung erfuehre die Person von der
+  // Freigabe nur, wenn sie zufaellig in den Tab schaut -- und der Brief ist der
+  // eine Schritt, der bei ihr liegt.
+  { id: "trainerdaten", titel: "Trainerdaten", ziel: "/Trainerdaten/",
+    label: "Trainerdaten — Unterlagen, die für mich bereitliegen" },
   // Von Hand ausgeloest im Einstellungen-Tab (push-rundnachricht, seit
   // 2026-08-06). Der einzige Anlass, dessen TITEL nicht von hier kommt: bei
   // einer freien Mitteilung ist die Ueberschrift Teil der Nachricht. Der
@@ -11643,6 +11652,36 @@ async function handleVorgangPush(request, body, env, authHeader, corsHeaders, ex
   }
 
   pushSenden(env, authHeader, execCtx, empfaenger, cfg.anlass, cfg[art]);
+  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
+}
+
+// Trainerdaten: die Geschaeftsstelle hat jemandem das Bestaetigungsschreiben fuers
+// erweiterte Fuehrungszeugnis freigegeben. Gerufen NICHT vom Browser, sondern vom
+// Worker "trainerdaten1" (Aktion efz-push), der den Admin-Token durchreicht --
+// trainerdaten.json steht bewusst nicht in DAV_APPS, das Gateway soll sie also
+// weder lesen noch schreiben. Deshalb bringt der Aufrufer den Empfaenger mit,
+// nachdem er ihn dort selbst nachgeschlagen und die Freigabe geprueft hat.
+//
+// ⚠️ Der Text steht HIER, nicht im Request. Damit ist das Schlimmste, was diese
+// Aktion in falschen Haenden anrichten kann, eine gegenstandslose Meldung an ein
+// Konto -- kein frei formulierter Text im Namen des Vereins. Der Kreis, der sie
+// ueberhaupt ausloesen kann, ist die Administrieren-Stufe fuer Trainerdaten.
+const TRAINERDATEN_PUSH_TEXT = "Dein Bestätigungsschreiben liegt zum Herunterladen bereit";
+
+async function handleTrainerdatenPush(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveAdminPermission("trainerdaten", session, env, authHeader))) {
+    return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  }
+
+  const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
+  // Deckel bei 5: freigegeben wird eine Person nach der anderen. Eine lange Liste
+  // waere ein Zeichen dafuer, dass die Aktion zweckentfremdet wird.
+  const empfaenger = roh.map((n) => normalizeUsername(String(n || ""))).filter(Boolean).slice(0, 5);
+  if (!empfaenger.length) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
+
+  pushSenden(env, authHeader, execCtx, empfaenger, "trainerdaten", TRAINERDATEN_PUSH_TEXT);
   return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
 }
 
