@@ -961,6 +961,12 @@ export default {
       return;
     }
     ctx.waitUntil(scNaechtlicherLauf(env, authHeader, ctx));
+    // Busplan haengt sich an den BESTEHENDEN naechtlichen Lauf, statt einen
+    // dritten Cron-Trigger zu verlangen: ein neuer Trigger muesste von Hand im
+    // Cloudflare-Dashboard angelegt werden und waere genau die Art Schritt, die
+    // beim naechsten Deploy vergessen wird. Eigener waitUntil, damit ein Fehler
+    // hier die Spieltagscrew-Erinnerungen nicht mitreisst.
+    ctx.waitUntil(busplanErinnerungslauf(env, authHeader, ctx).catch(() => {}));
   },
 
   // ctx (seit 2026-08-03): nur fuer ctx.waitUntil beim Push-Versand. Ohne den
@@ -1300,6 +1306,11 @@ export default {
         return handleScEinstellungenSpeichern(request, body, env, authHeader, corsHeaders);
       case "spieltagscrew-erinnern":
         return handleScErinnern(request, body, env, authHeader, corsHeaders, ctx);
+      // Nachlese zum naechtlichen Busplan-Lauf. ⚠️ NUR LESEN -- es gibt bewusst
+      // keine Aktion, die den Lauf von Hand ausloest: jede Fahrt kostet eine
+      // Mail, und ein zweiter Ausloeser koennte den Merker umgehen.
+      case "busplan-erinnerungen":
+        return handleBusplanErinnerungen(request, env, authHeader, corsHeaders);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -11305,6 +11316,12 @@ const PUSH_ANLAESSE = [
   // Fuenf-Minuten-Lauf in scheduled(), NICHT von einer Nutzerhandlung.
   { id: "ablaufplan", titel: "Ablaufplan", ziel: "/ablaufplan/",
     label: "Ablaufplan — Erinnerung kurz vor meinem eigenen Punkt" },
+  // Erinnerung an eine zugesagte Busfahrt, drei Tage vorher. Ausgeloest vom
+  // NAECHTLICHEN Lauf in scheduled(), NICHT von einer Nutzerhandlung -- am
+  // richtigen Morgen hat niemand die App offen. Die Regeln des Busses stehen
+  // in der Mail, nicht hier: auf einem Sperrbildschirm ist dafuer kein Platz.
+  { id: "busplan", titel: "Busplan", ziel: "/busplan/",
+    label: "Busplan — Erinnerung an die zugesagte Fahrt meiner Mannschaft" },
   // Ziel ist die Uebersicht selbst (wie "unterschriften") -- die Antwort steht
   // im Tab "Feedback & Hilfe", nicht in einer der verlinkten Apps. Deshalb traegt
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
@@ -15975,4 +15992,344 @@ async function handleUnterlagenAlle(request, env, authHeader, corsHeaders) {
     .filter(Boolean);
   alle.sort((a, b) => String(b.hochgeladenAm).localeCompare(String(a.hochgeladenAm)));
   return json({ eintraege: alle, deckel: UNTERLAGEN_MAX, maxJeLauf: UNTERLAGEN_MAX_JE_LAUF }, 200, corsHeaders);
+}
+
+// =============================================================================
+// Busplan: Erinnerung an die zugesagte Fahrt (seit 2026-08-17)
+//
+// Michel-Vorgabe: drei Tage bevor eine Mannschaft ihren Bus hat, bekommen ihre
+// Trainer eine Nachricht aufs Handy UND eine E-Mail. In der Mail stehen
+// zusaetzlich die Regeln genau des Busses, der zugesagt ist -- die Push-Meldung
+// nennt sie nicht, auf einem Sperrbildschirm ist dafuer kein Platz.
+//
+// ✅ KEIN DRITTER CRON-TRIGGER. Dieser Lauf haengt am bestehenden naechtlichen
+// Trigger "0 4 * * *" (Spieltagscrew). Ein eigener Trigger muesste von Hand im
+// Cloudflare-Dashboard angelegt werden -- genau der Schritt, der beim naechsten
+// Deploy vergessen wird und den dann niemand vermisst, weil ein ausbleibendes
+// Push nicht auffaellt.
+//
+// ⚠️ busplan.json wird NUR GELESEN. Merker und Laufbericht liegen in einer
+// eigenen Datei daneben. Wuerde der Lauf in die Nutzdatei schreiben, kollidierte
+// er mit dem Autosave der App (Last-Write-Wins) und koennte eine Aenderung
+// ueberbuegeln, die jemand am Abend vorher gemacht hat.
+//
+// Als geschlossener Block am Dateiende, wie der Ablaufplan davor: am Stueck
+// wieder herausloesbar.
+
+const BUSPLAN_ERINNERT_URL = DAV_APPS["busplan"].replace(/[^/]+$/, "busplan-erinnert.json");
+
+// Vorlauf in Tagen. ⚠️ Muss zum Info-Text in E:\busplan\config.js passen --
+// beide sprechen von drei Tagen.
+const BUSPLAN_VORLAUF_TAGE = 3;
+// Wie lange ein Merker aufgehoben wird. Grosszuegiger als beim Ablaufplan: hier
+// zaehlen Tage, nicht Minuten, und ein zu frueh weggeraeumter Merker schickt
+// dieselbe Fahrt ein zweites Mal.
+const BUSPLAN_MERKER_TAGE = 21;
+// Deckel je Lauf, gegen den Fall, dass jemand einen ganzen Spielplan auf
+// dieselbe Woche legt. Jede Fahrt kostet eine Mail.
+const BUSPLAN_MAX_JE_LAUF = 40;
+
+// Nur diese Status gelten als "der Bus steht". Michel-Vorgabe: die Erinnerung
+// haengt an der ZUSAGE, nicht an "offen" oder "in Klaerung" -- eine Fahrt, die
+// noch nicht sicher ist, soll niemanden losfahren lassen.
+const BUSPLAN_STATUS_ZUSAGE = "zusage";
+
+// ⚠️ Bewusst dieselbe Funktion wie der Ablaufplan, keine dritte Kopie:
+// ablaufplanNormTeam ist die (schon zweite) Kopie von normMannschaft aus
+// E:\ablaufplan\zeitlogik.js. Beide Laeufe muessen "D1-Jugend" im Profil und
+// "D1" im Datensatz gleich behandeln; zwei Schreibweisen desselben Vergleichs
+// waeren genau der Fehler, den man erst bemerkt, wenn eine Erinnerung ausbleibt.
+const busplanNormTeam = ablaufplanNormTeam;
+
+// Wer wird erinnert: die Trainer, in deren Profil (nutzer.json, Feld
+// "mannschaften") die Mannschaft des Spiels steht.
+//
+// ⚠️ NICHT das Freitextfeld "trainer" am Team im Busplan. Dort steht ein
+// getippter Name ohne Verbindung zu einem Konto -- eine abweichende Schreibweise
+// haette lautlos niemanden erreicht, und eine Mailadresse gibt es dort ohnehin
+// nicht. Archivierte Konten und Spielerkonten bleiben aussen vor.
+function busplanEmpfaenger(teamName, usersDoc) {
+  const ziel = busplanNormTeam(teamName);
+  if (!ziel) return [];
+
+  const treffer = [];
+  const gesehen = Object.create(null);
+  for (const schluessel of Object.keys((usersDoc && usersDoc.users) || {})) {
+    const u = usersDoc.users[schluessel];
+    if (!u || u.archiviert || !istPersonal(u)) continue;
+    const meine = (Array.isArray(u.mannschaften) ? u.mannschaften : []).map(busplanNormTeam);
+    if (meine.indexOf(ziel) < 0) continue;
+    const name = normalizeUsername(String(u.username || schluessel));
+    if (!name || gesehen[name]) continue;
+    gesehen[name] = true;
+    treffer.push(name);
+  }
+  return treffer;
+}
+
+// Der Merker haengt am SET der zugesagten Busse, nicht nur am Spiel: kommt
+// nachtraeglich ein zweiter Bus dazu, ist das eine neue Lage und verdient eine
+// neue Nachricht. Datum steht mit drin -- wird das Spiel verschoben, bekommt der
+// neue Termin seine eigene Erinnerung.
+function busplanMerkerSchluessel(team, spiel, optionIds) {
+  return team.id + ":" + spiel.id + ":" + spiel.datum + ":" + optionIds.slice().sort().join("+");
+}
+
+function busplanMerkerAufraeumen(ids, jetzt) {
+  const grenze = jetzt - BUSPLAN_MERKER_TAGE * 86400000;
+  const sauber = Object.create(null);
+  for (const [k, v] of Object.entries(ids || {})) {
+    const ms = Date.parse(String(v || ""));
+    if (Number.isFinite(ms) && ms >= grenze) sauber[k] = v;
+  }
+  return sauber;
+}
+
+// Sucht die Fahrten, die in den naechsten BUSPLAN_VORLAUF_TAGE Tagen anstehen,
+// einen zugesagten Bus haben und noch keine Erinnerung bekommen haben.
+//
+// ⚠️ Das Fenster ist ein ZEITRAUM (heute bis heute+3), kein einzelner Stichtag.
+// Bei "genau heute+3" bliebe jede Zusage stumm, die erst zwei Tage vor der Fahrt
+// gesetzt wird -- und das ist der haeufige Fall, nicht der seltene. Der Merker
+// verhindert, dass daraus vier Nachrichten werden.
+//
+// Reine Rechnung ohne Nextcloud, damit sie sich einzeln pruefen laesst.
+function busplanFaellige(doc, ids, heute, letzterTag) {
+  const seasons = (doc && doc.seasons && typeof doc.seasons === "object") ? doc.seasons : {};
+  const key = (doc && doc.meta && doc.meta.currentSeason) || Object.keys(seasons)[0] || "";
+  const season = getOwn(seasons, key);
+  if (!season) return [];
+
+  const optionen = Array.isArray(season.busOptions) ? season.busOptions : [];
+  const treffer = [];
+
+  for (const team of (Array.isArray(season.teams) ? season.teams : [])) {
+    if (!team || !team.id || !team.name) continue;
+    for (const spiel of (Array.isArray(team.spiele) ? team.spiele : [])) {
+      if (!spiel || !spiel.id) continue;
+      const datum = String(spiel.datum || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) continue;
+      if (datum < heute || datum > letzterTag) continue;
+
+      // Welche Busse stehen fuer dieses Spiel? Es koennen mehrere sein -- dann
+      // nennt eine einzige Nachricht sie alle, statt zwei Mails fuer dieselbe
+      // Fahrt zu verschicken.
+      const zugesagt = [];
+      const statusMap = (spiel.status && typeof spiel.status === "object") ? spiel.status : {};
+      for (const o of optionen) {
+        if (!o || !o.id) continue;
+        const eintrag = getOwn(statusMap, o.id);
+        if (eintrag && eintrag.wert === BUSPLAN_STATUS_ZUSAGE) zugesagt.push(o);
+      }
+      if (!zugesagt.length) continue;
+
+      const schluessel = busplanMerkerSchluessel(team, spiel, zugesagt.map((o) => o.id));
+      if (Object.prototype.hasOwnProperty.call(ids || {}, schluessel)) continue;
+      treffer.push({ team, spiel, busse: zugesagt, schluessel });
+    }
+  }
+
+  // Die naechste Fahrt zuerst, damit der Deckel im Zweifel das Dringendste nimmt.
+  treffer.sort((a, b) => String(a.spiel.datum).localeCompare(String(b.spiel.datum)));
+  return treffer.slice(0, BUSPLAN_MAX_JE_LAUF);
+}
+
+// "Freitag, 20.08.2026". Mittags-UTC als Anker, damit die Zeitzone den Tag nicht
+// ueber die Mitternachtsgrenze schiebt.
+function busplanDatumLang(datum) {
+  const ms = Date.parse(datum + "T12:00:00Z");
+  if (!Number.isFinite(ms)) return datum;
+  return new Date(ms).toLocaleDateString("de-DE", {
+    weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin"
+  });
+}
+
+function busplanTageBis(datum, heute) {
+  const a = Date.parse(heute + "T12:00:00Z");
+  const b = Date.parse(datum + "T12:00:00Z");
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+
+// ⚠️ Der Text steht auf dem Sperrbildschirm: Mannschaft, Tag, Bus, Ort -- aber
+// NIE ein Personenname. Die Trainernamen im Busplan sind getippter Freitext und
+// haetten hier nichts zu suchen.
+function busplanPushText(f, heute) {
+  const tage = busplanTageBis(f.spiel.datum, heute);
+  const wann = tage === 0 ? "Heute" : tage === 1 ? "Morgen" : tage === 2 ? "Übermorgen"
+    : "In " + tage + " Tagen";
+  const busse = f.busse.map((o) => o.name).join(" + ");
+  const ort = String(f.spiel.ort || "").trim();
+  return wann + ": " + f.team.name + " fährt mit " + busse + (ort ? " nach " + ort : "");
+}
+
+// Die Mail ist der Ort fuer die Regeln -- deshalb gibt es sie ueberhaupt
+// zusaetzlich zum Push. Fehlen bei einem Bus die Regeln, steht das auch da:
+// eine Leerstelle ist eine Auskunft, ein weggelassener Absatz ist keine.
+function busplanMailText(f) {
+  const zeilen = [];
+  zeilen.push("Hallo,");
+  zeilen.push("");
+  zeilen.push("für die " + f.team.name + " steht der Bus fest.");
+  zeilen.push("");
+  zeilen.push("Tag:  " + busplanDatumLang(f.spiel.datum));
+  const ort = String(f.spiel.ort || "").trim();
+  if (ort) zeilen.push("Ort:  " + ort);
+  zeilen.push("Bus:  " + f.busse.map((o) => o.name).join(" + "));
+  const notiz = String(f.spiel.notiz || "").trim();
+  if (notiz) {
+    zeilen.push("");
+    zeilen.push("Hinweis zum Spiel:");
+    zeilen.push(notiz);
+  }
+
+  for (const o of f.busse) {
+    zeilen.push("");
+    zeilen.push("--- Regeln für " + o.name + " ---");
+    const regeln = String(o.regeln || "").trim();
+    zeilen.push(regeln || "(Für diesen Bus sind noch keine Regeln hinterlegt.)");
+  }
+
+  zeilen.push("");
+  zeilen.push("Der vollständige Busplan:");
+  zeilen.push("https://sc1911heiligenstadt.github.io/busplan/");
+  zeilen.push("");
+  zeilen.push("Diese Nachricht wurde automatisch verschickt.");
+  return zeilen.join("\n");
+}
+
+// Adresse serverseitig aus den Trainerdaten, nie aus dem Busplan-Datensatz --
+// gleiche Auflösung wie handleNotifyUser. Liefert "" wenn nichts hinterlegt ist.
+function busplanAdresse(username, usersDoc, trainerdatenDoc) {
+  const u = getOwn((usersDoc && usersDoc.users) || {}, username);
+  if (!u) return "";
+  const td = findTrainerdatenRecord(trainerdatenDoc, u);
+  return String(buildTrainerdatenSummary(td).email || "").trim();
+}
+
+async function busplanMailSenden(env, empfaengerMail, betreff, text) {
+  if (!env.BREVO_API_KEY || !empfaengerMail) return false;
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: empfaengerMail }],
+        subject: betreff,
+        textContent: text
+      })
+    });
+    if (!resp.ok) {
+      console.error("Busplan-Mail fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("Busplan-Mail fehlgeschlagen", e && e.message);
+    return false;
+  }
+}
+
+async function busplanErinnerungslauf(env, authHeader, execCtx) {
+  const doc = await readJson(DAV_APPS["busplan"], authHeader, null);
+  if (!doc || !doc.seasons) return { gesendet: 0 };
+
+  const heute = scHeuteBerlin();
+  const letzterTag = scTagPlus(BUSPLAN_VORLAUF_TAGE);
+  const jetzt = Date.now();
+
+  let merker = await readJson(BUSPLAN_ERINNERT_URL, authHeader, { version: 1, ids: {} });
+  if (!merker || typeof merker !== "object") merker = { version: 1, ids: {} };
+  const ids = (merker.ids && typeof merker.ids === "object") ? merker.ids : {};
+
+  const faellig = busplanFaellige(doc, ids, heute, letzterTag);
+  if (!faellig.length) {
+    await busplanLaufVermerken(authHeader, merker, ids, jetzt,
+      { fahrten: 0, push: 0, mails: 0, ohneTrainer: [], ohneAdresse: [] }, null);
+    return { gesendet: 0 };
+  }
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+
+  // ⚠️ Reihenfolge bindend: erst merken, dann verschicken -- dieselbe Lehre wie
+  // beim Ablaufplan. Andersherum meldete ein Fehlschlag beim Schreiben dieselbe
+  // Fahrt in jeder Nacht erneut, und hier haengt an jeder Wiederholung eine Mail.
+  const jetztIso = new Date(jetzt).toISOString();
+  faellig.forEach((f) => { ids[f.schluessel] = jetztIso; });
+  try {
+    await busplanLaufVermerken(authHeader, merker, ids, jetzt, null, null);
+  } catch (_) {
+    return { gesendet: 0, fehler: "merker" };
+  }
+
+  const bericht = { fahrten: 0, push: 0, mails: 0, ohneTrainer: [], ohneAdresse: [] };
+
+  for (const f of faellig) {
+    const empfaenger = busplanEmpfaenger(f.team.name, usersDoc);
+    if (!empfaenger.length) {
+      // Der Nachlese-Ort. Ein ausbleibendes Push faellt niemandem auf -- eine
+      // Mannschaft ohne zugeordnetes Trainerkonto muss deshalb sichtbar werden,
+      // sonst wartet jemand auf eine Nachricht, die es nie geben wird.
+      if (bericht.ohneTrainer.indexOf(f.team.name) < 0) bericht.ohneTrainer.push(f.team.name);
+      continue;
+    }
+    bericht.fahrten++;
+
+    pushSenden(env, authHeader, execCtx, empfaenger, "busplan", busplanPushText(f, heute));
+    bericht.push += empfaenger.length;
+
+    const betreff = "Bus für die " + f.team.name + " am " + busplanDatumLang(f.spiel.datum);
+    const text = busplanMailText(f);
+    for (const u of empfaenger) {
+      const adresse = busplanAdresse(u, usersDoc, trainerdatenDoc);
+      if (!adresse) {
+        // Zweiter Nachlese-Fall: Konto da, aber keine Adresse in den
+        // Trainerdaten. Push kam an, die Mail mit den Regeln nicht.
+        if (bericht.ohneAdresse.indexOf(f.team.name) < 0) bericht.ohneAdresse.push(f.team.name);
+        continue;
+      }
+      if (await busplanMailSenden(env, adresse, betreff, text)) bericht.mails++;
+    }
+  }
+
+  await busplanLaufVermerken(authHeader, merker, ids, jetzt, bericht, null);
+  return { gesendet: bericht.push, mails: bericht.mails };
+}
+
+// Merker und Laufbericht in einem Rutsch. Ohne die sichtbare Zeile faellt ein
+// stiller Fehlschlag um 4 Uhr nachts niemandem auf -- der Busplan zeigt sie im
+// Tab Übersicht an.
+async function busplanLaufVermerken(authHeader, merker, ids, jetzt, bericht, fehler) {
+  merker.version = 1;
+  merker.ids = busplanMerkerAufraeumen(ids, jetzt);
+  if (bericht) {
+    merker.lauf = {
+      zuletztAm: new Date(jetzt).toISOString(),
+      fahrten: bericht.fahrten,
+      push: bericht.push,
+      mails: bericht.mails,
+      ohneTrainer: bericht.ohneTrainer.slice(0, 20),
+      ohneAdresse: bericht.ohneAdresse.slice(0, 20),
+      fehler: fehler ? capStr(fehler, 200) : ""
+    };
+  }
+  await writeJson(BUSPLAN_ERINNERT_URL, authHeader, merker);
+}
+
+// Der Nachlese-Ort fuer die App. Nur lesend, kein Gegenstueck zum Schreiben:
+// den Lauf loest ausschliesslich der Zeitplan aus. Sichtbar fuer jedes
+// angemeldete Konto -- der Busplan selbst ist es auch, und der Bericht nennt
+// keine Personen, nur Mannschaftsnamen und Zahlen.
+async function handleBusplanErinnerungen(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const merker = await readJson(BUSPLAN_ERINNERT_URL, authHeader, { version: 1, ids: {} });
+  const lauf = (merker && merker.lauf && typeof merker.lauf === "object") ? merker.lauf : null;
+  return json({ lauf, vorlaufTage: BUSPLAN_VORLAUF_TAGE }, 200, corsHeaders);
 }

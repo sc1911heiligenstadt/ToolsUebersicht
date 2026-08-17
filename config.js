@@ -203,10 +203,14 @@ const TOOLS = [
   {
     id: "busplan",
     name: "Busplan",
-    description: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften (nur für berechtigte Gruppe).",
+    description: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften. Steht ein Bus fest, melden sich drei Tage vorher die Trainer der Mannschaft von selbst — aufs Handy und per E-Mail, samt der Regeln für genau diesen Bus (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/busplan/",
     icon: "🚌",
-    category: "Verein"
+    category: "Verein",
+    // Drei Tage vor einer zugesagten Fahrt gehen Mail UND Push an die Trainer
+    // der Mannschaft (naechtlicher Lauf im landingpage-Worker).
+    mail: true,
+    push: true
   },
   {
     id: "digitaler-stempel",
@@ -467,6 +471,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.22",
+    groups: [
+      {
+        title: "Der Busplan erinnert an die zugesagte Fahrt",
+        items: [
+          "Drei Tage bevor eine Mannschaft ihren Bus hat, bekommen ihre Trainer eine Nachricht aufs Handy und eine E-Mail mit den Regeln des zugesagten Busses.",
+          "Im Tab „Mein Konto“ gibt es dafür einen neuen Schalter. Er betrifft nur die Handy-Nachricht — die E-Mail kommt weiterhin.",
+          "Wer erinnert wird, richtet sich nach den Mannschaften im eigenen Profil. Steht dort nichts, kommt auch nichts an; der Busplan zeigt in der Übersicht an, für welche Mannschaft das gerade der Fall ist.",
+          "Die Busplan-Kachel trägt jetzt Briefumschlag und Glocke."
+        ]
+      }
+    ]
+  },
   {
     version: "1.21",
     groups: [
