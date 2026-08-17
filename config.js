@@ -399,6 +399,24 @@ const KRITISCHE_TOOLS = [
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [];
 
+// Ziele für „Verknüpftes Tool" an einer Neuigkeit, die KEINE Kachel sind, sondern
+// ein Tab dieser Übersicht selbst (seit 2026-08-17). Anlass: die Ideen haben kein
+// eigenes Werkzeug — eine Meldung über sie konnte deshalb nicht dorthin führen,
+// obwohl der Sprung genau der Zweck des Feldes ist.
+//
+// ⚠️ Die Ids tragen das Präfix "intern:" und können damit nie mit einer Tool-Id aus
+// TOOLS kollidieren. Sie werden als `toolId` in der Meldung gespeichert — wer ein
+// Ziel hier entfernt, macht die damit verknüpften Meldungen zu ziellosen Meldungen
+// (sie bleiben lesbar, nur der Weg fällt weg).
+//
+// `tab` ist der Name der Sektion (`#tab-<name>`), auf die der Klick springt.
+// ⚠️ Ist der Tab für den Leser gesperrt, wird der Link weggelassen statt ins Leere
+// zu führen — die Bedingung dafür steht in newsZielTabOffen() in app.js und muss
+// dort für jedes neue Ziel ergänzt werden.
+const NEWS_INTERNE_ZIELE = [
+  { id: "intern:ideen", name: "Ideen", tab: "ideen" }
+];
+
 // Feste Auswahl an Reaktions-Emojis unter jeder Neuigkeit. MUSS mit
 // NEWS_REACTION_EMOJIS im admin-worker.js übereinstimmen — der Worker validiert
 // jeden Klick strikt gegen seine eigene Kopie. Reihenfolge = Anzeigereihenfolge.
@@ -449,6 +467,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.21",
+    groups: [
+      {
+        title: "Neuigkeiten können jetzt auf die Ideen verweisen",
+        items: [
+          "Im Feld „Verknüpftes Tool“ steht oben eine neue Gruppe „In der Tools-Übersicht“ — dort lässt sich „Ideen“ auswählen.",
+          "Ein Klick auf so eine Meldung springt direkt in den Ideen-Tab, genau wie eine verknüpfte Meldung sonst das Werkzeug öffnet.",
+          "Die Werkzeuge stehen unverändert darunter in der Gruppe „Werkzeuge“.",
+          "Spielerkonten sehen den Ideen-Tab nicht — für sie steht die Meldung ohne Link da, statt ins Leere zu führen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.20",
     groups: [

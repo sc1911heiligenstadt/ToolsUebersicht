@@ -743,9 +743,12 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
 .news-nav-btn:disabled { opacity: 0.35; cursor: default; }
 .news-dots { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; font-weight: 600; }
 .news-item { display: block; text-decoration: none; color: var(--text); padding: 4px 6px; }
-a.news-item { border-radius: 8px; transition: background 0.12s ease; }
-a.news-item:hover { background: var(--blue-light); }
-a.news-item:hover .news-item-title { text-decoration: underline; }
+/* .news-item-klick ist die Meldung, die auf einen TAB dieser App zeigt (Ideen) --
+   dort gibt es kein <a href>, die Optik muss trotzdem dieselbe sein. */
+a.news-item, .news-item-klick { border-radius: 8px; transition: background 0.12s ease; }
+a.news-item:hover, .news-item-klick:hover { background: var(--blue-light); }
+a.news-item:hover .news-item-title, .news-item-klick:hover .news-item-title { text-decoration: underline; }
+.news-item-klick { cursor: pointer; }
 .news-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .news-date { font-size: 12px; color: var(--muted); }
 .news-item-title { font-weight: 700; font-size: 15px; color: var(--blue); }

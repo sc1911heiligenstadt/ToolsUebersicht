@@ -1819,6 +1819,35 @@ function toolById(id) {
   return TOOLS.find((t) => t.id === id) || null;
 }
 
+// Das „verknüpfte Tool" einer Neuigkeit muss keine Kachel sein: die Ideen sind ein
+// Tab dieser Übersicht selbst (NEWS_INTERNE_ZIELE in config.js). Diese Funktion
+// loest BEIDES auf und liefert {name, url} fuer ein Werkzeug bzw. {name, tab} fuer
+// einen Tab hier. OHNE Rechtepruefung -- fuer die Pflegeliste im Einstellungen-Tab,
+// die zeigen muss, was gespeichert ist.
+function newsZielRoh(id) {
+  if (!id) return null;
+  const liste = (typeof NEWS_INTERNE_ZIELE !== "undefined" && Array.isArray(NEWS_INTERNE_ZIELE)) ? NEWS_INTERNE_ZIELE : [];
+  const intern = liste.find((z) => z.id === id);
+  if (intern) return { name: intern.name, tab: intern.tab };
+  const tool = toolById(id);
+  return tool ? { name: tool.name, url: tool.url } : null;
+}
+
+// ⚠️ Ist der Ziel-Tab fuer den Leser gar nicht offen, faellt der Link weg statt ins
+// Leere zu fuehren -- gleiche Linie wie beim Wegweiser unter den Kacheln
+// (renderIdeenHinweis). Die Meldung bleibt sichtbar, nur der Weg fehlt. Ein neues
+// internes Ziel braucht hier seine eigene Bedingung.
+function newsZielTabOffen(tab) {
+  if (tab === "ideen") return ideenTabOffen();
+  return true;
+}
+
+function newsZielFuer(id) {
+  const ziel = newsZielRoh(id);
+  if (ziel && ziel.tab && !newsZielTabOffen(ziel.tab)) return null;
+  return ziel;
+}
+
 // Neuigkeiten nach einer An- oder Abmeldung nachziehen. Sie kommen nur noch mit
 // gueltigem Token vom Server, ein frisch Angemeldeter saehe sonst bis zum naechsten
 // Seitenaufruf ein leeres Karussell -- und nach dem Abmelden bliebe der zuletzt
@@ -1925,22 +1954,27 @@ function renderNews() {
   if (newsCarouselIndex < 0 || newsCarouselIndex >= items.length) newsCarouselIndex = 0;
 
   const n = items[newsCarouselIndex];
-  const tool = n.toolId ? toolById(n.toolId) : null;
+  const ziel = newsZielFuer(n.toolId);
   const type = String(n.type || "");
   const badge = type
     ? `<span class="news-badge news-badge-${escapeHtml(type)}">${escapeHtml(NEWS_TYPE_LABELS[type] || type)}</span>`
     : "";
   const date = n.date ? `<span class="news-date">${escapeHtml(formatNewsDate(n.date))}</span>` : "";
-  const link = tool ? `<span class="news-item-link">${escapeHtml(tool.name)} öffnen →</span>` : "";
+  const link = ziel ? `<span class="news-item-link">${escapeHtml(ziel.name)} öffnen →</span>` : "";
   const inner = `
     <div class="news-item-head">${badge}${date}</div>
     <div class="news-item-title">${escapeHtml(n.title || "")}</div>
     ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
     ${link}
   `;
-  const itemHtml = tool
-    ? `<a class="news-item" href="${escapeHtml(tool.url)}">${inner}</a>`
-    : `<div class="news-item">${inner}</div>`;
+  // Ein Tab dieser App ist keine Adresse -- deshalb dort KEIN <a href>, sondern ein
+  // Klickziel mit Tastaturbedienung. Die Optik traegt .news-item-klick, damit
+  // dieselbe Meldung nicht je nach Ziel anders aussieht.
+  const itemHtml = (ziel && ziel.url)
+    ? `<a class="news-item" href="${escapeHtml(ziel.url)}">${inner}</a>`
+    : (ziel && ziel.tab)
+      ? `<div class="news-item news-item-klick" role="button" tabindex="0" data-ziel-tab="${escapeHtml(ziel.tab)}">${inner}</div>`
+      : `<div class="news-item">${inner}</div>`;
 
   const atNewest = newsCarouselIndex === 0;
   const atOldest = newsCarouselIndex === items.length - 1;
@@ -1959,6 +1993,18 @@ function renderNews() {
   `;
 
   newsMedienThumbsBeleben(banner, n);
+
+  // Verweist die Meldung auf einen Tab dieser App, gibt es keinen Browser-Sprung --
+  // der Wechsel passiert hier. Enter und Leertaste muessen mit, sonst waere das Ziel
+  // nur mit der Maus erreichbar (ein <a> braucht das nicht, ein <div> schon).
+  const zielEl = banner.querySelector("[data-ziel-tab]");
+  if (zielEl) {
+    const zielTab = zielEl.dataset.zielTab;
+    zielEl.addEventListener("click", () => activateTab(zielTab));
+    zielEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activateTab(zielTab); }
+    });
+  }
 
   const prevBtn = banner.querySelector(".news-nav-prev");
   const nextBtn = banner.querySelector(".news-nav-next");
@@ -4230,12 +4276,31 @@ function setupDokumenteTab() {
 function newsToolOptionsOnce() {
   const sel = document.getElementById("news-tool");
   if (!sel || sel.dataset.filled === "1") return;
+  // Zwei beschriftete Gruppen statt einer langen Liste: die Ideen sind kein Werkzeug
+  // mit eigener Kachel, sondern ein Tab dieser Uebersicht (NEWS_INTERNE_ZIELE in
+  // config.js). Ohne die Beschriftung stuenden sie unerklaert zwischen den
+  // Werkzeugnamen -- und man suchte sie dort, wo sie nicht ist.
+  const intern = (typeof NEWS_INTERNE_ZIELE !== "undefined" && Array.isArray(NEWS_INTERNE_ZIELE)) ? NEWS_INTERNE_ZIELE : [];
+  if (intern.length) {
+    const gruppe = document.createElement("optgroup");
+    gruppe.label = "In der Tools-Übersicht";
+    intern.forEach((z) => {
+      const o = document.createElement("option");
+      o.value = z.id;
+      o.textContent = z.name;
+      gruppe.appendChild(o);
+    });
+    sel.appendChild(gruppe);
+  }
+  const gruppeTools = document.createElement("optgroup");
+  gruppeTools.label = "Werkzeuge";
   TOOLS.forEach((t) => {
     const o = document.createElement("option");
     o.value = t.id;
     o.textContent = t.name;
-    sel.appendChild(o);
+    gruppeTools.appendChild(o);
   });
+  sel.appendChild(gruppeTools);
   sel.dataset.filled = "1";
 }
 
@@ -4386,7 +4451,9 @@ function renderNewsAdmin() {
     return;
   }
   list.innerHTML = sorted.map((n) => {
-    const tool = n.toolId ? toolById(n.toolId) : null;
+    // Hier bewusst OHNE Rechte-Gate (newsZielRoh): die Pflegeliste muss zeigen, was
+    // an der Meldung gespeichert ist, auch wenn der Ziel-Tab jemandem verschlossen waere.
+    const ziel = newsZielRoh(n.toolId);
     const type = String(n.type || "hinweis");
     return `
       <div class="news-admin-row" data-id="${escapeHtml(n.id || "")}">
@@ -4397,7 +4464,7 @@ function renderNewsAdmin() {
           </div>
           <div class="news-item-title">${escapeHtml(n.title || "")}</div>
           ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
-          ${tool ? `<div class="muted" style="font-size:12px; margin-top:2px;">→ ${escapeHtml(tool.name)}</div>` : ""}
+          ${ziel ? `<div class="muted" style="font-size:12px; margin-top:2px;">→ ${escapeHtml(ziel.name)}</div>` : ""}
         </div>
         <div class="news-admin-actions">
           <button type="button" class="btn secondary small news-edit-btn">Bearbeiten</button>
