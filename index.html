@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.69" />
+<link rel="stylesheet" href="style.css?v=1.70" />
 </head>
 <body>
 
@@ -108,6 +108,30 @@
         <button type="button" class="ansicht-btn" id="btn-ansicht-liste" aria-pressed="false" title="Werkzeuge als Liste anzeigen">☰ Liste</button>
       </div>
       <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern">✏️ Anordnen</button>
+      <!-- Filter nach den beiden Kennzeichen der Kacheln (seit 2026-08-17):
+           ✉️ verschickt E-Mails nach aussen, 🔔 meldet sich auf dem Handy. Beide
+           Symbole standen bisher nur auf der Karte und erklaerten sich ueber einen
+           title-Tooltip -- den es am Handy nicht gibt. Hier sind sie anklickbar und
+           damit auch ohne Maus zu gebrauchen.
+
+           ⚠️ Die beiden Filter VERKLEINERN gemeinsam: wer beide drueckt, sieht die
+           Werkzeuge, die beides tun. Ein Filter, der den Kreis erweitert, waere das
+           Gegenteil dessen, was ein Filter verspricht -- gleiche Linie wie das
+           Eingrenzen im Rundnachricht-Panel.
+
+           ⚠️ Wie die Suche schliesst der Filter den Anordnen-Modus aus:
+           saveToolOrder() liest die Tool-IDs aus dem DOM, in einer gefilterten Liste
+           zu verschieben kippt die ausgeblendeten Werkzeuge aus der gespeicherten
+           Reihenfolge. -->
+      <div class="ansicht-filter" role="group" aria-label="Werkzeuge nach Meldeweg filtern">
+        <!-- ⚠️ Das Wort steckt in einem eigenen span, weil es unter 560px wegfaellt
+             (siehe .ansicht-filter-btn in style.css) -- mit den Woertern braucht das
+             Paar am Handy eine eigene Zeile. Bewusst NICHT die Flottenklasse .btn-lang:
+             die faellt schon unter 860px und damit auch auf dem Tablet, wo der Platz
+             reicht. Das aria-label traegt die Bedeutung in beiden Faellen. -->
+        <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-mail" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die E-Mails verschicken" title="Nur Werkzeuge zeigen, die E-Mails nach außen verschicken">✉️<span class="filter-wort"> Mail</span></button>
+        <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-push" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken" title="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken">🔔<span class="filter-wort"> Push</span></button>
+      </div>
       <!-- Das Suchfeld steht offen da, es gibt keinen Knopf zum Aufklappen mehr
            (Michel-Vorgabe 2026-08-13): ein Knopf, der nur ein Feld einblendet,
            kostet einen Klick und verrät nicht, dass man suchen kann.
@@ -1654,7 +1678,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=3.7"></script>
-<script src="app.js?v=1.89"></script>
+<script src="config.js?v=3.8"></script>
+<script src="app.js?v=1.90"></script>
 </body>
 </html>

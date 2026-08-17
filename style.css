@@ -1531,7 +1531,13 @@ main { flex: 1; min-width: 0; }
    so koennen Anzeige und Vorlesehilfe nicht auseinanderlaufen. */
 .ansicht-btn[aria-pressed="true"] { background: var(--blue); color: var(--white); }
 .ansicht-btn[aria-pressed="true"]:hover { background: var(--blue); }
-.ansicht-edit-btn {
+/* ⚠️ Die Filterknoepfe teilen sich diese Regel mit dem Anordnen-Knopf, statt eigene
+   Werte zu bekommen: in einer Flex-Leiste zieht das hoechste Element alle anderen mit
+   (siehe die line-height-Anmerkung am Suchfeld weiter unten). Zwei Kopien derselben
+   Masse liefen frueher oder spaeter um einen Pixel auseinander, und die ganze Leiste
+   wuerde sichtbar hoeher. */
+.ansicht-edit-btn,
+.ansicht-filter-btn {
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -1543,9 +1549,31 @@ main { flex: 1; min-width: 0; }
   cursor: pointer;
   white-space: nowrap;
 }
-.ansicht-edit-btn:hover { background: var(--gray); }
+.ansicht-edit-btn:hover,
+.ansicht-filter-btn:hover { background: var(--gray); }
 .ansicht-edit-btn.aktiv { background: var(--green); border-color: var(--green); color: var(--white); }
 .ansicht-edit-btn.aktiv:hover { background: var(--green); }
+/* Die beiden Kennzeichen-Filter gehoeren zusammen und stehen deshalb enger beieinander
+   als die uebrigen Bedienelemente der Leiste (6px statt der 10px Leisten-Luecke). */
+.ansicht-filter { display: inline-flex; gap: 6px; }
+/* Gedrueckt = blau wie der Kacheln/Liste-Umschalter, bewusst NICHT gruen: gruen ist in
+   dieser Leiste der laufende Anordnen-Modus. Zwei Bedeutungen fuer eine Farbe loest
+   beim Hinschauen niemand auf. Der Zustand haengt an aria-pressed statt an einer
+   Klasse, damit Anzeige und Vorlesehilfe nicht auseinanderlaufen. */
+.ansicht-filter-btn[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--white); }
+.ansicht-filter-btn[aria-pressed="true"]:hover { background: var(--blue); }
+/* ⚠️ Am Handy fallen die beiden Woerter weg, und das ist kein Schoenheitsgriff:
+   gemessen bei 375px zieht das Paar MIT Beschriftung die Leiste von 99 auf 142px --
+   eine dritte Zeile ueber allen Kacheln, bei jedem Aufruf der Startseite. Ohne die
+   Woerter passt es neben "Anordnen" und die Leiste bleibt bei 99px.
+   Vertretbar ist das nur, weil DIESELBEN Symbole auf den Kacheln darunter stehen und
+   ein Druck sofort zeigt, was er tut -- anders als bei ▦/☰, wo die Beschriftung
+   genau deshalb bleibt. Die Bedeutung traegt weiterhin das aria-label.
+   Bewusst eigene Grenze statt .btn-lang: die faellt schon unter 860px. */
+@media (max-width: 560px) {
+  .ansicht-filter-btn { padding: 7px 11px; }
+  .ansicht-filter-btn .filter-wort { display: none; }
+}
 /* Das Suchfeld steht offen in der Leiste (seit 2026-08-13 ohne Knopf davor). Es traegt
    dieselbe Pillenform wie die Knoepfe daneben, damit die Leiste eine Reihe bleibt. */
 .ansicht-suche {
@@ -1593,10 +1621,16 @@ main { flex: 1; min-width: 0; }
   cursor: pointer;
 }
 .ansicht-suche-x:hover { background: var(--gray); color: var(--text); }
-/* Am Handy bekommt das Feld die ganze Zeile: neben den drei Knoepfen blieben sonst
-   wenige Pixel, und ein Suchfeld, in das zwei Buchstaben passen, ist keins. */
+/* Am Handy bekommt das Feld eine eigene Zeile: neben Umschalter und "Anordnen" blieben
+   sonst wenige Pixel, und ein Suchfeld, in das zwei Buchstaben passen, ist keins.
+   ⚠️ Seit den beiden Kennzeichen-Filtern (2026-08-17) ist es `1 1 160px` statt
+   `1 1 100%`: die zwei Symbolknoepfe teilen sich diese Zeile mit dem Feld. Mit `100%`
+   bekaemen sie eine DRITTE Zeile ganz fuer sich (gemessen bei 375px: Leiste 98 -> 140px
+   ueber allen Kacheln, bei jedem Aufruf der Startseite). So bleiben es 98px, und das
+   Feld ist dort immer noch 245px breit -- mehr als die 190px am Rechner. Die 160px
+   sind die Reissleine: wird es enger, bricht das Feld doch um, statt zu schrumpfen. */
 @media (max-width: 560px) {
-  .ansicht-suche { flex: 1 1 100%; }
+  .ansicht-suche { flex: 1 1 160px; }
   .ansicht-suche input { width: 100%; }
 }
 .ansicht-hinweis { font-size: 12px; color: var(--muted); }

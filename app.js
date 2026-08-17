@@ -105,6 +105,13 @@ let ansichtBearbeiten = false;   // Anordnen-Modus an? Nur dann laesst sich etwa
 // Das Feld steht offen in der Leiste, es gibt keinen Auf-/Zuklapp-Zustand -- ein
 // leerer Text IST der Ruhezustand.
 let ansichtSuchText = "";
+// Filter nach den Kennzeichen auf den Kacheln (seit 2026-08-17): ✉️ schickt E-Mails
+// nach aussen, 🔔 meldet sich auf dem Handy. Aus demselben Grund wie der Suchtext
+// bewusst NICHT Teil von ansichtState und damit nicht am Konto gespeichert -- ein
+// beim naechsten Anmelden noch gesetzter Filter liesse die halbe Uebersicht fehlen,
+// ohne dass jemand ihn gerade gesetzt hat.
+let ansichtFilterMail = false;
+let ansichtFilterPush = false;
 let _ansichtSaveTimer = null;    // gebuendeltes Speichern nach dem Verschieben
 let _ansichtSaveLaeuft = false;  // In-Flight-Guard: waehrend ein Speichern laeuft, wird nicht parallel gestartet
 let _ansichtSaveNachholen = false; // waehrend des laufenden Speicherns kam eine weitere Aenderung
@@ -1385,6 +1392,26 @@ function ansichtSuchWoerter() {
   return String(ansichtSuchText || "").trim().split(/\s+/).filter(Boolean);
 }
 
+// ⚠️ Die beiden Filter VERKLEINERN gemeinsam: wer beide drueckt, sieht die Werkzeuge,
+// die beides tun (nicht die Vereinigung). Ein Filter darf den Kreis nie erweitern --
+// gleiche Linie wie das Eingrenzen im Rundnachricht-Panel. Geprueft wird gegen
+// dieselben Felder t.mail/t.push, aus denen renderToolGrid() die Symbole ✉️/🔔 auf
+// die Karte setzt; es gibt also keine zweite Wahrheit, die auseinanderlaufen koennte.
+function toolPasstZumFilter(t) {
+  if (ansichtFilterMail && !t.mail) return false;
+  if (ansichtFilterPush && !t.push) return false;
+  return true;
+}
+
+function ansichtFilterAktiv() {
+  return ansichtFilterMail || ansichtFilterPush;
+}
+
+function ansichtFilterAus() {
+  ansichtFilterMail = false;
+  ansichtFilterPush = false;
+}
+
 // Beendet den Anordnen-Modus und holt ein gebuendeltes Speichern sofort nach: wer
 // aufhoert zu sortieren, erwartet, dass es jetzt steht. Rendert bewusst NICHT --
 // jeder Aufrufer tut das ohnehin genau einmal.
@@ -1415,6 +1442,29 @@ function ansichtSucheGetippt(wert) {
   renderToolGrid();
 }
 
+// Derselbe gegenseitige Ausschluss wie beim Tippen, aus demselben Grund: ein gesetzter
+// Filter beendet den Anordnen-Modus (Begruendung bei ansichtSucheGetippt()). Der Knopf
+// wird dafuer NICHT gesperrt -- ein toter Knopf schluckt den Klick kommentarlos.
+function ansichtFilterUmschalten(welcher) {
+  if (welcher === "mail") ansichtFilterMail = !ansichtFilterMail;
+  else ansichtFilterPush = !ansichtFilterPush;
+  if (ansichtFilterAktiv()) ansichtBearbeitenAus();
+  renderToolGrid();
+}
+
+// Sagt im Leerzustand, WORAN es liegt -- Suchtext, Filter oder beides zusammen. Ohne
+// die Unterscheidung stuende bei einem gesetzten Filter ohne Suchtext dort
+// „Kein Werkzeug passt zu „““, also ein Satz ueber nichts.
+function ansichtLeerGrund() {
+  const teile = [];
+  const text = String(ansichtSuchText || "").trim();
+  if (text) teile.push("„" + text + "“");
+  if (ansichtFilterMail) teile.push("✉️ Mail");
+  if (ansichtFilterPush) teile.push("🔔 Push");
+  if (!teile.length) return "Kein Werkzeug gefunden.";
+  return "Kein Werkzeug passt zu " + teile.join(" + ") + ".";
+}
+
 // Wird am Ende von renderToolGrid() aufgerufen, damit Leiste und Kacheln nie
 // auseinanderlaufen. Setzt ausschliesslich Anzeige-Zustaende und rendert bewusst NICHT
 // nach -- sonst riefen sich die beiden gegenseitig auf.
@@ -1440,6 +1490,9 @@ function renderAnsichtLeiste(hatKacheln) {
     // blendete nach der naechsten Anmeldung die halbe Uebersicht aus -- waehrend das
     // Feld, mit dem man ihn zuruecknimmt, gerade unsichtbar war.
     ansichtSucheAus();
+    // Genau dasselbe gilt fuer die beiden Kennzeichen-Filter: sie sitzen in derselben
+    // Leiste und waeren nach dem Abmelden ebenso unerreichbar.
+    ansichtFilterAus();
   }
 
   const kachelBtn = document.getElementById("btn-ansicht-kacheln");
@@ -1455,6 +1508,13 @@ function renderAnsichtLeiste(hatKacheln) {
   }
   const hinweis = document.getElementById("ansicht-hinweis");
   if (hinweis) hinweis.style.display = ansichtBearbeiten ? "inline" : "none";
+
+  // Der gedrueckte Zustand haengt an aria-pressed statt an einer eigenen Klasse --
+  // so koennen Anzeige und Vorlesehilfe nicht auseinanderlaufen (wie beim Umschalter).
+  const filterMailBtn = document.getElementById("btn-ansicht-filter-mail");
+  const filterPushBtn = document.getElementById("btn-ansicht-filter-push");
+  if (filterMailBtn) filterMailBtn.setAttribute("aria-pressed", ansichtFilterMail ? "true" : "false");
+  if (filterPushBtn) filterPushBtn.setAttribute("aria-pressed", ansichtFilterPush ? "true" : "false");
 
   // Das ✕ steht nur da, wenn es etwas zurueckzunehmen gibt -- ein dauerhaft
   // sichtbares Kreuz an einem leeren Feld sieht aus, als tue es etwas.
@@ -1480,6 +1540,7 @@ function ansichtBearbeitenUmschalten() {
   if (ansichtBearbeiten) { ansichtBearbeitenAus(); renderToolGrid(); return; }
   ansichtBearbeiten = true;
   ansichtSucheAus(); // gegenseitiger Ausschluss, Begruendung bei ansichtSucheGetippt()
+  ansichtFilterAus(); // dito -- eine gefilterte Liste zu verschieben kippt den Rest
   renderToolGrid();
 }
 
@@ -1490,6 +1551,11 @@ function setupAnsichtLeiste() {
   if (kachelBtn) kachelBtn.addEventListener("click", () => ansichtModusSetzen("kacheln"));
   if (listeBtn) listeBtn.addEventListener("click", () => ansichtModusSetzen("liste"));
   if (anordnenBtn) anordnenBtn.addEventListener("click", ansichtBearbeitenUmschalten);
+
+  const filterMailBtn = document.getElementById("btn-ansicht-filter-mail");
+  const filterPushBtn = document.getElementById("btn-ansicht-filter-push");
+  if (filterMailBtn) filterMailBtn.addEventListener("click", () => ansichtFilterUmschalten("mail"));
+  if (filterPushBtn) filterPushBtn.addEventListener("click", () => ansichtFilterUmschalten("push"));
 
   const sucheZu = document.getElementById("btn-ansicht-suche-schliessen");
   const sucheFeld = document.getElementById("ansicht-suche-eingabe");
@@ -1539,7 +1605,7 @@ function renderToolGrid() {
     const toolsUnordered = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, currentUser));
     if (toolsUnordered.length === 0) return;
     anyVisible = true;
-    const toolsGefunden = toolsUnordered.filter((t) => toolPasstZurSuche(t, suchWoerter));
+    const toolsGefunden = toolsUnordered.filter((t) => toolPasstZumFilter(t) && toolPasstZurSuche(t, suchWoerter));
     // Eine Kategorie ohne Treffer faellt samt Ueberschrift weg -- eine leere
     // Ueberschrift sieht aus, als fehlte etwas.
     if (toolsGefunden.length === 0) return;
@@ -1613,7 +1679,7 @@ function renderToolGrid() {
   emptyEl.style.display = anyTreffer ? "none" : "block";
   if (!anyTreffer) {
     const text = anyVisible
-      ? "Kein Werkzeug passt zu „" + ansichtSuchText.trim() + "“."
+      ? ansichtLeerGrund()
       : (currentUser ? "Aktuell sind keine Tools für dich sichtbar." : "Melde dich an, um deine Tools zu sehen.");
     document.getElementById("uebersicht-empty-text").textContent = text;
     // Bei einer erfolglosen Suche fehlt nicht die Anmeldung, sondern der Treffer --

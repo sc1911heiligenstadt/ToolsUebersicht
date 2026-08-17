@@ -472,6 +472,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.23",
+    groups: [
+      {
+        title: "Übersicht nach Briefumschlag und Glocke filtern",
+        items: [
+          "In der Leiste über den Kacheln stehen neben der Suche zwei neue Knöpfe: „✉️ Mail“ zeigt nur die Werkzeuge, die E-Mails nach außen verschicken, „🔔 Push“ nur die, die sich auf dem Handy melden.",
+          "Beide zusammen gedrückt zeigt die Werkzeuge, die beides tun. Ein zweiter Druck nimmt einen Filter wieder zurück.",
+          "Die beiden Symbole standen bisher nur auf den Kacheln und erklärten sich beim Überfahren mit der Maus — am Handy also gar nicht.",
+          "Der Filter lässt sich mit der Suche kombinieren und wird beim Abmelden zurückgenommen. Beim Anordnen fällt er weg, damit die gespeicherte Reihenfolge vollständig bleibt."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.22",
     groups: [
       {
