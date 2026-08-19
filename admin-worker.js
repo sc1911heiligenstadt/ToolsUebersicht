@@ -820,6 +820,12 @@ const VA_MAX_EMPFAENGER = 30;      // je Zuweisungsvorgang
 const VA_MAX_ANHANG_BYTES = 8 * 1024 * 1024;
 const VA_MAX_PROTOKOLL = 2000;
 const VA_PRIORITAETEN = ["hoch", "normal", "niedrig"];
+// Sperrfrist zwischen zwei Erinnerungen an DERSELBEN Aufgabe. Eine Erinnerung
+// kostet den Empfänger eine Mail UND eine Nachricht aufs Handy; ohne Frist wäre
+// der Knopf ein beliebig oft drückbarer Störsender, und mehrere gleiche Meldungen
+// hintereinander lassen jede weitere ignorieren. Zwölf Stunden heißt praktisch:
+// höchstens einmal morgens und einmal abends.
+const VA_ERINNERUNG_SPERRE_MS = 12 * 60 * 60 * 1000;
 
 // Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
 // (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
@@ -1269,6 +1275,8 @@ export default {
         return handleVaRessortLoeschen(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-anlegen":
         return handleVaAnlegen(request, body, env, authHeader, corsHeaders, ctx);
+      case "vereinsaufgabe-erinnern":
+        return handleVaErinnern(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-aendern":
         return handleVaAendern(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-status":
@@ -5423,7 +5431,12 @@ function vaDatumLesbar(iso) {
 // Versandprotokoll des Mailversenders, also an zwei Stellen mehr als die App.
 function vaMailInhalt(info, empfaengerUser, vonName) {
   const anrede = (empfaengerUser && empfaengerUser.vorname) ? `Hallo ${empfaengerUser.vorname},` : "Hallo,";
-  const z = [anrede, "", `${vonName} hat dir eine Aufgabe zugewiesen.`, ""];
+  // Die Erinnerung ist derselbe Brief mit anderem Einleitungssatz — bewusst keine
+  // zweite Funktion: Vertraulichkeit, Betreff-Regel und Fußzeile müssten sonst an
+  // zwei Stellen gleich gehalten werden und liefen auseinander.
+  const z = [anrede, "", info.erinnerung
+    ? `${vonName} erinnert dich an eine Aufgabe, die noch offen ist.`
+    : `${vonName} hat dir eine Aufgabe zugewiesen.`, ""];
 
   if (!info.vertraulich) z.push(`Titel:      ${info.titel}`);
   if (info.ressortName) z.push(`Ressort:    ${info.ressortName}`);
@@ -5443,7 +5456,9 @@ function vaMailInhalt(info, empfaengerUser, vonName) {
     "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
 
   return {
-    subject: info.vertraulich ? "Neue vertrauliche Aufgabe für dich" : `Neue Aufgabe: ${info.titel}`,
+    subject: info.erinnerung
+      ? (info.vertraulich ? "Erinnerung an eine vertrauliche Aufgabe" : `Erinnerung: ${info.titel}`)
+      : (info.vertraulich ? "Neue vertrauliche Aufgabe für dich" : `Neue Aufgabe: ${info.titel}`),
     textContent: z.join("\n")
   };
 }
@@ -5457,9 +5472,11 @@ function vaMailInhalt(info, empfaengerUser, vonName) {
 // sagt es hin, sonst verlässt sich der Zuweiser auf eine Zustellung, die es nie gab.
 async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
   const ohneAdresse = [];
+  // Nur fürs Protokoll: dieselbe Funktion bedient das Anlegen und das Erinnern.
+  const wo = info.erinnerung ? "vereinsaufgabe-erinnern" : "vereinsaufgabe-anlegen";
   if (!empfaenger.length) return { benachrichtigt: 0, ohneAdresse, mailAus: false };
   if (!env.BREVO_API_KEY) {
-    console.warn("vereinsaufgabe-anlegen: BREVO_API_KEY fehlt — keine Benachrichtigung verschickt");
+    console.warn(wo + ": BREVO_API_KEY fehlt — keine Benachrichtigung verschickt");
     return { benachrichtigt: 0, ohneAdresse, mailAus: true };
   }
 
@@ -5471,7 +5488,7 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
   try {
     trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
   } catch (e) {
-    console.error("vereinsaufgabe-anlegen: Trainerdaten nicht lesbar", e && e.message);
+    console.error(wo + ": Trainerdaten nicht lesbar", e && e.message);
     return { benachrichtigt: 0, ohneAdresse, mailAus: true };
   }
 
@@ -5503,9 +5520,9 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
         })
       });
       if (resp.ok) benachrichtigt++;
-      else console.error("vereinsaufgabe-anlegen: Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      else console.error(wo + ": Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
     } catch (e) {
-      console.error("vereinsaufgabe-anlegen: Brevo-Versand fehlgeschlagen", e && e.message);
+      console.error(wo + ": Brevo-Versand fehlgeschlagen", e && e.message);
     }
   }
   return { benachrichtigt, ohneAdresse, mailAus: false };
@@ -5622,6 +5639,76 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders, exec
     // ohneRecht rein additiv: ein älterer Client, der das Feld nicht kennt,
     // ignoriert es und verhält sich wie bisher.
     return json({ ok: true, angelegt: ergebnis.angelegt, ohneRecht: ergebnis.uebersprungen || [], ...versand }, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Erinnern: dieselbe Mail wie beim Anlegen und dieselbe Push-Nachricht, noch einmal
+// an den Empfänger. Michel-Wunsch vom 2026-08-19 — es gab bis dahin keinen Weg, eine
+// liegengebliebene Aufgabe anzustoßen, außer eine Rückfrage hineinzuschreiben.
+//
+// ⚠️ Der Empfänger kommt IMMER aus dem Datensatz, nie aus dem Body. Käme er aus dem
+// Request, wäre die Aktion für jeden Bearbeiter ein Versandweg an beliebige Konten.
+async function handleVaErinnern(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const { pushAn, mailInfo, ...antwort } = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      // Gleiche Linie wie beim Ändern: der Zuweiser und die Administrieren-Stufe.
+      // NICHT der Empfänger — er würde sich sonst selbst Post schicken.
+      if (a.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Erinnern darf nur, wer die Aufgabe gestellt hat", 403);
+      }
+      if (a.status !== "offen") {
+        throw new VaFehler(
+          a.status === "gemeldet"
+            ? "Diese Aufgabe ist bereits als erledigt gemeldet und wartet auf deine Abnahme"
+            : "Diese Aufgabe ist abgeschlossen — eine Erinnerung ginge ins Leere", 400);
+      }
+      if (a.empfaenger === ctx.session.username) {
+        throw new VaFehler("Diese Aufgabe liegt bei dir selbst", 400);
+      }
+      // Sperrfrist. Sie steht INNERHALB der Mutation, damit zwei gleichzeitige Klicks
+      // nicht beide durchkommen — der zweite Lauf sieht den geschriebenen Zeitstempel.
+      const zuletzt = Date.parse(a.erinnertAm || "");
+      if (zuletzt && Date.now() - zuletzt < VA_ERINNERUNG_SPERRE_MS) {
+        const restMin = Math.ceil((VA_ERINNERUNG_SPERRE_MS - (Date.now() - zuletzt)) / 60000);
+        const rest = restMin >= 60
+          ? `${Math.ceil(restMin / 60)} Stunden`
+          : `${restMin} Minuten`;
+        throw new VaFehler(
+          `An diese Aufgabe wurde vor Kurzem schon erinnert. Die nächste Erinnerung ist in ${rest} möglich.`, 429);
+      }
+
+      const r = a.ressortId ? vaRessortHolen(doc, a.ressortId) : null;
+      a.erinnertAm = new Date().toISOString();
+      a.erinnertVon = ctx.session.username;
+      vaVerlauf(a, ctx.session.username, "erinnerung", "", "");
+      return {
+        erinnertAm: a.erinnertAm,
+        pushAn: [a.empfaenger],
+        mailInfo: {
+          titel: a.titel || "", beschreibung: a.beschreibung || "", faellig: a.faellig || "",
+          prioritaet: a.prioritaet || "normal", abnahme: !!a.abnahme, vertraulich: !!a.vertraulich,
+          ressortName: (r && r.name) || "", erinnerung: true
+        }
+      };
+    });
+
+    // Beides steht AUSSERHALB von vaMutiere: dessen Callback läuft bei einem
+    // If-Match-Konflikt bis zu dreimal, Mail und Push gingen sonst mehrfach raus.
+    // Und wie beim Anlegen darf ein Versandfehler die Aktion nicht kippen — der
+    // Zeitstempel ist da schon geschrieben —, wird aber in der Antwort benannt.
+    let versand = { benachrichtigt: 0, ohneAdresse: [], mailAus: true };
+    try {
+      versand = await vaBenachrichtige(pushAn, mailInfo, ctx, env, authHeader);
+    } catch (e) {
+      console.error("vereinsaufgabe-erinnern: Benachrichtigung fehlgeschlagen", e && e.message);
+    }
+    // Der Push-Text nennt weder Titel noch Namen — er steht auf einem Sperrbildschirm.
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben", "Erinnerung an eine offene Aufgabe");
+    return json({ ...antwort, ...versand }, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
