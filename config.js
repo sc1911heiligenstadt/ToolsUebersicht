@@ -85,7 +85,7 @@ const TOOLS = [
     // sie auf "eingeloggt", erreicht sie genau die Leute nicht, für die sie
     // da ist.
     id: "nachwuchs-anmeldung",
-    name: "Anmeldung Nachwuchs",
+    name: "Mitgliedsantrag Nachwuchs",
     description: "Neue Jugendspieler in einem Durchgang anmelden: Aufnahmeantrag nach § 4 und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband, unterschrieben am Handy. Nachweise wie Geburtsurkunde oder Spielerpass lassen sich als Foto mitschicken.",
     url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/nachwuchs.html",
     icon: "⚽",
