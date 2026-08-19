@@ -361,6 +361,21 @@
 //      bei Erst-Upload VOM SERVER vergeben (kein owner aus dem Body vertraut) und in der Antwort
 //      zurückgegeben; Re-Upload schickt ihn zurück. Einsehbar später nur über dav-restricted-get/
 //      -delete mit Login, siehe oben.)
+//   ---- Kleiderbörse, kompletter Eltern-Weg OHNE Login (Ausweis = meta.externToken) ----
+//   POST { action: "kbo-extern-start", token }                    -> { hinweis, listen{}, angebote[] } | 400 | 403 | 429
+//     (nur FREIGEGEBENE Angebote, und je Angebot nur die oeffentlichen Felder: Name und
+//      E-Mail der anbietenden Familie sowie die Anfragen verlassen den Worker NIE hierhin.)
+//   POST { action: "kbo-extern-foto-put", token, id, contentType, dataBase64 } -> { ok:true }
+//     (verkleinertes Foto vor dem Angebot ablegen, id = client-UUID; Bildtyp aus den ersten Bytes)
+//   POST { action: "kbo-extern-foto-get", token, angebotId, fotoId } -> rohe Bild-Bytes | 400 | 403 | 404
+//     (nur Fotos eines freigegebenen Angebots, Zugehoerigkeit wird geprueft)
+//   POST { action: "kbo-extern-anbieten", token, art, groesse, zustand, bemerkung, fotos[], vorname, nachname, email }
+//     -> { ok:true, id } | 400 | 403 | 409 | 429 | 502   (Status server-hart "wartet", nie aus dem Body)
+//   POST { action: "kbo-extern-anfragen", token, angebotId, vorname, nachname, email, telefon, nachricht }
+//     -> { ok:true, sent } | 400 | 403 | 404 | 410 | 429 | 502   (Mail an die anbietende Familie)
+//   POST { action: "kbo-extern-weg-info", wegToken } -> { beschreibung, schonWeg } | 400 | 404 | 429
+//   POST { action: "kbo-extern-weg", wegToken }      -> { ok:true, schonWeg? } | 400 | 404 | 429 | 502
+//     (der "ist weg"-Klick aus der Mail; Ausweis ist der angebotseigene wegToken, nicht der Boersen-Link)
 //   POST { action: "kb-extern-start", token }                     -> { aktion:{name,offen,artikel[]} } | 400 | 404 | 410 | 429
 //   POST { action: "kb-extern-anmelden", token, vorname, nachname, jahrgang, passwort? }
 //     -> { status:"neu" | "passwort" | "offen" | "ok", bestellung? } | 400 | 403 | 404 | 410 | 429
@@ -466,6 +481,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8814", // Spielstatistik (Dev-Server)
   "http://localhost:8815", // Ablaufplan (Dev-Server)
   "http://localhost:8816", // Kontakte (Dev-Server)
+  "http://localhost:8818", // Kleiderbörse (Dev-Server)
   // AgeLan haengt sonst an keinem Gateway (eigenes Firebase); seit dem Passwort-Gate
   // vor dem Streamplan ruft sie verify-action-password hier auf.
   "http://localhost:8791", // AgeLan (Dev-Server)
@@ -505,7 +521,8 @@ const DAV_APPS = {
   "ausbildungsplan":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ausbildungsplan/ausbildungsplan.json",
   "schulsport":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Schulsport/schulsport.json",
   "spielstatistik":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielstatistik/spielstatistik.json",
-  "ablaufplan":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ablaufplan/ablaufplan.json"
+  "ablaufplan":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ablaufplan/ablaufplan.json",
+  "kleiderboerse":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderboerse/kleiderboerse.json"
 };
 
 // Archivdatei des Schulsport-Planers: abgeschlossene Schuljahre wandern hierhin,
@@ -594,7 +611,15 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   // je Ablauf das linkToken, mit dem der login-lose Weg aufgeht. Ohne diesen
   // Eintrag koennte jeder Seher per dav-save ein fremdes Token setzen, einen
   // Widerruf zuruecknehmen oder den Medientag umschreiben.
-  "ablaufplan"
+  "ablaufplan",
+  // kleiderboerse (neu 2026-08-19): Sehen steht auf "alle eingeloggten Nutzer",
+  // damit jeder Trainer nachschauen kann, was in der Boerse steht. Schreiben
+  // MUSS deshalb am Bearbeiten-Recht haengen: in meta.externToken steht der
+  // Schluessel des login-losen Eltern-Links, und in angebote[].anbieter liegen
+  // Name und E-Mail von Vereinsfamilien. Ohne diesen Eintrag koennte jeder
+  // Seher per dav-save ein fremdes Token setzen, den Widerruf zuruecknehmen
+  // oder ein Angebot an der Freigabe vorbei auf "frei" heben.
+  "kleiderboerse"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
@@ -1451,6 +1476,25 @@ export default {
         return handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-fuehrerschein-put":
         return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
+      // Kleiderbörse: der komplette Eltern-Weg laeuft OHNE Login -- Eltern haben
+      // kein Vereinskonto. Ausweis ist der geheime Schluessel aus meta.externToken
+      // (kbo-extern-*) bzw. der angebotseigene wegToken (kbo-extern-weg*). Jeder
+      // Handler prueft ihn selbst und ist damit fuer sich vollstaendig
+      // authentifiziert; zusaetzlich bremst ein Zaehlwerk je IP.
+      case "kbo-extern-start":
+        return handleKboExternStart(request, body, env, authHeader, corsHeaders);
+      case "kbo-extern-foto-put":
+        return handleKboExternFotoPut(request, body, env, authHeader, corsHeaders);
+      case "kbo-extern-foto-get":
+        return handleKboExternFotoGet(request, body, env, authHeader, corsHeaders);
+      case "kbo-extern-anbieten":
+        return handleKboExternAnbieten(request, body, env, authHeader, corsHeaders);
+      case "kbo-extern-anfragen":
+        return handleKboExternAnfragen(request, body, env, authHeader, corsHeaders);
+      case "kbo-extern-weg-info":
+        return handleKboExternWegInfo(request, body, env, authHeader, corsHeaders);
+      case "kbo-extern-weg":
+        return handleKboExternWeg(request, body, env, authHeader, corsHeaders);
       // Vereinsverwaltung: Nachweise zur Nachwuchs-Anmeldung (Geburtsurkunde,
       // Spielerpass, Abmeldung). Das PUT laeuft OHNE Login -- Eltern haben kein
       // Vereinskonto. ⚠️ Anders als bei fahrtenbuch-extern-* gibt es hier auch
@@ -12697,7 +12741,11 @@ const PUNKTE_APP_PRAEFIXE = [
   // deren Kachel. Ohne diesen Eintrag griffe das Praefix "vereinsaufgabe" nicht
   // (die Aktionen heissen "zertifizierung-*"), die Nutzung liefe unter keiner App
   // und die Admin-Auswertung wiese sie nirgends aus.
-  ["zertifizierung", "vereinsaufgaben"]
+  ["zertifizierung", "vereinsaufgaben"],
+  // Die Kleiderboerse spricht angemeldet nur dav-load/dav-save und traegt die App
+  // im Body. Der Eintrag deckt kuenftige eigene Aktionen ab; die heutigen
+  // kbo-extern-* laufen ohne Sitzung und erzeugen ohnehin keine Punkte.
+  ["kbo-", "kleiderboerse"]
 ];
 
 // Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht
@@ -13771,6 +13819,517 @@ async function handleKbExternSpeichern(request, body, env, authHeader, corsHeade
         return json({ error: "Gerade hat jemand anderes gespeichert. Bitte noch einmal absenden.", conflict: true }, 409, corsHeaders);
       }
       return json({ error: "Die Bestellung konnte nicht gespeichert werden." }, 502, corsHeaders);
+    }
+  }
+}
+
+// ============================================================================
+// Kleiderbörse — Familien geben Vereinskleidung weiter
+// ============================================================================
+//
+// Geschlossener Block am Dateiende, wie die Kleiderbestellung darüber: am Stück
+// wieder herauslösbar.
+//
+// Der KOMPLETTE Eltern-Weg läuft ohne Login — Eltern haben kein Vereinskonto.
+// Ausweis ist der geheime Schlüssel aus meta.externToken (64 Hex, erzeugt in der
+// Verwaltung der App). Er steckt in dem Link, den der Verein an die Mannschaften
+// verteilt. Zurückgezogen wird er, indem meta.externToken geleert wird; ein Flag
+// gibt es bewusst nicht, damit es nur eine Wahrheit darüber gibt, ob ein Link gilt.
+//
+// ⚠️ Was diese Handler ausliefern, ist bewusst weniger, als in der Datei steht:
+// angebote[].anbieter (Name + E-Mail einer Vereinsfamilie) und die Anfragen mit
+// den Kontaktdaten der Interessenten verlassen den Worker NIE in Richtung der
+// Eltern-Seite. Das Ausblenden passiert hier, nicht im Browser — sonst stünde es
+// im Netzwerk-Mitschnitt jeder Seitenansicht.
+//
+// Datenschema (kleiderboerse.json):
+//   { meta:   { externToken, hinweis },
+//     listen: { arten[], groessen[], zustaende[] },
+//     angebote: [ { id, status: "wartet"|"frei"|"vergeben",
+//                   art, groesse, zustand, bemerkung,
+//                   fotos: [ { id, contentType } ],
+//                   anbieter: { vorname, nachname, email },
+//                   wegToken,                       // 32 Hex, "ist weg"-Link
+//                   erstelltAm, freigegebenAm, freigegebenVon,
+//                   vergebenAm, vergebenVon,
+//                   anfragen: [ { id, vorname, nachname, email, telefon,
+//                                 nachricht, am } ] } ] }
+
+const KBO_APP = "kleiderboerse";
+
+// Adresse der Eltern-Seite. Steht HIER und nicht im Request-Body: der Link geht
+// in eine E-Mail hinaus, und ein vom Client mitgeschickter Ziel-Link wäre eine
+// offene Tür, jedem beliebige Adressen im Namen des Vereins zuzustellen.
+const KBO_SPIELER_URL = "https://sc1911heiligenstadt.github.io/kleiderboerse/spieler.html";
+
+const KBO_MAX_FOTOS = 3;
+const KBO_MAX_FOTO_BYTES = 5 * 1024 * 1024; // 5 MB — der Client verkleinert vorher auf ~1200 px
+const KBO_MAX_ANGEBOTE = 400;               // Deckel gegen Vollmüllen der Datei
+const KBO_MAX_ANFRAGEN_JE_ANGEBOT = 30;
+
+// Zählwerk je IP. Deckel großzügig, weil eine einzige Seitenansicht schon
+// mehrere Aufrufe macht (start + ein foto-get je Bild) und eine ganze Familie
+// hinter derselben Mobilfunk-Adresse sitzen kann.
+const KBO_IP_ZAEHLER = new Map();
+const KBO_IP_MAX_PRO_STUNDE = 300;
+// Getrennter, viel knapperer Deckel für die Wege, die etwas ANLEGEN oder eine
+// E-Mail auslösen. Sonst deckte das große Kontingent oben auch das Verschicken
+// von 300 Mails je Stunde ab.
+const KBO_SCHREIB_ZAEHLER = new Map();
+const KBO_SCHREIB_MAX_PRO_STUNDE = 20;
+
+function kboBremse(map, max, request) {
+  const ip = String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
+  if (!ip) return true;
+  const jetzt = Date.now();
+  const eintrag = map.get(ip);
+  if (!eintrag || jetzt - eintrag.start > 3600000) {
+    map.set(ip, { start: jetzt, n: 1 });
+    // Aufraeumen, damit die Map in einem langlebigen Isolate nicht waechst.
+    if (map.size > 500) {
+      for (const [k, v] of map) {
+        if (jetzt - v.start > 3600000) map.delete(k);
+      }
+    }
+    return true;
+  }
+  eintrag.n++;
+  return eintrag.n <= max;
+}
+
+function kboHexToken(bytes) {
+  const b = new Uint8Array(bytes);
+  crypto.getRandomValues(b);
+  return Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+function kboNormalize(doc) {
+  const d = doc && typeof doc === "object" ? doc : {};
+  d.meta = d.meta && typeof d.meta === "object" ? d.meta : {};
+  d.listen = d.listen && typeof d.listen === "object" ? d.listen : {};
+  ["arten", "groessen", "zustaende"].forEach((k) => {
+    if (!Array.isArray(d.listen[k])) d.listen[k] = [];
+  });
+  if (!Array.isArray(d.angebote)) d.angebote = [];
+  return d;
+}
+
+// Gemeinsame Vorprüfung aller kbo-extern-*-Aktionen mit Link-Schlüssel.
+// Reihenfolge ist Absicht: Formprüfung (kostenlos) vor Zählwerk vor Dateizugriff.
+async function kboLaden(request, body, authHeader, corsHeaders) {
+  const token = String((body && body.token) || "");
+  if (!/^[0-9a-f]{64}$/.test(token)) {
+    return { fehler: json({ error: "Dieser Link ist nicht vollständig." }, 400, corsHeaders) };
+  }
+  if (!kboBremse(KBO_IP_ZAEHLER, KBO_IP_MAX_PRO_STUNDE, request)) {
+    return { fehler: json({ error: "Zu viele Zugriffe — bitte später noch einmal versuchen." }, 429, corsHeaders) };
+  }
+
+  const url = DAV_APPS[KBO_APP];
+  const { data, rev } = await readJsonWithRev(url, authHeader, null);
+  const doc = kboNormalize(data);
+  const gueltig = String(doc.meta.externToken || "");
+  // Kein gesetzter Token heisst: es gibt gerade keinen gueltigen Link. Ein
+  // leerer Vergleichswert darf NIEMALS zu einem Treffer fuehren.
+  if (!gueltig || gueltig !== token) {
+    return { fehler: json({ error: "Dieser Link ist nicht (mehr) gültig. Bitte beim Verein nach dem aktuellen Link fragen." }, 403, corsHeaders) };
+  }
+  return { doc, rev, url, token };
+}
+
+// Ein Angebot so, wie es die Eltern-Seite sehen darf. Kein Name, keine E-Mail,
+// keine Anfragen — von den Fotos nur die Ids, mit denen kbo-extern-foto-get
+// dann das einzelne Bild liefert.
+function kboOeffentlich(a) {
+  return {
+    id: String(a.id || ""),
+    art: String(a.art || ""),
+    groesse: String(a.groesse || ""),
+    zustand: String(a.zustand || ""),
+    bemerkung: capStr(a.bemerkung, 500),
+    fotos: (Array.isArray(a.fotos) ? a.fotos : []).slice(0, KBO_MAX_FOTOS).map((f) => String(f && f.id || "")).filter(Boolean)
+  };
+}
+
+// ---------- kbo-extern-start (OHNE Login) ----------
+// Was hinter dem Link steht: die Auswahllisten, der Hinweistext der Verwaltung
+// und die freigegebenen Angebote.
+//
+// ⚠️ "wartet" und "vergeben" werden hier NICHT ausgeliefert. Was noch nicht
+// freigegeben ist, hat niemand ausser der Verwaltung je zu sehen; was vergeben
+// ist, wuerde nur Anfragen auf etwas ausloesen, das es nicht mehr gibt.
+async function handleKboExternStart(request, body, env, authHeader, corsHeaders) {
+  const geladen = await kboLaden(request, body, authHeader, corsHeaders);
+  if (geladen.fehler) return geladen.fehler;
+  const doc = geladen.doc;
+
+  const angebote = doc.angebote
+    .filter((a) => a && a.status === "frei")
+    .sort((x, y) => String(y.freigegebenAm || "").localeCompare(String(x.freigegebenAm || "")))
+    .map(kboOeffentlich);
+
+  return json({
+    hinweis: capStr(doc.meta.hinweis, 1000),
+    listen: {
+      arten: doc.listen.arten.slice(0, 100).map(String),
+      groessen: doc.listen.groessen.slice(0, 100).map(String),
+      zustaende: doc.listen.zustaende.slice(0, 50).map(String)
+    },
+    angebote
+  }, 200, corsHeaders);
+}
+
+// ---------- kbo-extern-foto-put (OHNE Login) ----------
+// Ein verkleinertes Foto ablegen, BEVOR das zugehoerige Angebot existiert (der
+// Client erzeugt die Id selbst und reicht sie danach mit kbo-extern-anbieten
+// nach). Bricht es dazwischen ab, bleibt hoechstens eine Bilddatei ohne Angebot
+// liegen -- besser als ein Angebot ohne Bilder, das ein Bearbeiter freigeben
+// koennte, ohne zu sehen, worum es geht.
+async function handleKboExternFotoPut(request, body, env, authHeader, corsHeaders) {
+  const geladen = await kboLaden(request, body, authHeader, corsHeaders);
+  if (geladen.fehler) return geladen.fehler;
+  if (!kboBremse(KBO_SCHREIB_ZAEHLER, KBO_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Uploads in kurzer Zeit — bitte später noch einmal versuchen." }, 429, corsHeaders);
+  }
+
+  const id = String(body.id || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Ungültige Foto-Kennung." }, 400, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Das Bild konnte nicht gelesen werden." }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Das Bild ist leer." }, 400, corsHeaders);
+  if (bytes.length > KBO_MAX_FOTO_BYTES) return json({ error: "Das Bild ist zu groß." }, 413, corsHeaders);
+
+  // Nur echte Bilder. Der Client schickt immer image/jpeg (er rechnet ueber ein
+  // Canvas um), aber der Content-Type kommt aus dem Netz und ist damit eine
+  // Behauptung -- deshalb zusaetzlich die ersten Bytes pruefen.
+  const ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
+  if (!/^image\/(jpeg|png|webp)$/.test(ctype)) {
+    return json({ error: "Es werden nur Bilder angenommen." }, 400, corsHeaders);
+  }
+  const istJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+  const istPng  = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  const istWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+  if (!istJpeg && !istPng && !istWebp) {
+    return json({ error: "Diese Datei ist kein Bild." }, 400, corsHeaders);
+  }
+
+  const dir = davFileDir(KBO_APP);
+  const fileUrl = dir + "/" + id;
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(dir, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// ---------- kbo-extern-foto-get (OHNE Login) ----------
+// Ein einzelnes Bild ausliefern.
+//
+// ⚠️ Die Foto-Id allein reicht NICHT: es muss das Foto eines FREIGEGEBENEN
+// Angebots sein. Sonst liesse sich mit dem Link jede Datei aus dem dateien/-
+// Ordner ziehen -- auch die eines noch nicht geprueften oder abgelehnten
+// Angebots. Deshalb wird angebotId mitverlangt und die Zugehoerigkeit geprueft.
+async function handleKboExternFotoGet(request, body, env, authHeader, corsHeaders) {
+  const geladen = await kboLaden(request, body, authHeader, corsHeaders);
+  if (geladen.fehler) return geladen.fehler;
+
+  const angebotId = String(body.angebotId || "");
+  const fotoId = String(body.fotoId || "");
+  if (!FILE_ID_RE.test(fotoId)) return json({ error: "Ungültige Foto-Kennung." }, 400, corsHeaders);
+
+  const angebot = geladen.doc.angebote.find((a) => a && String(a.id) === angebotId);
+  if (!angebot || angebot.status !== "frei") {
+    return json({ error: "Dieses Bild gibt es nicht." }, 404, corsHeaders);
+  }
+  const gehoertDazu = (Array.isArray(angebot.fotos) ? angebot.fotos : []).some((f) => f && String(f.id) === fotoId);
+  if (!gehoertDazu) return json({ error: "Dieses Bild gibt es nicht." }, 404, corsHeaders);
+
+  const resp = await fetch(davFileDir(KBO_APP) + "/" + fotoId, { headers: { Authorization: authHeader } });
+  if (!resp.ok) return json({ error: "Dieses Bild gibt es nicht." }, 404, corsHeaders);
+  return new Response(resp.body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": resp.headers.get("Content-Type") || "image/jpeg",
+      // Kein oeffentlicher Cache: die Antwort haengt am Link-Schluessel.
+      "Cache-Control": "private, max-age=300"
+    }
+  });
+}
+
+// ---------- kbo-extern-anbieten (OHNE Login) ----------
+// Ein Kleidungsstueck einstellen. Landet IMMER auf status "wartet" -- der
+// Status wird server-hart gesetzt und nie aus dem Body uebernommen, sonst
+// stellte sich jeder mit dem Link an der Freigabe vorbei direkt in die Boerse.
+async function handleKboExternAnbieten(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(KBO_SCHREIB_ZAEHLER, KBO_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Angebote in kurzer Zeit — bitte später noch einmal versuchen." }, 429, corsHeaders);
+  }
+
+  for (let versuch = 1; versuch <= 3; versuch++) {
+    const geladen = await kboLaden(request, body, authHeader, corsHeaders);
+    if (geladen.fehler) return geladen.fehler;
+    const { doc, rev, url } = geladen;
+
+    if (doc.angebote.length >= KBO_MAX_ANGEBOTE) {
+      return json({ error: "Die Börse ist gerade voll. Bitte später noch einmal versuchen." }, 429, corsHeaders);
+    }
+
+    // Art, Groesse und Zustand MUESSEN aus den gepflegten Listen stammen. Frei
+    // getippte Werte kaemen sonst durch den Filter der App nie wieder zum
+    // Vorschein -- und ein Freitextfeld waere zugleich der bequemste Weg,
+    // beliebigen Text auf einer Vereinsseite unterzubringen.
+    const art = capStr(body.art, 100);
+    const groesse = capStr(body.groesse, 40);
+    const zustand = capStr(body.zustand, 60);
+    if (!doc.listen.arten.includes(art)) return json({ error: "Bitte auswählen, was es ist." }, 400, corsHeaders);
+    if (!doc.listen.groessen.includes(groesse)) return json({ error: "Bitte eine Größe aus der Liste wählen." }, 400, corsHeaders);
+    if (!doc.listen.zustaende.includes(zustand)) return json({ error: "Bitte einen Zustand aus der Liste wählen." }, 400, corsHeaders);
+
+    const vorname = capStr(body.vorname, 80);
+    const nachname = capStr(body.nachname, 80);
+    const email = capStr(body.email, 160);
+    if (!vorname || !nachname) return json({ error: "Bitte Vorname und Nachname angeben." }, 400, corsHeaders);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: "Bitte eine gültige E-Mail-Adresse angeben." }, 400, corsHeaders);
+
+    const fotos = (Array.isArray(body.fotos) ? body.fotos : [])
+      .slice(0, KBO_MAX_FOTOS)
+      .map((f) => {
+        const fid = f && typeof f.id === "string" ? f.id : "";
+        if (!FILE_ID_RE.test(fid)) return null;
+        return { id: fid, contentType: capStr(f.contentType, 60).replace(/[^\x20-\x7e]/g, "") || "image/jpeg" };
+      })
+      .filter(Boolean);
+    if (!fotos.length) return json({ error: "Bitte mindestens ein Foto hochladen." }, 400, corsHeaders);
+
+    const id = crypto.randomUUID();
+    doc.angebote.push({
+      id,
+      status: "wartet",           // server-hart, NIE aus dem Body
+      quelle: "extern",           // ebenso
+      art, groesse, zustand,
+      bemerkung: capStr(body.bemerkung, 500),
+      fotos,
+      anbieter: { vorname, nachname, email },
+      // Der Schluessel des "ist weg"-Links. Entsteht HIER, nicht im Browser:
+      // er ist die Berechtigung, dieses eine Angebot zurueckzuziehen.
+      wegToken: kboHexToken(16),
+      erstelltAm: new Date().toISOString(),
+      anfragen: []
+    });
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, id }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 3) continue;
+      if (e instanceof ConflictError) {
+        return json({ error: "Gerade hat jemand anderes gespeichert. Bitte noch einmal absenden.", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Das Angebot konnte nicht gespeichert werden." }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- kbo-extern-anfragen (OHNE Login) ----------
+// "Das moechte ich" -- die Anfrage wird am Angebot vermerkt UND der anbietenden
+// Familie zugestellt. Die Mail ist der eigentliche Zweck; die Liste in der App
+// ist der Nachlese-Ort, falls nichts passiert.
+async function handleKboExternAnfragen(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(KBO_SCHREIB_ZAEHLER, KBO_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen in kurzer Zeit — bitte später noch einmal versuchen." }, 429, corsHeaders);
+  }
+
+  const vorname = capStr(body.vorname, 80);
+  const nachname = capStr(body.nachname, 80);
+  const email = capStr(body.email, 160);
+  const telefon = capStr(body.telefon, 40);
+  const nachricht = capStr(body.nachricht, 500);
+  if (!vorname || !nachname) return json({ error: "Bitte Vorname und Nachname angeben." }, 400, corsHeaders);
+  if (!email && !telefon) return json({ error: "Bitte eine E-Mail-Adresse oder eine Telefonnummer angeben." }, 400, corsHeaders);
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return json({ error: "Diese E-Mail-Adresse sieht nicht richtig aus." }, 400, corsHeaders);
+  }
+
+  let angebotKopie = null;
+  for (let versuch = 1; versuch <= 3; versuch++) {
+    const geladen = await kboLaden(request, body, authHeader, corsHeaders);
+    if (geladen.fehler) return geladen.fehler;
+    const { doc, rev, url } = geladen;
+
+    const angebot = doc.angebote.find((a) => a && String(a.id) === String(body.angebotId || ""));
+    if (!angebot) return json({ error: "Dieses Angebot gibt es nicht mehr." }, 404, corsHeaders);
+    if (angebot.status !== "frei") {
+      return json({ error: "Dieses Kleidungsstück steht nicht mehr in der Börse." }, 410, corsHeaders);
+    }
+    if (!Array.isArray(angebot.anfragen)) angebot.anfragen = [];
+    if (angebot.anfragen.length >= KBO_MAX_ANFRAGEN_JE_ANGEBOT) {
+      return json({ error: "Zu diesem Kleidungsstück gibt es schon sehr viele Anfragen." }, 429, corsHeaders);
+    }
+
+    angebot.anfragen.push({
+      id: crypto.randomUUID(),
+      vorname, nachname, email, telefon, nachricht,
+      am: new Date().toISOString()
+    });
+    angebotKopie = angebot;
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 3) { angebotKopie = null; continue; }
+      if (e instanceof ConflictError) {
+        return json({ error: "Gerade hat jemand anderes gespeichert. Bitte noch einmal absenden.", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Die Anfrage konnte nicht gespeichert werden." }, 502, corsHeaders);
+    }
+  }
+  if (!angebotKopie) return json({ error: "Die Anfrage konnte nicht gespeichert werden." }, 502, corsHeaders);
+
+  // Ist die Anfrage einmal vermerkt, gilt sie als angekommen. Ein Mailfehler
+  // danach ist ein stiller No-Op mit sent:false -- die Verwaltung sieht die
+  // Anfrage trotzdem in ihrer Liste und kann von Hand nachfassen.
+  const sent = await kboAnfrageMailSenden(env, angebotKopie, { vorname, nachname, email, telefon, nachricht });
+  return json({ ok: true, sent }, 200, corsHeaders);
+}
+
+async function kboAnfrageMailSenden(env, angebot, anfrage) {
+  if (!env.BREVO_API_KEY) return false;
+  const empfaenger = String((angebot.anbieter && angebot.anbieter.email) || "");
+  if (!empfaenger) return false;
+
+  const wegLink = KBO_SPIELER_URL + "?weg=" + String(angebot.wegToken || "");
+  const kontakt = [
+    anfrage.email ? "E-Mail: " + anfrage.email : "",
+    anfrage.telefon ? "Telefon: " + anfrage.telefon : ""
+  ].filter(Boolean).join("\n");
+
+  const text =
+`Hallo ${angebot.anbieter.vorname || ""},
+
+über die Kleiderbörse des 1. SC 1911 Heiligenstadt hat jemand Interesse an dem
+Kleidungsstück, das du eingestellt hast:
+
+  ${angebot.art || "Kleidungsstück"}, Größe ${angebot.groesse || "?"} (${angebot.zustand || ""})
+
+Angefragt hat:
+
+  ${anfrage.vorname} ${anfrage.nachname}
+${kontakt.split("\n").map((z) => "  " + z).join("\n")}
+${anfrage.nachricht ? "\nDazu die Nachricht:\n\n  " + anfrage.nachricht.split("\n").join("\n  ") + "\n" : ""}
+Bitte melde dich direkt bei dieser Person und verabredet die Übergabe
+untereinander. Der Verein ist dabei nicht weiter beteiligt.
+
+Ist das Kleidungsstück vergeben? Dann nimm es bitte mit einem Klick aus der
+Börse, damit sich niemand mehr darauf meldet:
+
+  ${wegLink}
+
+Vielen Dank, dass du die Sachen weitergibst.
+
+Mit sportlichen Grüßen
+1. SC 1911 e.V. Heilbad Heiligenstadt
+Nachwuchsbereich
+
+--
+Diese E-Mail wurde automatisch verschickt, weil du ein Kleidungsstück in die
+Kleiderbörse eingestellt hast. Deine Adresse wird ausschließlich dafür
+verwendet und nicht weitergegeben.`;
+
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: empfaenger }],
+        subject: "Kleiderbörse: Anfrage zu deinem Angebot",
+        textContent: text
+      })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error("Kleiderbörse-Anfragemail fehlgeschlagen", resp.status, errText);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("Kleiderbörse-Anfragemail fehlgeschlagen", e && e.message);
+    return false;
+  }
+}
+
+// ---------- kbo-extern-weg-info / kbo-extern-weg (OHNE Login) ----------
+// Der Klick aus der E-Mail an die anbietende Familie. Ausweis ist hier NICHT der
+// Link-Schluessel der Boerse, sondern der angebotseigene wegToken -- er gilt
+// genau fuer dieses eine Angebot und ueberlebt auch das Zuruecksetzen des
+// Boersen-Links.
+async function kboAngebotZuWegToken(request, body, authHeader, corsHeaders) {
+  const wegToken = String((body && body.wegToken) || "");
+  if (!/^[0-9a-f]{32}$/.test(wegToken)) {
+    return { fehler: json({ error: "Dieser Link ist nicht vollständig." }, 400, corsHeaders) };
+  }
+  if (!kboBremse(KBO_IP_ZAEHLER, KBO_IP_MAX_PRO_STUNDE, request)) {
+    return { fehler: json({ error: "Zu viele Versuche — bitte später noch einmal versuchen." }, 429, corsHeaders) };
+  }
+  const url = DAV_APPS[KBO_APP];
+  const { data, rev } = await readJsonWithRev(url, authHeader, null);
+  const doc = kboNormalize(data);
+  const angebot = doc.angebote.find((a) => a && String(a.wegToken || "") === wegToken);
+  if (!angebot) {
+    return { fehler: json({ error: "Dieser Link gehört zu keinem Angebot mehr. Vermutlich wurde es schon gelöscht." }, 404, corsHeaders) };
+  }
+  return { doc, rev, url, angebot };
+}
+
+async function handleKboExternWegInfo(request, body, env, authHeader, corsHeaders) {
+  const g = await kboAngebotZuWegToken(request, body, authHeader, corsHeaders);
+  if (g.fehler) return g.fehler;
+  const a = g.angebot;
+  return json({
+    // Bewusst nur die Beschreibung des Stuecks -- der Link kann in fremde Haende
+    // geraten sein, Name und Adresse der Familie haben darin nichts zu suchen.
+    beschreibung: `${a.art || "Kleidungsstück"}, Größe ${a.groesse || "?"}`,
+    schonWeg: a.status !== "frei"
+  }, 200, corsHeaders);
+}
+
+async function handleKboExternWeg(request, body, env, authHeader, corsHeaders) {
+  for (let versuch = 1; versuch <= 3; versuch++) {
+    const g = await kboAngebotZuWegToken(request, body, authHeader, corsHeaders);
+    if (g.fehler) return g.fehler;
+    const { doc, rev, url, angebot } = g;
+
+    // Schon vergeben oder noch gar nicht freigegeben: still als erledigt melden.
+    // Ein zweiter Klick auf denselben Link in der E-Mail ist kein Fehlerfall.
+    if (angebot.status !== "frei") return json({ ok: true, schonWeg: true }, 200, corsHeaders);
+
+    angebot.status = "vergeben";
+    angebot.vergebenAm = new Date().toISOString();
+    angebot.vergebenVon = "extern"; // per Link der anbietenden Familie, nicht durch die Verwaltung
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 3) continue;
+      if (e instanceof ConflictError) {
+        return json({ error: "Gerade hat jemand anderes gespeichert. Bitte noch einmal versuchen.", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Es konnte nicht gespeichert werden." }, 502, corsHeaders);
     }
   }
 }

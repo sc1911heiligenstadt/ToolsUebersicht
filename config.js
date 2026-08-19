@@ -374,6 +374,15 @@ const TOOLS = [
     icon: "⏱️",
     category: "Verein",
     push: true
+  },
+  {
+    id: "kleiderboerse",
+    name: "Kleiderbörse",
+    description: "Vereinskleidung, aus der ein Kind herausgewachsen ist, an andere Familien weitergeben — kostenlos. Eltern stellen ihr Teil mit Foto, Größe und Zustand über einen Link ein, ganz ohne Vereinskonto; nach der Freigabe steht es in der Börse. Wer etwas haben möchte, drückt einen Knopf, und die Anfrage geht als E-Mail direkt an die anbietende Familie — Namen und Kontaktdaten stehen dabei nie in der Börse. Ist das Teil vergeben, nimmt ein Klick aus der Mail es wieder heraus.",
+    url: "https://sc1911heiligenstadt.github.io/kleiderboerse/",
+    icon: "👕",
+    category: "Verein",
+    mail: true
   }
 ];
 
@@ -471,6 +480,22 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.24",
+    groups: [
+      {
+        title: "Neues Werkzeug: die Kleiderbörse",
+        items: [
+          "Familien des Vereins geben Kleidung weiter, aus der ihr Kind herausgewachsen ist — Trikots, Trainingsanzüge, Jacken, Schuhe. Alles ist kostenlos, ein Preisfeld gibt es nicht.",
+          "Eltern brauchen dafür kein Vereinskonto: sie kommen über einen Link hinein, den der Verein an die Mannschaften verteilt, und stellen ihr Teil mit Foto, Größe und Zustand selbst ein.",
+          "Ein neues Angebot ist zunächst für niemanden sichtbar. Erst nach der Freigabe durch einen Bearbeiter erscheint es in der Börse.",
+          "In der Börse stehen nur Foto, Art, Größe und Zustand — weder der Name noch der Kontakt der anbietenden Familie. Wer etwas haben möchte, hinterlässt seine Angaben, und die Anfrage geht als E-Mail direkt an die anbietende Familie.",
+          "In dieser E-Mail steckt ein Link, der das Teil mit einem Klick wieder aus der Börse nimmt, sobald es vergeben ist.",
+          "Die Kachel trägt den Briefumschlag: hier werden E-Mails nach außen verschickt."
+        ]
+      }
+    ]
+  },
   {
     version: "1.23",
     groups: [
