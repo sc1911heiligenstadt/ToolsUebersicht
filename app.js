@@ -254,6 +254,14 @@ function logout() {
   // Seite offen ist -- auch fuer den naechsten, der sich hier anmeldet.
   nutzerfotoBlobsLeeren();
   resetPasswortForm(); // sonst stuende das Passwort noch im Feld, wenn sich am selben Geraet jemand anders anmeldet
+  // Beim Abmelden muessen auch die zwei aufklappbaren Konto-Karten weg. Sie haengen
+  // NICHT an renderAdminPanels() (dort stehen ihre IDs bewusst nicht -- eingeblendet
+  // werden sie erst von ladeKontaktFreigabe()/ladeUnterlagen()), und afterAuthChange()
+  // laeuft beim Abmelden nicht. Ohne die zwei Zeilen blieben sie nach dem Abmelden
+  // sichtbar stehen -- samt Telefonnummer, Anschrift und den Namen bereitgestellter
+  // Unterlagen als Text im DOM. Am 2026-08-19 im Screenshot genau so aufgetreten.
+  kfKarteLeeren();
+  downloadsKarteLeeren();
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();

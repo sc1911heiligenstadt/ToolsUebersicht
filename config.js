@@ -481,6 +481,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.26",
+    groups: [
+      {
+        title: "Abmelden räumt jetzt wirklich alles weg",
+        items: [
+          "Nach dem Abmelden blieben die Bereiche „Unterlagen zum Herunterladen“ und „Kontaktliste des Vereins“ auf der Seite stehen — auch auf der Anmeldemaske.",
+          "Damit stand dort noch, welche Unterlagen für dich bereitlagen und welche Angaben du für die Kontaktliste freigegeben hast, samt Telefonnummer und Anschrift.",
+          "Beide Bereiche verschwinden jetzt beim Abmelden vollständig und werden dabei geleert. An einem gemeinsam genutzten Gerät sieht der Nächste nichts mehr von dir.",
+          "Die zwei anderen Bereiche („Benachrichtigungen aufs Handy“ und „Meine Punkte“) waren davon nicht betroffen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.25",
     groups: [
       {
