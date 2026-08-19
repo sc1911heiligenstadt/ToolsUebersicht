@@ -3364,7 +3364,7 @@ async function handleNotifyUser(request, body, env, authHeader, corsHeaders, exe
   // pushText einen eigenen neutralen Satz mitgeben; ohne das greift der
   // Standard, weshalb der Vereinskalender unverändert bleiben kann.
   pushSenden(env, authHeader, execCtx, [username], "kalender",
-    String(body.pushText || "Ein geteilter Termin wurde angelegt oder geändert").slice(0, 150));
+    String(body.pushText || "Ein geteilter Termin wurde angelegt oder geändert. Öffne den Vereinskalender, dort stehen Tag, Uhrzeit und Ort.").slice(0, 200));
 
   const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
   const td = findTrainerdatenRecord(trainerdatenDoc, targetUser);
@@ -4810,8 +4810,8 @@ async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders
   // Empfänger statt beim Absender -- bei einem Vertrag, der auf ihn wartet, die
   // richtige Seite. Ohne Titel des Dokuments, wie schon beim Mail-Betreff.
   pushSenden(env, authHeader, execCtx, angelegt.map((a) => a.empfaenger), "unterschriften",
-    (angelegt.length === 1) ? "Ein Dokument wartet auf deine Unterschrift"
-                            : "Dokumente warten auf deine Unterschrift");
+    (angelegt.length === 1) ? "Ein Dokument wartet auf deine Unterschrift. In der Toolübersicht kannst du es lesen und direkt unterschreiben."
+                            : "Es warten Dokumente auf deine Unterschrift. In der Toolübersicht kannst du sie lesen und direkt unterschreiben.");
 
   return json({ ok: true, angelegt, aufgabenAngelegt, ...versand }, 200, corsHeaders);
 }
@@ -5635,7 +5635,9 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders, exec
     }
     // Push zusaetzlich zur Mail, nicht statt ihr -- und ohne Titel der Aufgabe.
     pushSenden(env, authHeader, execCtx, ergebnis.empfaenger || [], "aufgaben",
-      (ergebnis.angelegt === 1) ? "Eine neue Aufgabe für dich" : "Neue Aufgaben für dich");
+      (ergebnis.angelegt === 1)
+        ? "Dir wurde eine neue Aufgabe zugewiesen. In den Vereinsaufgaben stehen Beschreibung und Frist, dort meldest du sie auch als erledigt."
+        : "Dir wurden neue Aufgaben zugewiesen. In den Vereinsaufgaben stehen Beschreibung und Frist, dort meldest du sie auch als erledigt.");
     // ohneRecht rein additiv: ein älterer Client, der das Feld nicht kennt,
     // ignoriert es und verhält sich wie bisher.
     return json({ ok: true, angelegt: ergebnis.angelegt, ohneRecht: ergebnis.uebersprungen || [], ...versand }, 200, corsHeaders);
@@ -5707,7 +5709,8 @@ async function handleVaErinnern(request, body, env, authHeader, corsHeaders, exe
       console.error("vereinsaufgabe-erinnern: Benachrichtigung fehlgeschlagen", e && e.message);
     }
     // Der Push-Text nennt weder Titel noch Namen — er steht auf einem Sperrbildschirm.
-    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben", "Erinnerung an eine offene Aufgabe");
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
+      "Erinnerung: Bei dir ist noch eine Aufgabe offen. Öffne die Vereinsaufgaben und melde sie als erledigt, sobald du fertig bist.");
     return json({ ...antwort, ...versand }, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -5800,13 +5803,13 @@ async function handleVaStatus(request, body, env, authHeader, corsHeaders, execC
         if (a.status !== "gemeldet") throw new VaFehler("Diese Aufgabe wartet nicht auf eine Abnahme", 400);
         a.status = "erledigt"; a.erledigtAm = jetzt;
         a.abgenommenAm = jetzt; a.abgenommenVon = ctx.session.username;
-        text = "Eine erledigte Aufgabe wurde abgenommen";
+        text = "Deine erledigte Aufgabe wurde abgenommen. Damit ist sie abgeschlossen und steht nicht mehr in deiner offenen Liste.";
       } else if (aktion === "zurueckgegeben") {
         if (!binZuweiser) throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann zurückgeben", 403);
         if (a.status !== "gemeldet") throw new VaFehler("Diese Aufgabe wartet nicht auf eine Abnahme", 400);
         if (!grund) throw new VaFehler("Eine Rückgabe braucht eine Begründung", 400);
         a.status = "offen"; a.gemeldetAm = ""; a.rueckgabeGrund = grund;
-        text = "Eine Aufgabe wurde zur Nacharbeit zurückgegeben";
+        text = "Eine Aufgabe wurde zur Nacharbeit an dich zurückgegeben. Der Grund steht in den Vereinsaufgaben, danach kannst du sie erneut melden.";
       } else {
         throw new VaFehler("Unbekannte Aktion", 400);
       }
@@ -5849,7 +5852,7 @@ async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders
     // Gerade hier wichtig: wer den Auftrag noch offen hat, soll nicht an etwas
     // weiterarbeiten, das es nicht mehr gibt.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Eine Aufgabe wurde zurückgezogen");
+      "Eine Aufgabe wurde zurückgezogen. Du musst dafür nichts mehr tun, sie steht nicht mehr in deiner offenen Liste.");
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -5902,7 +5905,7 @@ async function handleVaReaktivieren(request, body, env, authHeader, corsHeaders,
     // Wie beim Zurueckziehen: wer den Auftrag abgehakt hatte, muss erfahren, dass
     // er wieder auf seinem Tisch liegt.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Eine abgeschlossene Aufgabe wurde wieder geöffnet");
+      "Eine abgeschlossene Aufgabe wurde wieder geöffnet. Sie steht damit erneut in deiner offenen Liste in den Vereinsaufgaben.");
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -5966,7 +5969,7 @@ async function handleVaKommentar(request, body, env, authHeader, corsHeaders, ex
     // Der Text nennt weder Namen noch Titel noch den Wortlaut — er steht auf einem
     // Sperrbildschirm, den auch jemand anders sehen kann.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Neue Rückfrage oder Antwort zu einer Aufgabe");
+      "Zu einer Aufgabe gibt es eine neue Rückfrage oder Antwort. Der ganze Verlauf steht in den Vereinsaufgaben, dort kannst du antworten.");
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -6752,9 +6755,9 @@ async function handleFeedbackAntwort(request, body, env, authHeader, corsHeaders
   // koennte ein Admin die Aktion als beliebigen Nachrichtenversand benutzen.
   // Nach dem Schreiben, damit ein Push-Fehler die Antwort nicht mitreisst.
   if (text && eintrag.username) {
-    const kurz = text.length > 140 ? text.slice(0, 140) + "…" : text;
+    const kurz = text.length > 120 ? text.slice(0, 120) + "…" : text;
     pushSenden(env, authHeader, execCtx, [eintrag.username], "feedback",
-      "Antwort auf deine Rückmeldung: " + kurz);
+      "Deine Rückmeldung wurde beantwortet: " + kurz);
   }
 
   return json({ entry: eintrag }, 200, corsHeaders);
@@ -9224,8 +9227,8 @@ async function handleSchulsportErinnerungPush(request, body, env, authHeader, co
   if (!empfaenger.length) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
 
   const text = empfaenger.length === 1 && offeneProPerson.size === 1
-    ? "Es warten noch " + Array.from(offeneProPerson.values())[0] + " Termine auf deine Rückmeldung."
-    : "Es warten noch Termine auf deine Rückmeldung.";
+    ? "Es warten noch " + Array.from(offeneProPerson.values())[0] + " Termine auf deine Rückmeldung. Trag im Schulsport die Teilnehmerzahl nach, dann ist der Termin abgeschlossen."
+    : "Es warten noch Termine auf deine Rückmeldung. Trag im Schulsport die Teilnehmerzahl nach, dann sind die Termine abgeschlossen.";
   pushSenden(env, authHeader, execCtx, empfaenger, "schulsport", text);
 
   return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
@@ -9958,7 +9961,7 @@ async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders,
     const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
     const empfaenger = await pushEmpfaengerMitRecht("fahrtenbuch", usersDoc, env, authHeader, "");
     pushSenden(env, authHeader, execCtx, empfaenger, "fahrtenbuch",
-      "Eine Fahrt wurde eingereicht");
+      "Eine Fahrt wurde zur Abrechnung eingereicht. Im Fahrtenbuch kannst du sie prüfen und freigeben.");
   } catch (e) {
     console.error("Fahrtenbuch-Push fehlgeschlagen: " + (e && e.message ? e.message : e));
   }
@@ -11679,7 +11682,7 @@ async function handlePushTest(request, env, authHeader, corsHeaders) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         secret: env.PUSH_SHARED_SECRET,
-        nachricht: { titel: "SC 1911", text: "Testnachricht - es funktioniert.", ziel: "/ToolsUebersicht/" },
+        nachricht: { titel: "SC 1911", text: "Das ist eine Testnachricht. Wenn du sie lesen kannst, kommen Push-Nachrichten auf diesem Gerät an — du musst nichts weiter tun.", ziel: "/ToolsUebersicht/" },
         abos: meine.map((a) => ({ id: a.id, endpoint: a.endpoint, p256dh: a.p256dh, auth: a.auth }))
       })
     });
@@ -11741,8 +11744,8 @@ async function handleVkTerminPush(request, body, env, authHeader, corsHeaders, e
   // Der Text nennt bewusst weder Titel noch Ort -- Sperrbildschirm, gleiche
   // Linie wie ueberall sonst.
   pushSenden(env, authHeader, execCtx, empfaenger, "kalender",
-    art === "neu" ? "Ein neuer Termin steht im Kalender"
-                  : "Ein Termin im Kalender hat sich geändert");
+    art === "neu" ? "Ein neuer Termin steht im Vereinskalender. Öffne ihn, dort stehen Tag, Uhrzeit und Ort."
+                  : "Ein Termin im Vereinskalender hat sich geändert. Bitte prüfe Tag, Uhrzeit und Ort noch einmal nach.");
 
   // Die Zahl ist die der IN FRAGE KOMMENDEN, nicht der tatsaechlich erreichten:
   // wer kein Geraet angemeldet oder den Kalender-Schalter aus hat, faellt erst
@@ -11789,8 +11792,8 @@ async function pushEmpfaengerMitRecht(app, usersDoc, env, authHeader, ausser) {
 const PUSH_VORGANG_APPS = {
   testspielplaner: {
     liste: "reservierungen", anlass: "testspiele",
-    neu: "Eine neue Anfrage wartet auf Entscheidung",
-    entschieden: "Deine Anfrage wurde bearbeitet",
+    neu: "Eine neue Anfrage wartet auf deine Entscheidung. Im Testspielplaner kannst du sie zusagen oder absagen.",
+    entschieden: "Deine Anfrage wurde bearbeitet. Im Testspielplaner steht, wie entschieden wurde.",
     // Optionale Verteilerliste unter einstellungen.<feld> in der App-Datei,
     // gepflegt im Einstellungen-Tab der App. Nur gesetzte Apps zahlen den
     // zusaetzlichen Nextcloud-Read; materialbedarf hat dafuer keine Oberflaeche
@@ -11800,8 +11803,8 @@ const PUSH_VORGANG_APPS = {
   },
   materialbedarf: {
     liste: "meldungen", anlass: "material",
-    neu: "Eine neue Meldung wartet auf Entscheidung",
-    entschieden: "Deine Meldung wurde bearbeitet"
+    neu: "Eine neue Bedarfsmeldung wartet auf deine Entscheidung. Im Materialbedarf kannst du sie freigeben oder ablehnen.",
+    entschieden: "Deine Bedarfsmeldung wurde bearbeitet. Im Materialbedarf steht, wie entschieden wurde."
   },
   // Raumnutzung folgt demselben Muster, nur heisst der Uebergabepunkt hier
   // "fertig": Trainer fuellen den Antrag aus (Bearbeiten), eingereicht wird er
@@ -11810,8 +11813,8 @@ const PUSH_VORGANG_APPS = {
   // kein Ergebnis; was passiert ist, steht in der App.
   raumnutzung: {
     liste: "antraege", anlass: "raumnutzung",
-    neu: "Ein Antrag ist fertig und wartet aufs Einreichen",
-    entschieden: "Bei deinem Antrag hat sich etwas getan",
+    neu: "Ein Antrag ist fertig ausgefüllt und wartet aufs Einreichen. In der Raumnutzung kannst du ihn prüfen und abschicken.",
+    entschieden: "Bei deinem Antrag hat sich etwas getan. In der Raumnutzung siehst du den aktuellen Stand.",
     empfaengerFeld: "pushEmpfaenger"
   }
 };
@@ -11944,7 +11947,7 @@ async function handleFotoauftragPush(request, body, env, authHeader, corsHeaders
   }
 
   pushSenden(env, authHeader, execCtx, empfaenger, "fotos",
-    "Für eine deiner Mannschaften werden Fotos gebraucht");
+    "Für eine deiner Mannschaften werden Fotos gebraucht. In den Fotoaufträgen stehen Anlass, Termin und was gewünscht ist.");
   return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
 }
 
@@ -14057,7 +14060,7 @@ async function handleScAustragen(request, body, env, authHeader, corsHeaders, ex
       });
       // Nur ein Selbst-Austrag ist eine Nachricht wert: setzt die Verwaltung
       // selbst jemanden ab, weiß sie es ohnehin.
-      return { spieltagId: s.id, jobId: job.id, pushText: fremd ? "" : "Ein Posten an einem Heimspieltag ist wieder frei geworden" };
+      return { spieltagId: s.id, jobId: job.id, pushText: fremd ? "" : "Ein Posten an einem Heimspieltag ist wieder frei geworden. In der Spieltagscrew kannst du ihn neu besetzen." };
     });
 
     if (pushText) {
@@ -14310,7 +14313,7 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
     const offen = bearbeiter.filter((u) => !drin.has(u));
     if (offen.length) {
       pushSenden(env, authHeader, execCtx, offen, "spieltagscrew",
-        "Beim nächsten Heimspiel sind noch " + frei + (frei === 1 ? " Posten" : " Posten") + " unbesetzt");
+        "Beim nächsten Heimspiel sind noch " + frei + " Posten unbesetzt. In der Spieltagscrew kannst du dich für einen davon eintragen.");
       gesendet += offen.length;
     }
   }
@@ -14325,8 +14328,8 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
         n + (s.jobs || []).reduce((m, j) => m + Math.max(0, (Number(j.anzahl) || 0) - (j.besetzung || []).length), 0), 0);
       pushSenden(env, authHeader, execCtx, admins, "spieltagscrew",
         freiGesamt > 0
-          ? "In " + tage + " Tagen ist Heimspiel — " + freiGesamt + " Posten sind noch frei"
-          : "In " + tage + " Tagen ist Heimspiel — alle Posten sind besetzt");
+          ? "In " + tage + " Tagen ist Heimspiel und " + freiGesamt + " Posten sind noch frei. In der Spieltagscrew siehst du, welche das sind."
+          : "In " + tage + " Tagen ist Heimspiel und alle Posten sind besetzt. Es ist nichts weiter zu tun.");
       gesendet += admins.length;
     }
   }
@@ -14341,7 +14344,7 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
         for (const b of (j.besetzung || [])) {
           if (!b || !b.username) continue;
           pushSenden(env, authHeader, execCtx, [b.username], "spieltagscrew",
-            "Morgen " + scZeitVersetzt(s.anstoss, j.vonMin) + " Uhr: " + j.name + " beim Heimspiel");
+            "Morgen bist du beim Heimspiel eingeteilt: " + j.name + ", ab " + scZeitVersetzt(s.anstoss, j.vonMin) + " Uhr. Die Zeiten stehen in der Spieltagscrew.");
           erinnert++;
         }
       }
@@ -14479,7 +14482,7 @@ function ablaufplanText(ablauf, punkt) {
   const kern = [teams, was].filter(Boolean).join(" ") || String(ablauf.titel || "Ablauf");
   const ort = String(punkt.ort || ablauf.ort || "").trim();
   return "In " + ABLAUFPLAN_VORLAUF_MIN + " Minuten: " + punkt.startZeit + " " + kern +
-    (ort ? " (" + ort + ")" : "");
+    (ort ? " (" + ort + ")" : "") + ". Der komplette Tagesablauf steht im Ablaufplan.";
 }
 
 // Die Uhrzeit steht mit im Schluessel: wird ein Punkt verschoben, ist die alte
@@ -16063,7 +16066,7 @@ async function handleUnterlageVerteilen(request, body, env, authHeader, corsHead
     execCtx.waitUntil(unterlagenZaehlerErhoehen(authHeader, [fuer]));
     if (body && body.push === true) {
       pushSenden(env, authHeader, execCtx, [fuer], "unterlagen",
-        "Ein Dokument liegt für dich zum Herunterladen bereit");
+        "Ein Dokument liegt für dich zum Herunterladen bereit. Du findest es in der Toolübersicht bei deinen Unterlagen.");
     }
   }
   return json({ ok: true, id }, 200, corsHeaders);
@@ -16282,7 +16285,8 @@ function busplanPushText(f, heute) {
     : "In " + tage + " Tagen";
   const busse = f.busse.map((o) => o.name).join(" + ");
   const ort = String(f.spiel.ort || "").trim();
-  return wann + ": " + f.team.name + " fährt mit " + busse + (ort ? " nach " + ort : "");
+  return wann + ": " + f.team.name + " fährt mit " + busse + (ort ? " nach " + ort : "") +
+    ". Abfahrtszeit und die Regeln für die Fahrt stehen im Busplan.";
 }
 
 // Die Mail ist der Ort fuer die Regeln -- deshalb gibt es sie ueberhaupt
