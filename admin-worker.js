@@ -633,7 +633,19 @@ const RAUMNUTZUNG_MAIL_TO = "Schulverwaltungsamt@kreis-eic.de";
 const RAUMNUTZUNG_MAIL_CC = "Info@sc1911-heiligenstadt.de";
 const RAUMNUTZUNG_MAIL_SUBJECT = "Antrag auf Raumnutzung für Veranstaltungen – SC 1911 Heiligenstadt";
 const RAUMNUTZUNG_MAIL_TEXT = [
-  "Antrag auf Raumnutzung für Fußball Hallenturniere des 1.SC 1911 Heiligenstadt e.V.",
+  "Sehr geehrte Damen und Herren,",
+  "",
+  "anbei erhalten Sie den Antrag auf Raumnutzung für Fußball Hallenturniere des",
+  "1.SC 1911 Heiligenstadt e.V. als PDF im Anhang.",
+  "",
+  "Der Antrag ist vollständig ausgefüllt und enthält alle gewünschten Termine mit",
+  "Halle, Datum und Uhrzeit sowie die verantwortliche Ansprechperson des Vereins.",
+  "",
+  "Wir bitten um Prüfung und um eine kurze Rückmeldung, ob die beantragten Zeiten",
+  "so bestätigt werden können. Sollten einzelne Termine nicht möglich sein oder",
+  "Unterlagen fehlen, melden Sie sich bitte gern — wir passen den Antrag dann an.",
+  "",
+  "Vielen Dank für Ihre Mühe.",
   "",
   "Freundliche Grüße",
   "Uwe Meinold",
@@ -4609,9 +4621,25 @@ function dokumentMailInhalt(titel, faellig, empfaengerUser, vonName) {
   const anrede = (empfaengerUser && empfaengerUser.vorname) ? `Hallo ${empfaengerUser.vorname},` : "Hallo,";
   const z = [anrede, "", `${vonName} bittet dich um deine Unterschrift.`, "", `Dokument:   ${titel}`];
   if (faellig) z.push(`Frist:      ${vaDatumLesbar(faellig)}`);
-  z.push("", "Unterschrieben wird in der Tools-Übersicht: oben auf „Unterschriften“ klicken,",
-    "das Dokument öffnen und mit Finger oder Maus unterschreiben.",
-    "", "Zur Übersicht: https://sc1911heiligenstadt.github.io/ToolsUebersicht/", "",
+  z.push("", "So geht es:", "",
+    "1. Die Tools-Übersicht öffnen und anmelden.",
+    "2. Oben auf „Unterschriften“ klicken — dort stehen alle Dokumente, die auf dich",
+    "   warten.",
+    "3. Das Dokument öffnen. Du kannst es in Ruhe lesen, bevor du unterschreibst.",
+    "4. Mit dem Finger auf dem Handy oder mit der Maus am Rechner unterschreiben und",
+    "   bestätigen.",
+    "",
+    "Das dauert keine zwei Minuten und funktioniert auf dem Handy genauso wie am",
+    "Rechner — du brauchst nichts auszudrucken und nichts einzuscannen.",
+    "",
+    "Sobald du unterschrieben hast, ist das Dokument fertig abgelegt und verschwindet",
+    "aus deiner Liste. Solange es offen bleibt, wirst du daran erinnert.",
+    "",
+    "Zur Übersicht: https://sc1911heiligenstadt.github.io/ToolsUebersicht/",
+    "",
+    "Wenn etwas unklar ist oder das Dokument so nicht stimmt, unterschreibe bitte",
+    "nicht, sondern melde dich direkt bei " + vonName + ".",
+    "",
     "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
   return { subject: "Ein Dokument wartet auf deine Unterschrift", textContent: z.join("\n") };
 }
@@ -5450,9 +5478,20 @@ function vaMailInhalt(info, empfaengerUser, vonName) {
     z.push("", info.beschreibung);
   }
 
-  if (info.abnahme) z.push("", `Deine Erledigung muss ${vonName} noch abnehmen.`);
+  if (info.abnahme) {
+    z.push("", `Deine Erledigung muss ${vonName} noch abnehmen. Du meldest die Aufgabe also`,
+      "zuerst als erledigt, danach wird sie geprüft und abgeschlossen.");
+  }
 
-  z.push("", "Zur Aufgabe: https://sc1911heiligenstadt.github.io/Vereinsaufgaben/", "",
+  z.push("", "So meldest du die Aufgabe als erledigt:", "",
+    "Die Vereinsaufgaben öffnen und anmelden. Unter „Meine Aufgaben“ steht die Aufgabe",
+    "mit allen Einzelheiten. Dort auf „Erledigt“ klicken — fertig. Du kannst an",
+    "derselben Stelle auch eine Rückfrage stellen, wenn etwas unklar ist oder du mehr",
+    "Zeit brauchst; " + vonName + " bekommt die Frage dann direkt.",
+    "",
+    "Solange die Aufgabe offen ist, wirst du vor der Frist noch einmal erinnert.",
+    "",
+    "Zur Aufgabe: https://sc1911heiligenstadt.github.io/Vereinsaufgaben/", "",
     "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
 
   return {
@@ -7464,7 +7503,9 @@ async function handleBelegEingangNotify(body, env, corsHeaders) {
   // Zeilenumbrüche aus dem Betreff werfen: desc ist Helfer-Freitext.
   const subject = ("Neuer Beleg: " + betrag + " — " + desc).replace(/[\r\n]+/g, " ").slice(0, 200);
   const zeilen = [
-    "Es wurde ein neuer Beleg eingereicht.",
+    "Hallo,",
+    "",
+    "über den Beleg-Scanner wurde ein neuer Beleg eingereicht. Hier die Eckdaten:",
     "",
     "Eingereicht von: " + name,
     "Grund: " + desc,
@@ -7475,8 +7516,17 @@ async function handleBelegEingangNotify(body, env, corsHeaders) {
   if (note) zeilen.push("Notiz: " + note);
   zeilen.push(
     "",
-    "Der Beleg liegt im Eingangs-Ordner der Geschäftsstelle und kann im",
-    "Vereinsbudget-Tool übernommen werden."
+    "Die Datei liegt bereits im Eingangs-Ordner der Geschäftsstelle in der",
+    "Vereins-Cloud — du musst nichts aus dieser Mail herunterladen.",
+    "",
+    "Nächster Schritt: den Beleg im Vereinsbudget-Tool übernehmen und einer",
+    "Kostenstelle zuordnen. Erst dann taucht er in der Auswertung auf.",
+    "",
+    "Stimmt etwas nicht — falscher Betrag, unleserliches Foto, doppelt eingereicht —,",
+    "klär das bitte direkt mit " + name + ", bevor du den Beleg übernimmst.",
+    "",
+    "Diese Nachricht wurde automatisch verschickt.",
+    NOTIFY_FROM_NAME
   );
 
   try {
@@ -8789,13 +8839,20 @@ async function handleSchulsportNachweisSenden(request, body, env, authHeader, co
     "Guten Tag,\n\n" +
     "der 1. SC 1911 Heiligenstadt bittet um Ihre Bestätigung eines Durchführungsnachweises.\n\n" +
     "Maßnahme: " + ((n.snapshot && n.snapshot.massnahmeTitel) || "") + "\n" +
-    "Zeitraum: " + n.vonDatum + " bis " + n.bisDatum + "\n" +
+    // vaDatumLesbar trotz va-Praefix: die Funktion ist allgemein (ISO -> TT.MM.JJJJ),
+    // und diese Mail geht an eine Schule -- ein ISO-Datum sieht dort nach Fehler aus.
+    "Zeitraum: " + vaDatumLesbar(n.vonDatum) + " bis " + vaDatumLesbar(n.bisDatum) + "\n" +
     "Durchgeführte Einheiten: " + (s.durchgefuehrt || 0) + " von " + (s.geplant || 0) + "\n\n" +
-    "Unter dem folgenden Link sehen Sie die vollständige Aufstellung und können sie\n" +
-    "direkt am Bildschirm bestätigen. Ein Benutzerkonto brauchen Sie dafür nicht:\n\n" +
+    "Unter dem folgenden Link sehen Sie die vollständige Aufstellung aller Einheiten\n" +
+    "mit Datum, Uhrzeit und Gruppe und können sie direkt am Bildschirm bestätigen.\n" +
+    "Ein Benutzerkonto brauchen Sie dafür nicht, ein Klick auf den Link genügt:\n\n" +
     link + "\n\n" +
-    "Der Link ist 30 Tage gültig. Stimmt etwas nicht, können Sie dort statt einer\n" +
-    "Bestätigung eine Rückfrage stellen.\n\n" +
+    "Die Bestätigung dauert nur einen Moment. Sie ist für uns die Grundlage der\n" +
+    "Fördermittel-Abrechnung — ohne sie können wir die durchgeführten Einheiten\n" +
+    "nicht geltend machen.\n\n" +
+    "Der Link ist 30 Tage gültig. Stimmt etwas nicht oder fehlt Ihnen eine Angabe,\n" +
+    "können Sie dort statt einer Bestätigung eine Rückfrage stellen; wir melden uns\n" +
+    "dann bei Ihnen. Sie müssen auf diese Mail nicht antworten.\n\n" +
     "Mit freundlichen Grüßen\n" +
     "1. SC 1911 e.V. Heilbad Heiligenstadt\n" +
     "Leineberg 2, 37308 Heilbad Heiligenstadt\n" +
@@ -16296,7 +16353,8 @@ function busplanMailText(f) {
   const zeilen = [];
   zeilen.push("Hallo,");
   zeilen.push("");
-  zeilen.push("für die " + f.team.name + " steht der Bus fest.");
+  zeilen.push("für die " + f.team.name + " steht der Bus für das nächste Auswärtsspiel fest.");
+  zeilen.push("Hier alles Wichtige auf einen Blick:");
   zeilen.push("");
   zeilen.push("Tag:  " + busplanDatumLang(f.spiel.datum));
   const ort = String(f.spiel.ort || "").trim();
@@ -16317,10 +16375,18 @@ function busplanMailText(f) {
   }
 
   zeilen.push("");
-  zeilen.push("Der vollständige Busplan:");
+  zeilen.push("Bitte gib Tag, Ort und den Bus an deine Mannschaft und die Eltern weiter —");
+  zeilen.push("diese Mail geht nur an die Verantwortlichen, nicht an die Spieler.");
+  zeilen.push("");
+  zeilen.push("Passt etwas nicht oder fällt die Fahrt aus, melde dich bitte so früh wie");
+  zeilen.push("möglich in der Geschäftsstelle. Ein Bus, der leer fährt, kostet den Verein");
+  zeilen.push("genauso viel wie ein voller.");
+  zeilen.push("");
+  zeilen.push("Der vollständige Busplan mit allen Mannschaften und Fahrten:");
   zeilen.push("https://sc1911heiligenstadt.github.io/busplan/");
   zeilen.push("");
   zeilen.push("Diese Nachricht wurde automatisch verschickt.");
+  zeilen.push(NOTIFY_FROM_NAME);
   return zeilen.join("\n");
 }
 
