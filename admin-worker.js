@@ -1378,6 +1378,18 @@ export default {
       // Mail, und ein zweiter Ausloeser koennte den Merker umgehen.
       case "busplan-erinnerungen":
         return handleBusplanErinnerungen(request, env, authHeader, corsHeaders);
+      // Bus-Anfrage zu einem bestimmten Tag (seit 2026-08-19). busplan steht in
+      // WRITE_REQUIRES_EDIT_PERMISSION -- ANFRAGEN darf trotzdem jeder mit
+      // Tool-Zugriff (schmale Aktion, Bauform wie vereinskalender-vote),
+      // ENTSCHEIDEN nur mit Bearbeiten-Recht.
+      case "busplan-anfragen-load":
+        return handleBusplanAnfragenLoad(request, env, authHeader, corsHeaders);
+      case "busplan-anfrage-neu":
+        return handleBusplanAnfrageNeu(request, body, env, authHeader, corsHeaders);
+      case "busplan-anfrage-entscheiden":
+        return handleBusplanAnfrageEntscheiden(request, body, env, authHeader, corsHeaders);
+      case "busplan-anfrage-loeschen":
+        return handleBusplanAnfrageLoeschen(request, body, env, authHeader, corsHeaders);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -7792,10 +7804,27 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
       !(await resolveEditPermission(app, session, env, authHeader, cfgPrefetch))) {
     const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
     const user = getOwn(usersDoc.users, session.username);
-    const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
+    // ⚠️ Normierte Menge, seit 2026-08-19. Vorher wurde Zeichen für Zeichen
+    // verglichen -- ein Auftrag für "B1" (Kurzname aus der zentralen
+    // Mannschaftsliste, so schreibt die App seit dem 2026-08-13) tauchte damit
+    // bei einem Trainer mit "B-Junioren 1" im Profil GAR NICHT auf, lautlos und
+    // ohne Fehlermeldung. Dieselbe Fassung wie mayActOnFotoauftragTeam und
+    // handleFotoauftragPush; alle drei müssen gleich vergleichen.
+    //
+    // ⚠️ Das ist eine ERWEITERUNG des Sichtkreises (mehr Treffer), also die
+    // Richtung, bei der man hinsehen muss: hier stehen mit freigabeLink echte,
+    // funktionsfähige Upload-Links drin. Sie ist trotzdem eng -- mannschaftNorm
+    // fasst nur Schreibweisen DERSELBEN Mannschaft zusammen ("B1"/"B 1"/
+    // "B-Junioren 1" -> "b1"), nie zwei verschiedene ("B1" -> "b1" bleibt von
+    // "B2" -> "b2" und von "B-Jugend" -> "b" getrennt). Als Zusage abgedeckt.
+    const meineMannschaften = normalizeMannschaften(user && user.mannschaften)
+      .map(mannschaftNorm).filter(Boolean);
     // Neues Objekt bauen statt in-place zu mutieren -- gleicher Cache-Grund wie beim ownerCfg-Block oben.
-    data = { ...data, [teamCfg.listField]: data[teamCfg.listField].filter(
-      (item) => item && meineMannschaften.has(item[teamCfg.teamField])) };
+    data = { ...data, [teamCfg.listField]: data[teamCfg.listField].filter((item) => {
+      if (!item) return false;
+      const team = mannschaftNorm(String(item[teamCfg.teamField] || ""));
+      return !!team && meineMannschaften.indexOf(team) !== -1;
+    }) };
   }
   // Kadermanager für Spielerkonten: nur die eigene Mannschaft, eigene Kassen-
   // buchungen, eigene Urlaub/Krank-Einträge (siehe kmSpielerSicht). Baut wie die
@@ -9574,9 +9603,18 @@ async function handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, co
 // Gemeinsamer Team-Zugehörigkeits-Check für fotoauftrag-ordner-anlegen UND
 // fotoauftrag-spielbericht-hochladen (beide: Editor darf immer, sonst nur bei
 // Team-Übereinstimmung mit dem eigenen mannschaften-Profil).
+//
+// ⚠️ Über mannschaftNorm, seit 2026-08-19 -- gleicher Grund und gleiche Fassung
+// wie in handleFotoauftragPush und im TEAM_FILTERED_APPS-Block von
+// handleDavLoad. Die drei MÜSSEN denselben Vergleich benutzen: sähe der Trainer
+// den Auftrag (dav-load), dürfte ihn aber nicht bearbeiten (hier), wäre der
+// Knopf da und liefe in ein 403. Andersherum bekäme er eine Push-Nachricht zu
+// einem Auftrag, den seine Liste gar nicht zeigt.
 function mayActOnFotoauftragTeam(mannschaft, user) {
-  const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
-  return meineMannschaften.has(mannschaft);
+  const gesucht = mannschaftNorm(String(mannschaft || ""));
+  if (!gesucht) return false;
+  return normalizeMannschaften(user && user.mannschaften)
+    .some((m) => mannschaftNorm(m) === gesucht);
 }
 
 // Lädt eine vom Client aus Freitext erzeugte .docx-Datei (siehe buildSpielberichtDocxBlob
@@ -12008,9 +12046,38 @@ async function handleVorgangPush(request, body, env, authHeader, corsHeaders, ex
 // das nichts angeht, soll auch nichts hoeren. Die Zuordnung steht in
 // nutzer.json (u.mannschaften), es braucht also keinen zweiten Datenbestand.
 //
+// ⚠️ Verglichen wird ueber mannschaftNorm, NICHT Zeichen fuer Zeichen (seit
+// 2026-08-19). Michel-Meldung: ein Auftrag fuer "B1" weckte einen A-Jugend-
+// Trainer. Ursache war der exakte Vergleich -- die App schreibt seit dem
+// 2026-08-13 den KURZNAMEN aus der zentralen Mannschaftsliste ("B1") in den
+// Auftrag, in den Trainerprofilen steht aber weiter der alte Freitext
+// ("B-Junioren 1"), solange der Abgleich in der Tools-Uebersicht aus ist. Kein
+// Treffer -> Ersatzweg unten -> die ganze Bearbeitenden-Gruppe bekam die
+// Meldung, obwohl fuenf B1-Trainer sauber hinterlegt sind. mannschaftNorm
+// bringt beide Schreibweisen auf "b1" zusammen; die Erinnerungslaeufe von
+// Ablaufplan und Busplan normieren aus demselben Grund seit jeher.
+//
+// ⚠️ mannschaftNorm, NICHT ablaufplanNormTeam: letzteres schneidet
+// "junioren"/"jugend" nur am ENDE ab (`$`) und laesst bei "B-Junioren 1" das
+// "bjunioren1" stehen -- also genau bei der Schreibweise, um die es hier geht.
+// Nachgerechnet: mannschaftNorm("B-Junioren 1") === mannschaftNorm("B1").
+//
+// ⚠️ Der Abgleich-Schalter macht das hier NICHT ueberfluessig, und andersherum
+// auch nicht. Ist er an, stehen ohnehin Kurznamen in den Profilen und die
+// Normierung greift gar nicht erst; ist er aus, faengt sie die Altbestaende.
+//
 // ⚠️ Fallback auf die Bearbeitenden, wenn zu der Mannschaft niemand hinterlegt
 // ist: sonst ginge die Anfrage lautlos unter, und genau das soll Push ja
 // verhindern. Lieber einer zu viel als eine Anfrage, die niemand sieht.
+//
+// ⚠️ Die Antwort NENNT seitdem den Kreis (`ersatz` + `namen`). Ohne das erfaehrt
+// der Anlegende erst von einem verwunderten Empfaenger, dass der Ersatzweg
+// gegriffen hat -- genau so ist der Fall oben aufgefallen. Das ist Punkt (c) aus
+// [[feedback-empfaengerliste-filter-und-leerzustand]]: der Fallback darf bleiben,
+// aber er muss sichtbar sein. Kostet keinen zusaetzlichen Nextcloud-Read,
+// usersDoc steckt in der Sitzung.
+const FOTOAUFTRAG_PUSH_NAMEN_MAX = 20;
+
 async function handleFotoauftragPush(request, body, env, authHeader, corsHeaders, execCtx) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -12027,29 +12094,42 @@ async function handleFotoauftragPush(request, body, env, authHeader, corsHeaders
   const auftrag = liste.find((a) => a && a.id === id);
   if (!auftrag) return json({ error: "Auftrag nicht gefunden" }, 404, corsHeaders);
 
-  const mannschaft = String(auftrag.mannschaft || "").trim();
+  const gesucht = mannschaftNorm(String(auftrag.mannschaft || ""));
   const selbst = normalizeUsername(session.username);
   const users = (session.usersDoc && session.usersDoc.users) || {};
 
   let empfaenger = [];
-  if (mannschaft) {
+  if (gesucht) {
+    // ⚠️ Object.create(null): ein Konto namens __proto__ traefe sonst den
+    // Prototyp, gaelte als "schon gesehen" und fiele spurlos aus dem Kreis.
+    // Gleiche Falle wie in rundErreichbar und pushSenden.
+    const gesehen = Object.create(null);
     for (const schluessel of Object.keys(users)) {
       const u = users[schluessel];
       if (!u || u.archiviert || !istPersonal(u)) continue;
       const meine = Array.isArray(u.mannschaften) ? u.mannschaften : [];
-      if (meine.indexOf(mannschaft) === -1) continue;
+      if (!meine.some((m) => mannschaftNorm(m) === gesucht)) continue;
       const name = normalizeUsername(u.username || schluessel);
-      if (name === selbst) continue;
+      if (!name || name === selbst || gesehen[name]) continue;
+      gesehen[name] = true;
       empfaenger.push(name);
     }
   }
-  if (!empfaenger.length) {
+  const ersatz = !empfaenger.length;
+  if (ersatz) {
     empfaenger = await pushEmpfaengerMitRecht("fotoauftraege", session.usersDoc, env, authHeader, session.username);
   }
 
   pushSenden(env, authHeader, execCtx, empfaenger, "fotos",
     "Für eine deiner Mannschaften werden Fotos gebraucht. In den Fotoaufträgen stehen Anlass, Termin und was gewünscht ist.");
-  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
+  return json({
+    ok: true,
+    infrage: empfaenger.length,
+    ersatz: ersatz,
+    namen: empfaenger
+      .slice(0, FOTOAUFTRAG_PUSH_NAMEN_MAX)
+      .map((n) => aufgabenAnzeigeName(session.usersDoc, n))
+  }, 200, corsHeaders);
 }
 
 // ---------- Rundnachricht von Hand (seit 2026-08-06) ----------
@@ -17614,4 +17694,292 @@ async function handleZertDateiLoeschen(request, body, env, authHeader, corsHeade
     }
     return json(ergebnis, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ==========================================================================
+// Busplan — Bus-Anfrage zu einem bestimmten Tag (seit 2026-08-19)
+// ==========================================================================
+//
+// Michel-Auftrag: neben der Verfuegbarkeits-Abfrage ("welcher Bus ist am 12.09.
+// noch frei?") ein Weg, einen freien Bus fuer einen Tag ANZUFRAGEN.
+//
+// ⚠️ Warum das nicht ueber dav-save laeuft: busplan steht in
+// WRITE_REQUIRES_EDIT_PERMISSION. Eine Anfrage STELLEN soll aber jeder duerfen,
+// der den Busplan sehen darf -- sonst fragt die Geschaeftsstelle bei sich selbst
+// an, waehrend die Trainer nur zusehen koennen. Gleiche Bauform wie
+// vereinskalender-vote: schmale Aktion, nur userMayAccessTool statt
+// resolveEditPermission, und sie schreibt ausschliesslich den eigenen Datensatz.
+// ENTSCHIEDEN (zusagen/ablehnen) wird dagegen mit Bearbeiten-Recht.
+//
+// ⚠️ Die Anfragen liegen in einer EIGENEN Datei neben busplan.json, nicht darin.
+// Zwei Gruende: die Nutzdatei schreibt die App im Ganzen per Last-Write-Wins,
+// eine gleichzeitig eingegangene Anfrage waere also ueberbuegelbar -- und der
+// Schreibweg dorthin ist genau der, der fuer Nicht-Bearbeiter gesperrt ist.
+// Gleiche Trennung wie busplan-erinnert.json beim naechtlichen Lauf.
+//
+// Als geschlossener Block am Dateiende, wie der Erinnerungslauf davor: am
+// Stueck wieder herausloesbar.
+
+const BUSPLAN_ANFRAGEN_URL = DAV_APPS["busplan"].replace(/[^/]+$/, "busplan-anfragen.json");
+
+// Deckel gegen eine volllaufende Datei. Aeltere entschiedene Anfragen werden
+// beim Anlegen aufgeraeumt (siehe busplanAnfragenAufraeumen), der Deckel greift
+// also erst, wenn wirklich jemand die Aktion missbraucht.
+const BUSPLAN_ANFRAGE_MAX = 300;
+// Wie lange eine ENTSCHIEDENE Anfrage stehenbleibt. Offene werden nie
+// weggeraeumt -- eine unbeantwortete Anfrage verschwinden zu lassen waere genau
+// der Fehler, den niemand bemerkt.
+const BUSPLAN_ANFRAGE_ARCHIV_TAGE = 120;
+const BUSPLAN_ANFRAGE_TEXT_MAX = 500;
+const BUSPLAN_ANFRAGE_STATUS = ["offen", "zugesagt", "abgelehnt"];
+
+function busplanAnfrageText(v, max) {
+  return String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, max || BUSPLAN_ANFRAGE_TEXT_MAX);
+}
+function busplanIstDatum(v) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+}
+
+// Anzeigename fuer die Liste. Faellt auf den Login-Namen zurueck, damit eine
+// Anfrage nie ohne Absender dasteht.
+function busplanAnfrageAnzeigeName(username, usersDoc) {
+  const u = getOwn((usersDoc && usersDoc.users) || {}, username);
+  if (u && u.vorname && u.nachname) return `${u.vorname} ${u.nachname}`;
+  return String(username || "");
+}
+
+// ⚠️ Jeder Datensatz geht durch diese Funktion, bevor er den Client erreicht --
+// die Datei ist von Hand editierbar, und ein fehlendes Feld darf die Anzeige
+// nicht kippen.
+function busplanAnfrageNorm(a) {
+  const d = (a && typeof a === "object") ? a : {};
+  const status = BUSPLAN_ANFRAGE_STATUS.includes(d.status) ? d.status : "offen";
+  return {
+    id: String(d.id || ""),
+    saison: busplanAnfrageText(d.saison, 40),
+    datum: busplanIstDatum(d.datum) ? String(d.datum) : "",
+    busOptionId: busplanAnfrageText(d.busOptionId, 80),
+    // Der Name wird MITGESPEICHERT, nicht nur die Id: die Bus-Option kann in der
+    // Saison geloescht oder umbenannt werden, die Anfrage soll trotzdem lesbar
+    // bleiben. Angezeigt wird der aktuelle Name, wenn es die Option noch gibt.
+    busName: busplanAnfrageText(d.busName, 120),
+    teamName: busplanAnfrageText(d.teamName, 120),
+    zweck: busplanAnfrageText(d.zweck, BUSPLAN_ANFRAGE_TEXT_MAX),
+    ersteller: busplanAnfrageText(d.ersteller, 80),
+    erstellerName: busplanAnfrageText(d.erstellerName, 120),
+    erstelltAm: busplanAnfrageText(d.erstelltAm, 40),
+    status,
+    antwort: busplanAnfrageText(d.antwort, BUSPLAN_ANFRAGE_TEXT_MAX),
+    entschiedenVon: busplanAnfrageText(d.entschiedenVon, 120),
+    entschiedenAm: busplanAnfrageText(d.entschiedenAm, 40)
+  };
+}
+
+function busplanAnfragenNorm(doc) {
+  const liste = (doc && Array.isArray(doc.anfragen)) ? doc.anfragen : [];
+  return liste.map(busplanAnfrageNorm).filter((a) => a.id && a.datum);
+}
+
+// Entschiedene Anfragen nach einer Weile wegraeumen. OFFENE bleiben immer
+// stehen, egal wie alt -- siehe BUSPLAN_ANFRAGE_ARCHIV_TAGE.
+function busplanAnfragenAufraeumen(liste, jetzt) {
+  const grenze = jetzt - BUSPLAN_ANFRAGE_ARCHIV_TAGE * 86400000;
+  return liste.filter((a) => {
+    if (a.status === "offen") return true;
+    const ts = Date.parse(a.entschiedenAm || a.erstelltAm || "");
+    if (!ts) return true; // ohne brauchbaren Zeitstempel lieber behalten als loeschen
+    return ts >= grenze;
+  });
+}
+
+// Die Bus-Optionen der angefragten Saison aus busplan.json. ⚠️ Nur LESEN.
+// Zweck: eine Anfrage darf sich nicht auf einen Bus beziehen, den es gar nicht
+// gibt oder der nicht zur Abfrage freigegeben ist -- sonst steht in der Liste
+// eine Anfrage, die im Busplan niemand wiederfindet.
+async function busplanOptionPruefen(authHeader, saison, busOptionId) {
+  const doc = await readJson(DAV_APPS["busplan"], authHeader, null);
+  if (!doc || !doc.seasons || typeof doc.seasons !== "object") return null;
+  const key = saison || (doc.meta && doc.meta.currentSeason) || "";
+  const season = getOwn(doc.seasons, key);
+  if (!season || !Array.isArray(season.busOptions)) return null;
+  const option = season.busOptions.find((o) => o && String(o.id) === busOptionId);
+  if (!option) return null;
+  // abfragbar === false heisst: dieser Eintrag ist kein einzelnes Fahrzeug
+  // (z.B. "Eltern / Privatfahrer") und wird nicht als frei/belegt gefuehrt.
+  // Fehlendes Feld gilt als abfragbar -- gleiche Vorgabe wie im Client.
+  if (option.abfragbar === false) return null;
+  return { key, name: String(option.name || "") };
+}
+
+// ---------- Aktion: Anfragen lesen ----------
+// Jeder mit Tool-Zugriff. Die Liste nennt Mannschaft, Tag, Bus und den Namen
+// dessen, der angefragt hat -- keine Kontaktdaten, keine sensiblen Felder.
+async function handleBusplanAnfragenLoad(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("busplan", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const doc = await readJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
+  return json({ anfragen: busplanAnfragenNorm(doc) }, 200, corsHeaders);
+}
+
+// ---------- Aktion: Anfrage stellen ----------
+// ⚠️ Bewusst NUR userMayAccessTool -- genau das ist der Zweck dieser Aktion.
+// Der Absender kommt aus dem Token, nie aus dem Request-Body.
+async function handleBusplanAnfrageNeu(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("busplan", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const datum = String(body.datum || "");
+  const busOptionId = busplanAnfrageText(body.busOptionId, 80);
+  const teamName = busplanAnfrageText(body.teamName, 120);
+  const zweck = busplanAnfrageText(body.zweck, BUSPLAN_ANFRAGE_TEXT_MAX);
+  const saisonWunsch = busplanAnfrageText(body.saison, 40);
+  if (!busplanIstDatum(datum)) return json({ error: "Ungültiges Datum" }, 400, corsHeaders);
+  if (!busOptionId) return json({ error: "Kein Bus gewählt" }, 400, corsHeaders);
+  if (!teamName) return json({ error: "Bitte die Mannschaft oder den Anlass angeben" }, 400, corsHeaders);
+
+  const option = await busplanOptionPruefen(authHeader, saisonWunsch, busOptionId);
+  if (!option) return json({ error: "Diesen Bus gibt es in der Saison nicht (mehr)" }, 400, corsHeaders);
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { users: {} });
+  const jetzt = Date.now();
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Wie handleVereinskalenderVote: vor UND nach dem Lesen aus dem Cache
+    // nehmen -- ein gecachter Stand brächte ein veraltetes ETag mit, und die
+    // gecachte Referenz duerfte nicht mutiert werden.
+    jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
+    const { data: raw, rev } = await readJsonWithRev(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
+    jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
+    const liste = busplanAnfragenAufraeumen(busplanAnfragenNorm(raw), jetzt);
+    if (liste.length >= BUSPLAN_ANFRAGE_MAX) {
+      return json({ error: "Es liegen zu viele Anfragen vor — bitte erst welche entscheiden." }, 400, corsHeaders);
+    }
+    // Dieselbe Person, derselbe Bus, derselbe Tag, noch offen: das ist ein
+    // Doppelklick, keine zweite Anfrage.
+    const doppelt = liste.find((a) => a.status === "offen" && a.ersteller === session.username
+      && a.datum === datum && a.busOptionId === busOptionId);
+    if (doppelt) {
+      return json({ ok: true, anfragen: liste, doppelt: true }, 200, corsHeaders);
+    }
+
+    liste.push(busplanAnfrageNorm({
+      id: crypto.randomUUID(),
+      saison: option.key,
+      datum,
+      busOptionId,
+      busName: option.name,
+      teamName,
+      zweck,
+      ersteller: session.username,
+      erstellerName: busplanAnfrageAnzeigeName(session.username, usersDoc),
+      erstelltAm: new Date(jetzt).toISOString(),
+      status: "offen"
+    }));
+
+    try {
+      await writeJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: liste }, rev);
+      return json({ ok: true, anfragen: liste }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- Aktion: Anfrage entscheiden ----------
+// Zusagen/ablehnen ist eine Bearbeiter-Taetigkeit -- hier also bewusst
+// resolveEditPermission, anders als beim Stellen der Anfrage.
+async function handleBusplanAnfrageEntscheiden(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("busplan", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  if (!(await resolveEditPermission("busplan", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für den Busplan" }, 403, corsHeaders);
+  }
+
+  const id = busplanAnfrageText(body.id, 80);
+  const status = String(body.status || "");
+  const antwort = busplanAnfrageText(body.antwort, BUSPLAN_ANFRAGE_TEXT_MAX);
+  if (!id) return json({ error: "Keine Anfrage angegeben" }, 400, corsHeaders);
+  if (!BUSPLAN_ANFRAGE_STATUS.includes(status)) return json({ error: "Ungültiger Status" }, 400, corsHeaders);
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { users: {} });
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
+    const { data: raw, rev } = await readJsonWithRev(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
+    jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
+    const liste = busplanAnfragenNorm(raw);
+    const treffer = liste.find((a) => a.id === id);
+    if (!treffer) return json({ error: "Anfrage nicht gefunden" }, 404, corsHeaders);
+
+    treffer.status = status;
+    treffer.antwort = antwort;
+    // Zurueck auf "offen" ist erlaubt (Fehlgriff korrigieren) -- dann steht auch
+    // kein Entscheider mehr dran, sonst behauptet die Zeile eine Entscheidung,
+    // die es nicht mehr gibt.
+    if (status === "offen") {
+      treffer.entschiedenVon = "";
+      treffer.entschiedenAm = "";
+    } else {
+      treffer.entschiedenVon = busplanAnfrageAnzeigeName(session.username, usersDoc);
+      treffer.entschiedenAm = new Date().toISOString();
+    }
+
+    try {
+      await writeJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: liste }, rev);
+      return json({ ok: true, anfragen: liste }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- Aktion: Anfrage zuruecknehmen/loeschen ----------
+// Die eigene noch OFFENE Anfrage darf jeder zuruecknehmen; alles andere nur mit
+// Bearbeiten-Recht. Eine schon entschiedene eigene Anfrage bleibt stehen --
+// sonst koennte jemand eine Absage einfach verschwinden lassen.
+async function handleBusplanAnfrageLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("busplan", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const id = busplanAnfrageText(body.id, 80);
+  if (!id) return json({ error: "Keine Anfrage angegeben" }, 400, corsHeaders);
+  const darfAlles = await resolveEditPermission("busplan", session, env, authHeader);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
+    const { data: raw, rev } = await readJsonWithRev(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
+    jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
+    const liste = busplanAnfragenNorm(raw);
+    const treffer = liste.find((a) => a.id === id);
+    if (!treffer) return json({ error: "Anfrage nicht gefunden" }, 404, corsHeaders);
+    const eigeneOffene = treffer.ersteller === session.username && treffer.status === "offen";
+    if (!darfAlles && !eigeneOffene) {
+      return json({ error: "Diese Anfrage darf nur ein Bearbeiter entfernen" }, 403, corsHeaders);
+    }
+    const rest = liste.filter((a) => a.id !== id);
+
+    try {
+      await writeJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: rest }, rev);
+      return json({ ok: true, anfragen: rest }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
 }
