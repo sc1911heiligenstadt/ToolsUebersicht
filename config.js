@@ -481,6 +481,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.25",
+    groups: [
+      {
+        title: "Sichtbarkeit der Tools alphabetisch",
+        items: [
+          "Im Admin-Bereich unter „Sichtbarkeit der Tools“ stehen die Werkzeuge jetzt in alphabetischer Reihenfolge — in beiden Abschnitten, „Sensible Tools“ und „Weitere Tools“.",
+          "Bisher galt die Reihenfolge aus der Übersicht selbst. Bei inzwischen 38 Werkzeugen war das Suchen einer bestimmten Zeile mühsam."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.24",
     groups: [
       {

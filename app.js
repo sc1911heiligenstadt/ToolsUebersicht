@@ -1824,7 +1824,13 @@ function collectVisibilityTools() {
 function renderVisibilityList() {
   const container = document.getElementById("visibility-list");
   container.innerHTML = "";
-  const alle = TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES);
+  // Alphabetisch nach Anzeigename sortiert (Michel-Vorgabe): das Panel listet
+  // inzwischen so viele Tools, dass die Reihenfolge aus config.js zum Suchen
+  // taugt. localeCompare mit "de" sortiert Umlaute wie im Telefonbuch (Ä bei A)
+  // und ignoriert Groß-/Kleinschreibung.
+  const alle = TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES)
+    .slice()
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "de", { sensitivity: "base" }));
   const kritische = alle.filter((t) => isKritischesTool(t.id));
   const normale = alle.filter((t) => !isKritischesTool(t.id));
 
