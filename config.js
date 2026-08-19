@@ -481,6 +481,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.27",
+    groups: [
+      {
+        title: "Aus der Testansicht kommt man wieder zurück",
+        items: [
+          "Wer als Admin die Testansicht einer Gruppe eingeschaltet hat, kam nicht mehr zurück: Der Tab „Einstellungen“ verschwand — und darin stand die einzige Auswahl, mit der sich die Testansicht wieder ausschalten lässt.",
+          "Der Tab „Einstellungen“ bleibt jetzt sichtbar, solange man in Wirklichkeit Admin ist. Während einer Testansicht steht dort nur die Auswahl; alle Admin-Bereiche bleiben weiterhin ausgeblendet.",
+          "Zusätzlich ist das orange Zeichen „🎭 Testansicht ✕“ oben in der Kopfzeile jetzt ein Knopf: ein Klick darauf beendet die Testansicht sofort — von jedem Tab aus."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.26",
     groups: [
       {

@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.70" />
+<link rel="stylesheet" href="style.css?v=1.71" />
 </head>
 <body>
 
@@ -741,6 +741,11 @@
     <div class="admin-kopfzeile">
       <button type="button" class="admin-dashboard-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
       <select class="view-as-select" id="view-as-select" style="display:none;" title="Testansicht: Dashboard und alle verlinkten Apps als Mitglied einer anderen Gruppe ansehen (nur für Admins)"></select>
+      <!-- Nur waehrend einer aktiven Testansicht sichtbar (renderViewAsControl).
+           Dann ist der Rest dieses Tabs leer, weil jedes Panel an isAdmin haengt. -->
+      <p class="muted" id="view-as-hinweis" style="display:none; flex-basis:100%; margin:0;">
+        🎭 Testansicht aktiv. Zurück geht es über „👑 Admin (echt)“ oben — oder mit dem ✕ am orangen Zeichen in der Kopfzeile.
+      </p>
     </div>
 
     <!-- Neuigkeiten-Verwaltung (nur Admin) -->
@@ -1684,7 +1689,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=4.2"></script>
-<script src="app.js?v=1.92"></script>
+<script src="config.js?v=4.3"></script>
+<script src="app.js?v=1.93"></script>
 </body>
 </html>

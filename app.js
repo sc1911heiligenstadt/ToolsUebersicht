@@ -6833,8 +6833,23 @@ function renderHeaderUser() {
     return;
   }
   const adminBadge = currentUser.isAdmin ? '<span class="version-badge">Admin</span>' : "";
-  const viewAsBadge = currentUser.viewAsGroupId ? '<span class="version-badge badge-view-as">🎭 Testansicht</span>' : "";
+  // ⚠️ Das Abzeichen der Testansicht ist ein KNOPF, kein <span>: der Umschalter
+  // selbst steht im Einstellungen-Tab, und dessen Nav-Knopf haengt an isAdmin --
+  // waehrend einer Testansicht ist der aber false, der Tab war weg und mit ihm
+  // der Weg zurueck (Michel, 2026-08-19). Der Ausstieg muss dort stehen, wo der
+  // Zustand sichtbar ist: im Header, von jedem Tab aus.
+  // ⚠️ Das ✕ statt eines Wortes ("beenden", "aus") ist gemessen, nicht Geschmack:
+  // bei 375 px kostet jede Wortfassung eine VOLLE zusaetzliche Kopfzeile
+  // (159 -> 201 px), das ✕ kostet null. Und die Testansicht ist genau der
+  // Zustand, in dem man sich die Handy-Ansicht ansieht -- eine Zeile mehr
+  // verfaelschte dann das Bild. Was der Knopf tut, sagen title und aria-label.
+  const viewAsBadge = currentUser.viewAsGroupId
+    ? '<button type="button" class="version-badge badge-view-as" id="btn-view-as-reset" title="Testansicht beenden — zurück zur echten Admin-Ansicht" aria-label="Testansicht beenden, zurück zur echten Admin-Ansicht">🎭 Testansicht ✕</button>'
+    : "";
   el.innerHTML = `👤 ${escapeHtml(currentUser.username)}${adminBadge}${viewAsBadge}`;
+  // Nach jedem innerHTML neu binden -- das vorherige Element ist dann raus aus dem DOM.
+  const viewAsResetBtn = document.getElementById("btn-view-as-reset");
+  if (viewAsResetBtn) viewAsResetBtn.addEventListener("click", () => setViewAs(null));
   el.style.display = "flex";
   logoutBtn.style.display = "inline-flex";
   renderViewAsControl();
@@ -6858,30 +6873,41 @@ async function loadDirectoryGroupsIfNeeded() {
 function renderViewAsControl() {
   const select = document.getElementById("view-as-select");
   if (!select) return;
+  const hinweis = document.getElementById("view-as-hinweis");
   if (!currentUser || !currentUser.realIsAdmin) {
     select.style.display = "none";
+    // ⚠️ Beim Abmelden muss der Hinweis mit weg -- sonst stuende er beim
+    // naechsten Anmelden noch da, obwohl keine Testansicht laeuft.
+    if (hinweis) hinweis.style.display = "none";
     return;
   }
   select.innerHTML = '<option value="">👑 Admin (echt)</option>' +
     directoryGroupsState.map((g) => `<option value="${escapeHtml(g.id)}">🎭 Ansicht: ${escapeHtml(g.name)}</option>`).join("");
   select.value = currentUser.viewAsGroupId || "";
   select.style.display = "inline-block";
+  // Waehrend einer Testansicht ist der Rest des Tabs leer (alle Admin-Panels
+  // haengen an isAdmin). Ohne diese Zeile stuende man vor einer fast leeren
+  // Seite und wuesste nicht, dass genau hier der Weg zurueck ist.
+  if (hinweis) hinweis.style.display = currentUser.viewAsGroupId ? "" : "none";
+}
+
+// Eine Stelle fuer beide Wege -- die Auswahl im Einstellungen-Tab und der Knopf
+// am Abzeichen im Header. groupId null bedeutet: zurueck zur echten Admin-Ansicht.
+async function setViewAs(groupId) {
+  try {
+    const data = await callWorker("set-view-as", { groupId: groupId || null });
+    currentUser = buildCurrentUser({ ...currentUser, ...data });
+    await afterAuthChange();
+  } catch (e) {
+    alert("Testansicht konnte nicht umgeschaltet werden: " + e.message);
+    renderViewAsControl();
+  }
 }
 
 function setupViewAsControl() {
   const select = document.getElementById("view-as-select");
   if (!select) return;
-  select.addEventListener("change", async () => {
-    const groupId = select.value || null;
-    try {
-      const data = await callWorker("set-view-as", { groupId });
-      currentUser = buildCurrentUser({ ...currentUser, ...data });
-      await afterAuthChange();
-    } catch (e) {
-      alert("Testansicht konnte nicht umgeschaltet werden: " + e.message);
-      renderViewAsControl();
-    }
-  });
+  select.addEventListener("change", () => setViewAs(select.value || null));
 }
 
 // Maske "Passwort ändern" in der Karte "Mein Konto". Zugeklappt bis zum Klick, damit
@@ -6963,13 +6989,19 @@ function setupPasswortForm() {
 // "Mein Konto" nichts anfangen.
 function renderNavTabs() {
   const istAdmin = !!(currentUser && currentUser.isAdmin);
+  // ⚠️ Der Einstellungen-Tab haengt an realIsAdmin, NICHT an isAdmin: waehrend
+  // einer Testansicht ist isAdmin false, und mit dem Tab verschwand der
+  // Umschalter, der als einziger wieder herausfuehrt (Michel, 2026-08-19).
+  // Ungefaehrlich, weil jedes Panel darin einzeln an isAdmin haengt (siehe
+  // renderAdminPanels) -- in der Testansicht steht dort nur die Auswahl.
+  const einstellungenOffen = !!(currentUser && (currentUser.isAdmin || currentUser.realIsAdmin));
   const infoOffen = infoTabOffen();
   // ⚠️ Nur den Text-Span anfassen, NICHT den Knopf: `textContent` am Knopf würde
   // das Abzeichen daneben mit wegräumen (beim Bauen genau so passiert — das
   // Element war nach dem ersten Rendern nicht mehr im DOM).
   document.getElementById("nav-konto-text").textContent = currentUser ? "Mein Konto" : "Anmelden";
   downloadsBadgeZeichnen();
-  document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
+  document.getElementById("nav-admin").style.display = einstellungenOffen ? "" : "none";
   document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
   // Ideen sind Personalsache (im Worker mit 403 fuer Spielerkonten abgesichert).
   const ideenOffen = ideenTabOffen();
@@ -6989,7 +7021,11 @@ function renderNavTabs() {
   // markiert. Aus dem Info-Tab geht es aufs Dashboard, nicht in die Anmeldemaske --
   // beim Abmelden will man die oeffentliche Startseite, kein Login-Formular.
   const aktiv = document.querySelector(".tab-section.active");
-  if (!istAdmin && aktiv && (aktiv.id === "tab-admin" || aktiv.id === "tab-admin-dashboard")) {
+  // Das Admin-Dashboard bleibt an isAdmin -- es zeigt Vereinszahlen, die eine
+  // getestete Gruppe nicht sehen soll. Nur der Einstellungen-Tab bleibt offen.
+  if (aktiv && aktiv.id === "tab-admin-dashboard" && !istAdmin) {
+    activateTab(einstellungenOffen ? "admin" : "konto");
+  } else if (!einstellungenOffen && aktiv && aktiv.id === "tab-admin") {
     activateTab("konto");
   } else if (!infoOffen && aktiv && aktiv.id === "tab-info") {
     activateTab("uebersicht");

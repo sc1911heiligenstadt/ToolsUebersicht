@@ -79,7 +79,19 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   cursor: pointer;
 }
 .header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
-.badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
+/* ⚠️ BEIDE Klassen im Selektor, nicht nur `.badge-view-as`. Die Grundregel
+   `.version-badge` steht weiter unten in dieser Datei und hat dieselbe
+   Spezifitaet -- bei Gleichstand gewinnt die spaetere, das Orange kam also gar
+   nicht an (am 2026-08-19 gemessen: der Hintergrund war das weisse 0.18 der
+   Grundregel). Das Orange ist hier kein Schmuck: es ist das Zeichen, dass man
+   gerade NICHT als man selbst unterwegs ist. */
+.version-badge.badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
+/* Das Abzeichen ist ein <button> (Ausstieg aus der Testansicht, siehe
+   renderHeaderUser). Es soll aussehen wie die anderen Abzeichen daneben --
+   also Schrift und Farbe vom Header erben statt vom Browser-Knopf. */
+button.badge-view-as { font: inherit; font-size: 11px; font-weight: 600; color: inherit; cursor: pointer; }
+.header-user button.badge-view-as { font-size: 10px; }
+.version-badge.badge-view-as:hover { background: rgba(255, 190, 60, 0.55); }
 /* Erste Zeile des Einstellungen-Tabs: Dashboard-Knopf und Testansicht-Auswahl
    nebeneinander (Michel-Vorgabe 2026-08-13). Das margin-bottom sitzt HIER und
    nicht mehr am Knopf -- sonst haetten beide Elemente je eigenen Abstand nach
