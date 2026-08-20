@@ -383,6 +383,15 @@ const TOOLS = [
     icon: "👕",
     category: "Verein",
     mail: true
+  },
+  {
+    id: "fussballcamp",
+    name: "Fußballcamp",
+    description: "Fußballcamps anlegen, auf der Vereinsseite bewerben und die Anmeldungen der Kinder sammeln. Ein Camp wird mit Zeitraum, Platzzahl und Beitrag angelegt; steht es auf „Anmeldung offen“, erscheint es von selbst als Fenster auf der Homepage. Die Eltern melden ohne Vereinskonto an — welche Felder gefragt werden, entscheidet ihr je Camp. Ist das Camp voll, läuft eine Warteliste mit. Die Bestätigungsmail trägt Beitrag, Kontoverbindung und einen Link, über den die Eltern selbst ändern oder absagen. Dazu die Aufgaben für die Helfer: je Camp-Tag, mit Selbsteintrag wie in der Spieltagscrew.",
+    url: "https://sc1911heiligenstadt.github.io/fussballcamp/",
+    icon: "⚽",
+    category: "Verein",
+    mail: true
   }
 ];
 
@@ -398,7 +407,11 @@ const KRITISCHE_TOOLS = [
   "personalakte", "dokumentenvorlagen", "vereinsverwaltung",
   // spielstatistik: hält je Spiel fest, warum jemand fehlte — darunter „verletzt"
   // und „krank". Gesundheitsangaben über erwachsene Spieler, deshalb hier.
-  "spielstatistik"
+  "spielstatistik",
+  // fussballcamp: Allergien, Medikamente und Erkrankungen von MINDERJÄHRIGEN,
+  // dazu Anschrift und Notfallnummer der Familien. Besondere Daten nach Art. 9
+  // DSGVO über Kinder — die empfindlichste Sammlung der ganzen Flotte.
+  "fussballcamp"
 ];
 
 // Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
@@ -480,6 +493,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.29",
+    groups: [
+      {
+        title: "Neues Werkzeug: Fußballcamp",
+        items: [
+          "Fußballcamps lassen sich anlegen, auf der Vereinsseite bewerben und mit einer Anmeldung für die Kinder versehen. Die Eltern brauchen dafür kein Vereinskonto — sie melden über einen Link an.",
+          "Steht ein Camp auf „Anmeldung offen“, erscheint es von selbst als Fenster auf der Vereins-Homepage. Dort muss dafür einmalig ein Schnipsel eingebaut werden; welches Camp erscheint, entscheidet danach allein die App.",
+          "Dazu gehören der Beitrag mit Kontoverbindung und Verwendungszweck, eine Warteliste, wenn das Camp voll ist, und die Aufgaben der Helfer je Camp-Tag.",
+          "Das Werkzeug steht in der Sichtbarkeits-Verwaltung als sensibel markiert: in den Anmeldungen stehen Gesundheitsangaben über Kinder. Wer das Camp nur sehen darf, bekommt diese Daten gar nicht erst geschickt."
+        ]
+      }
+    ]
+  },
   {
     version: "1.28",
     groups: [

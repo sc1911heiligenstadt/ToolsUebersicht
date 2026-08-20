@@ -489,9 +489,31 @@ const ALLOWED_ORIGINS = [
   // deshalb nie hier. Seit der Nachwuchs-Anmeldung laedt sie die Nachweise
   // direkt hierher -- der Dev-Server braucht die Freigabe also doch.
   "http://localhost:8810", // Vereinsverwaltung (Dev-Server)
+  "http://localhost:8819", // Fußballcamp (Dev-Server)
   "https://sc1911heiligenstadt.github.io",
-  "https://tecko1985.github.io" // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
+  "https://tecko1985.github.io", // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
+  // Die oeffentliche VEREINSSEITE. Steht hier wegen fussballcamp: popup.js laeuft
+  // dort eingebettet und ruft fussballcamp-oeffentlich auf. Diese eine Aktion
+  // antwortet zusaetzlich mit "*" (siehe FC_OEFFENTLICHE_AKTIONEN) -- die
+  // Eintraege hier sind der Guertel, das "*" der Hosentraeger fuer den Fall,
+  // dass die Seite spaeter unter einer weiteren Adresse laeuft.
+  "https://www.sc1911-heiligenstadt.de",
+  "https://sc1911-heiligenstadt.de"
 ];
+
+// Aktionen, die JEDE Herkunft beantworten darf (Access-Control-Allow-Origin "*").
+//
+// ⚠️ Sehr kurze Liste, und das muss so bleiben. Drin steht ausschliesslich, was
+// keinerlei personenbezogene Daten herausgibt: fussballcamp-oeffentlich liefert
+// Campname, Zeitraum, Ort, Beitrag und die Zahl freier Plaetze -- genau das, was
+// ohnehin oeffentlich auf der Vereinsseite beworben wird. Kein Ausweis, keine
+// Namen, keine Anmeldungen.
+//
+// Der Grund fuer die Ausnahme: popup.js wird in eine fremde Seite eingebaut, und
+// deren Adresse kann sich aendern (Subdomain, Testsystem, spaeterer Relaunch).
+// Ein CORS-Fehler waere dort nicht zu sehen -- das Fenster bliebe einfach leer,
+// ohne Hinweis, woran es liegt.
+const FC_OEFFENTLICHE_AKTIONEN = new Set(["fussballcamp-oeffentlich"]);
 
 // Apps, die ihre Daten über das Gateway (Action dav-load/dav-save) in Nextcloud
 // speichern. Key = Tool-id (wie in config.js/sichtbarkeit.json), Wert = volle
@@ -1010,6 +1032,11 @@ export default {
     // beim naechsten Deploy vergessen wird. Eigener waitUntil, damit ein Fehler
     // hier die Spieltagscrew-Erinnerungen nicht mitreisst.
     ctx.waitUntil(busplanErinnerungslauf(env, authHeader, ctx).catch(() => {}));
+    // Fussballcamp haengt sich aus demselben Grund an denselben Lauf: die
+    // Erinnerung vor Campbeginn und die Erinnerung an einen offenen Beitrag.
+    // Eigener waitUntil, damit ein Fehler hier weder die Spieltagscrew noch den
+    // Busplan mitreisst.
+    ctx.waitUntil(fcNaechtlicherLauf(env, authHeader).catch(() => {}));
   },
 
   // ctx (seit 2026-08-03): nur fuer ctx.waitUntil beim Push-Versand. Ohne den
@@ -1027,7 +1054,22 @@ export default {
     };
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
+      // ⚠️ Der Vorabflug kennt die Aktion NICHT -- sie steht erst im Koerper des
+      // eigentlichen POST. Fuer eine unbekannte Herkunft antwortet er deshalb mit
+      // "*", damit der nachfolgende POST ueberhaupt stattfinden kann; erst der
+      // entscheidet dann anhand von FC_OEFFENTLICHE_AKTIONEN, ob die ANTWORT an
+      // die fremde Seite herausgegeben wird.
+      //
+      // Das ist kein Loch: jede nicht-oeffentliche Aktion verlangt entweder einen
+      // Bearer-Token (den eine fremde Seite nicht hat -- er liegt im localStorage
+      // der eigenen Herkunft) oder ein Geheimnis aus dem Link. Eine fremde Seite
+      // bekommt hier also weiterhin 401/403, und die Antwort einer geschuetzten
+      // Aktion blockt der Browser wie bisher, weil der POST dann den unveraenderten
+      // allowOrigin zurueckgibt.
+      const preflightHeaders = ALLOWED_ORIGINS.includes(origin)
+        ? corsHeaders
+        : Object.assign({}, corsHeaders, { "Access-Control-Allow-Origin": "*" });
+      return new Response(null, { status: 204, headers: preflightHeaders });
     }
 
     const requiredSecrets = ["NEXTCLOUD_URL", "NEXTCLOUD_USERNAME", "NEXTCLOUD_PASSWORD", "NEXTCLOUD_NUTZER_URL", "SESSION_SECRET"];
@@ -1115,6 +1157,13 @@ export default {
       body = await request.json();
     } catch {
       return json({ error: "Ungültiges JSON" }, 400, corsHeaders);
+    }
+
+    // Jetzt -- und erst jetzt -- ist die Aktion bekannt. Nur die ausdruecklich
+    // oeffentlichen antworten jeder Herkunft; siehe FC_OEFFENTLICHE_AKTIONEN.
+    // Fuer alle uebrigen bleibt corsHeaders unveraendert.
+    if (FC_OEFFENTLICHE_AKTIONEN.has(String((body && body.action) || ""))) {
+      corsHeaders["Access-Control-Allow-Origin"] = "*";
     }
 
     // Die Aktions-Weiche steckt in einer sofort aufgerufenen Funktion, damit ihre
@@ -1373,6 +1422,68 @@ export default {
         return handleScEinstellungenSpeichern(request, body, env, authHeader, corsHeaders);
       case "spieltagscrew-erinnern":
         return handleScErinnern(request, body, env, authHeader, corsHeaders, ctx);
+
+      // ---- Fussballcamp ----
+      //
+      // Wie spieltagscrew OHNE DAV_APPS-Eintrag: es gibt keinen generischen
+      // dav-load/dav-save-Weg auf die Datendatei. Vier Gruende stehen im Kopf von
+      // fussballcamp/db.js; der wichtigste ist, dass die Anmeldungen von Eltern
+      // OHNE Login kommen und Gesundheitsangaben ueber Kinder tragen.
+      //
+      // Die ersten sechs Aktionen laufen deshalb ohne Sitzung. Ausweis ist der
+      // Token im Link -- je Camp einer fuer die Anmeldung, je Anmeldung einer zum
+      // Aendern. Jede von ihnen prueft ihn selbst und haelt ein eigenes Zaehlwerk
+      // gegen Ausprobieren (429).
+      case "fussballcamp-oeffentlich":
+        return handleFcOeffentlich(env, authHeader, corsHeaders);
+      case "fussballcamp-anmelde-info":
+        return handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-anmelden":
+        return handleFcAnmelden(request, body, env, authHeader, corsHeaders, ctx);
+      case "fussballcamp-meine-info":
+        return handleFcMeineInfo(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-meine-speichern":
+        return handleFcMeineSpeichern(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-meine-absagen":
+        return handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders);
+
+      // Ab hier mit Sitzung.
+      case "fussballcamp-load":
+        return handleFcLoad(request, env, authHeader, corsHeaders);
+      case "fussballcamp-teilnehmer":
+        return handleFcTeilnehmer(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-camp-speichern":
+        return handleFcCampSpeichern(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-camp-status":
+        return handleFcCampStatus(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-camp-loeschen":
+        return handleFcCampLoeschen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-job-speichern":
+        return handleFcJobSpeichern(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-job-loeschen":
+        return handleFcJobLoeschen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-eintragen":
+        return handleFcEintragen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-austragen":
+        return handleFcAustragen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-katalog-speichern":
+        return handleFcKatalogSpeichern(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-anmeldung-speichern":
+        return handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-nachruecken":
+        return handleFcNachruecken(request, body, env, authHeader, corsHeaders, ctx);
+      case "fussballcamp-absagen":
+        return handleFcAbsagen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-anmeldung-loeschen":
+        return handleFcAnmeldungLoeschen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-gesehen":
+        return handleFcGesehen(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-einstellungen-speichern":
+        return handleFcEinstellungenSpeichern(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-erinnern":
+        return handleFcErinnern(request, body, env, authHeader, corsHeaders, ctx);
+      case "fussballcamp-aufraeumen":
+        return handleFcAufraeumen(request, body, env, authHeader, corsHeaders);
       // Nachlese zum naechtlichen Busplan-Lauf. ⚠️ NUR LESEN -- es gibt bewusst
       // keine Aktion, die den Lauf von Hand ausloest: jede Fahrt kostet eine
       // Mail, und ein zweiter Ausloeser koennte den Merker umgehen.
@@ -12765,6 +12876,16 @@ const PUNKTE_TATEN = new Map([
   // toggle-news-reaction. Notiz und Loeschen ebenso nicht.
   ["zertifizierung-status", PUNKTE_PRO_TAT],
   ["zertifizierung-aufgabe-anlegen", PUNKTE_PRO_TAT],
+  // Fussballcamp: ein Camp anlegen und jemanden von der Warteliste nachruecken
+  // lassen sind echte Vereinsarbeit (das Nachruecken verschickt eine Zusage und
+  // ist je Anmeldung genau einmal moeglich).
+  // ⚠️ Bewusst NICHT hier: der Beitragshaken und das Ein-/Austragen auf eine
+  // Aufgabe -- beides sind Umschalter und damit beliebig nachfuellbar (gleiche
+  // Ueberlegung wie bei toggle-news-reaction). Das Camp-Speichern ist es nicht:
+  // es steckt hinter einem Dialog mit eigenem Speichern-Knopf, nicht hinter
+  // einem Autosave.
+  ["fussballcamp-camp-speichern", PUNKTE_PRO_TAT],
+  ["fussballcamp-nachruecken", PUNKTE_PRO_TAT],
   // Zu-/Absage zu einem Terminvorschlag im Vereinskalender (die Oberflaeche dort
   // nennt es woertlich "Zusagen"/"Absagen"). Seit Regelversion 4 hoeher bewertet.
   ["vereinskalender-vote", PUNKTE_TAT_TERMIN_ANTWORT],
@@ -12792,6 +12913,11 @@ const PUNKTE_TATEN = new Map([
 // Body; alles andere wird ueber das Praefix der Aktion zugeordnet. Reihenfolge
 // egal, die Praefixe ueberschneiden sich nicht ueber App-Grenzen hinweg.
 const PUNKTE_APP_PRAEFIXE = [
+  // ⚠️ Ohne diesen Eintrag liefe die Nutzung des Fussballcamps unter KEINER App,
+  // und die Admin-Auswertung meldete das Werkzeug als "von niemandem benutzt".
+  // Die login-losen Eltern-Aktionen (fussballcamp-anmelden usw.) tragen ohnehin
+  // keine Sitzung und erzeugen deshalb gar kein Ereignis.
+  ["fussballcamp", "fussballcamp"],
   ["vereinsaufgabe", "vereinsaufgaben"],
   ["raumnutzung", "raumnutzung"],
   ["fahrtenbuch", "fahrtenbuch"],
@@ -17982,4 +18108,1705 @@ async function handleBusplanAnfrageLoeschen(request, body, env, authHeader, cors
       return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
     }
   }
+}
+
+// ============================================================================
+//  Fussballcamp
+// ============================================================================
+//
+// Camps anlegen, auf der Vereinsseite bewerben, Anmeldungen der Kinder sammeln,
+// Beitraege verfolgen und die Aufgaben der Helfer verteilen.
+//
+// ⚠️ ARCHITEKTUR: wie spieltagscrew bewusst OHNE DAV_APPS-Eintrag. Es gibt keinen
+// generischen dav-load/dav-save-Weg auf fussballcamp.json; jeder Zugriff laeuft
+// ueber die Aktionen hier. Vier Gruende, von denen jeder einzelne reicht:
+//
+//   1. Die Anmeldungen kommen von Eltern OHNE Login. dav-save verlangt einen
+//      Sitzungstoken; ein Formular auf der Vereinsseite hat keinen.
+//   2. Platzzahl und Warteliste muessen serverseitig entschieden werden. Zwei
+//      Familien, die gleichzeitig absenden, duerfen nicht beide den letzten
+//      Platz bekommen.
+//   3. Die Anmeldungen tragen Gesundheitsangaben ueber KINDER (Art. 9 DSGVO).
+//      Ein dav-load haette sie an jeden ausgeliefert, der das Tool sehen darf.
+//   4. Der Betreuer-Blick ist eine GEFILTERTE Sicht. Filtern kann nur, wer die
+//      ungefilterten Daten gar nicht erst herausgibt.
+//
+// Folge: kein Eintrag in WRITE_REQUIRES_EDIT_PERMISSION noetig -- dav-save laeuft
+// fuer diese App-Id ohnehin in "Unbekannte App".
+
+const FUSSBALLCAMP_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fussballcamp/fussballcamp.json";
+
+// ⚠️ Muss zu APP_URL in fussballcamp/config.js passen. Aus dieser Konstante baut
+// der Worker die Links in den Mails -- der Client kennt sie dort nur fuer die
+// Anzeige.
+const FC_APP_URL = "https://sc1911heiligenstadt.github.io/fussballcamp/";
+
+const FC_MAX_CAMPS = 100;
+const FC_MAX_TAGE = 60;              // je Camp
+const FC_MAX_JOBS = 40;              // je Camp-Tag
+const FC_MAX_ANMELDUNGEN = 500;      // je Camp
+const FC_MAX_ANZAHL = 50;            // Personen je Aufgabe
+const FC_MAX_PLAETZE = 500;
+const FC_MAX_PREIS = 100000;         // 1.000,00 EUR in Cent
+const FC_MAX_VERLAUF = 400;          // je Camp
+const FC_STATUS = ["entwurf", "offen", "geschlossen", "abgeschlossen"];
+
+// ⚠️ Die WIRKSAME Feldliste. fussballcamp/config.js fuehrt dieselbe Liste fuer die
+// Anzeige; beide Fassungen sind gegeneinander geprueft. Was hier fehlt, wird beim
+// Speichern verworfen -- ein Feld nur im Client anzulegen bleibt wirkungslos.
+const FC_FELDER = {
+  kindVorname:      { typ: "text",  max: 60,  fest: true },
+  kindNachname:     { typ: "text",  max: 60,  fest: true },
+  geburtsdatum:     { typ: "datum", max: 10 },
+  trikotgroesse:    { typ: "text",  max: 10 },
+  verein:           { typ: "text",  max: 80 },
+  position:         { typ: "text",  max: 20 },
+  elternName:       { typ: "text",  max: 120, fest: true },
+  elternEmail:      { typ: "email", max: 160, fest: true },
+  elternTelefon:    { typ: "text",  max: 60 },
+  elternAnschrift:  { typ: "text",  max: 200 },
+  allergien:        { typ: "text",  max: 500, sensibel: true },
+  medikamente:      { typ: "text",  max: 500, sensibel: true },
+  krankheiten:      { typ: "text",  max: 500, sensibel: true },
+  krankenkasse:     { typ: "text",  max: 100, sensibel: true },
+  vegetarisch:      { typ: "haken" },
+  essenHinweis:     { typ: "text",  max: 300, sensibel: true },
+  einwilligungFoto: { typ: "haken" },
+  alleinNachHause:  { typ: "haken" },
+  abholberechtigt:  { typ: "text",  max: 300 },
+  bemerkung:        { typ: "text",  max: 800 }
+};
+
+// Was ein BETREUER von einer Anmeldung zu sehen bekommt -- also jemand, der an
+// diesem Camp auf mindestens einer Aufgabe steht, aber kein Bearbeiten-Recht hat.
+//
+// ⚠️ Diese Liste ist der eigentliche Datenschutz dieser App. Sie enthaelt bewusst
+// KEINE Anschrift, KEINE E-Mail, KEINEN Beitragsstand und KEINE Bemerkung --
+// alles Dinge, die am Sportplatz niemand braucht. Wer hier etwas ergaenzt, gibt
+// es an einen deutlich groesseren Kreis heraus.
+const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "allergien", "medikamente", "krankheiten", "essenHinweis", "elternTelefon", "alleinNachHause"];
+
+// Zaehlwerke gegen Ausprobieren. Getrennt nach lesen und schreiben, weil das
+// grosse Kontingent sonst auch das Anlegen von 300 Anmeldungen je Stunde
+// abdeckte. Muster und Funktion von der Kleiderboerse (kboBremse) uebernommen.
+const FC_LESE_ZAEHLER = new Map();
+const FC_LESE_MAX_PRO_STUNDE = 300;
+const FC_SCHREIB_ZAEHLER = new Map();
+const FC_SCHREIB_MAX_PRO_STUNDE = 20;
+
+class FcFehler extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "FcFehler";
+    this.status = status || 400;
+  }
+}
+
+function fcAntwortFehler(e, corsHeaders) {
+  if (e instanceof FcFehler) return json({ error: e.message }, e.status, corsHeaders);
+  if (e instanceof ConflictError) return json({ error: "Gleichzeitige Änderung — bitte erneut versuchen" }, 409, corsHeaders);
+  return json({ error: "Speicherfehler: " + (e && e.message ? e.message : "unbekannt") }, 502, corsHeaders);
+}
+
+// ---------- Sitzung und Rechte ----------
+
+async function fcSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  // Spielerkonten sind wie ueberall in diesem Worker ausgeschlossen. Hier zaehlt
+  // das doppelt: in den Anmeldungen stehen Gesundheitsangaben ueber Kinder.
+  if (session.art === USER_ART_SPIELER) {
+    return { fehler: json({ error: "Kein Zugriff auf das Fußballcamp" }, 403, corsHeaders) };
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!(await userMayAccessTool("fussballcamp", session, env, authHeader, Promise.resolve(config)))) {
+    return { fehler: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
+  }
+  const canEdit = await resolveEditPermission("fussballcamp", session, env, authHeader, Promise.resolve(config));
+  const canAdmin = await resolveAdminPermission("fussballcamp", session, env, authHeader, Promise.resolve(config));
+  return { session, config, canEdit, canAdmin, fehler: null };
+}
+
+function fcVerlangeEdit(ctx) {
+  if (!ctx.canEdit) throw new FcFehler("Dafür fehlt dir das Bearbeiten-Recht", 403);
+}
+
+function fcVerlangeAdmin(ctx) {
+  if (!ctx.canAdmin) throw new FcFehler("Dafür fehlt dir das Administrieren-Recht", 403);
+}
+
+// ---------- Datei lesen und schreiben ----------
+
+function fcEinstellungenLeer() {
+  return {
+    iban: "", bic: "", kontoinhaber: "1. SC 1911 e.V. Heilbad Heiligenstadt", bank: "",
+    kontaktName: "", kontaktEmail: "",
+    startErinnerung: true, startErinnerungTage: 3,
+    zahlErinnerung: true, zahlErinnerungTage: 14,
+    aufraeumenNachMonaten: 6
+  };
+}
+
+function fcLeer() {
+  return { version: 1, jobKatalog: [], camps: [], einstellungen: fcEinstellungenLeer(), lauf: null };
+}
+
+function fcNormalisiere(doc) {
+  doc.version = doc.version || 1;
+  if (!Array.isArray(doc.jobKatalog)) doc.jobKatalog = [];
+  if (!Array.isArray(doc.camps)) doc.camps = [];
+  if (!doc.einstellungen || typeof doc.einstellungen !== "object") doc.einstellungen = fcEinstellungenLeer();
+  doc.camps.forEach((c) => {
+    if (!Array.isArray(c.tage)) c.tage = [];
+    if (!Array.isArray(c.anmeldungen)) c.anmeldungen = [];
+    if (!Array.isArray(c.verlauf)) c.verlauf = [];
+    if (!c.felder || typeof c.felder !== "object") c.felder = {};
+    if (!FC_STATUS.includes(c.status)) c.status = "entwurf";
+    c.tage.forEach((t) => {
+      if (!Array.isArray(t.jobs)) t.jobs = [];
+      t.jobs.forEach((j) => { if (!Array.isArray(j.besetzung)) j.besetzung = []; });
+    });
+  });
+  return doc;
+}
+
+// Read-modify-write mit If-Match und drei Versuchen -- gleiches Muster wie
+// scMutiere. fn bekommt das Dokument, aendert es an Ort und Stelle und gibt
+// zurueck, was der Client als Antwort sehen soll.
+async function fcMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(FUSSBALLCAMP_URL, authHeader, fcLeer());
+    fcNormalisiere(doc);
+    const ergebnis = await fn(doc) || {};
+    try {
+      await writeJson(FUSSBALLCAMP_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new FcFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+// ---------- Datum, Text, Geld ----------
+
+// "Heute" in Europe/Berlin als ISO-Tag. Serverseitig waere ein blosses new Date()
+// reines UTC -- ein Anmeldeschluss "bis 31.10." liefe dann ab 01:00 Ortszeit am
+// 1.11. noch weiter, und umgekehrt.
+function fcHeuteBerlin() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+function fcTagPlus(tage) {
+  return new Date(Date.now() + tage * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+function fcDatum(roh) {
+  const s = capStr(roh, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function fcZeit(roh) {
+  const s = capStr(roh, 5);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : "";
+}
+
+function fcZahl(roh, min, max) {
+  const v = Number(roh);
+  if (!Number.isFinite(v)) return null;
+  return Math.min(max, Math.max(min, Math.round(v)));
+}
+
+function fcDatumDe(iso) {
+  if (!iso) return "";
+  const t = String(iso).slice(0, 10).split("-");
+  return t.length === 3 ? `${t[2]}.${t[1]}.${t[0]}` : String(iso);
+}
+
+function fcEuro(cent) {
+  return ((Number(cent) || 0) / 100).toFixed(2).replace(".", ",") + " €";
+}
+
+function fcIbanLesbar(iban) {
+  return String(iban || "").replace(/\s+/g, "").replace(/(.{4})/g, "$1 ").trim();
+}
+
+// ⚠️ Muss zeichengenau zu verwendungszweck() in fussballcamp/app.js passen --
+// sonst steht auf dem Kontoauszug etwas anderes als in der Anmeldeliste, und der
+// Abgleich von Hand wird zur Sucharbeit.
+function fcVerwendungszweck(camp, a) {
+  return `${camp.name || "Camp"}, ${(a.kindVorname || "")} ${(a.kindNachname || "")}`.trim().slice(0, 140);
+}
+
+function fcKindName(a) {
+  return `${a.kindVorname || ""} ${a.kindNachname || ""}`.trim() || "Ohne Namen";
+}
+
+// ---------- Zahlen eines Camps ----------
+//
+// ⚠️ Alles GERECHNET, nichts gezaehlt: ein gespeicherter Zaehler waere nach der
+// ersten Korrektur nicht mehr nachrechenbar (dieselbe Ueberlegung wie bei der
+// Einsatz-Auswertung der Spieltagscrew).
+
+function fcBelegt(camp) {
+  return (camp.anmeldungen || []).filter((a) => a.status === "angemeldet").length;
+}
+
+function fcWartende(camp) {
+  return (camp.anmeldungen || [])
+    .filter((a) => a.status === "warteliste")
+    .sort((a, b) => (a.nummer || 0) - (b.nummer || 0));
+}
+
+function fcFrei(camp) {
+  return Math.max(0, (camp.plaetze || 0) - fcBelegt(camp));
+}
+
+// Wie viele Plaetze sind auf allen Aufgaben dieses Camps noch unbesetzt?
+function fcJobsFrei(camp) {
+  let offen = 0;
+  (camp.tage || []).forEach((t) => (t.jobs || []).forEach((j) => {
+    offen += Math.max(0, (j.anzahl || 1) - (j.besetzung || []).length);
+  }));
+  return offen;
+}
+
+// Steht dieser Nutzer an diesem Camp auf mindestens einer Aufgabe? Das ist das
+// Gate der Betreuer-Sicht -- NICHT canEdit.
+function fcIstBetreuer(camp, username) {
+  if (!username) return false;
+  return (camp.tage || []).some((t) => (t.jobs || []).some((j) =>
+    (j.besetzung || []).some((b) => b && b.username === username)));
+}
+
+// Nimmt dieses Camp gerade Anmeldungen an? Status UND Datumsfenster.
+function fcNimmtAn(camp) {
+  if (camp.status !== "offen") return { ok: false, grund: "Für dieses Camp läuft gerade keine Anmeldung." };
+  const heute = fcHeuteBerlin();
+  if (camp.anmeldungVon && heute < camp.anmeldungVon) {
+    return { ok: false, grund: `Die Anmeldung öffnet erst am ${fcDatumDe(camp.anmeldungVon)}.` };
+  }
+  if (camp.anmeldungBis && heute > camp.anmeldungBis) {
+    return { ok: false, grund: `Die Anmeldefrist ist am ${fcDatumDe(camp.anmeldungBis)} abgelaufen.` };
+  }
+  return { ok: true };
+}
+
+// Ist die Aufraeum-Frist eines abgeschlossenen Camps abgelaufen?
+function fcAufraeumFaellig(camp, einstellungen) {
+  if (camp.status !== "abgeschlossen" || camp.aufgeraeumtAm) return false;
+  const monate = Number((einstellungen || {}).aufraeumenNachMonaten) || 6;
+  const ende = camp.bisDatum ? new Date(camp.bisDatum + "T12:00:00") : null;
+  if (!ende || isNaN(ende.getTime())) return false;
+  ende.setMonth(ende.getMonth() + monate);
+  return ende.toLocaleDateString("sv-SE") <= fcHeuteBerlin();
+}
+
+function fcVerlaufNotiz(camp, eintrag) {
+  camp.verlauf.push(Object.assign({ am: new Date().toISOString() }, eintrag));
+  if (camp.verlauf.length > FC_MAX_VERLAUF) camp.verlauf.splice(0, camp.verlauf.length - FC_MAX_VERLAUF);
+}
+
+// ---------- Camp-Tage aus dem Zeitraum erzeugen ----------
+//
+// ⚠️ Aus vonDatum/bisDatum entstehen ECHTE Tag-Objekte, keine Regel, aus der man
+// sie herleiten muesste (gleiche Entscheidung wie im Schulsport). Die Aufgaben
+// haengen an diesen Tagen; eine spaetere Aenderung am Zeitraum darf sie nicht
+// rueckwirkend verschieben.
+function fcTageAusZeitraum(von, bis) {
+  const tage = [];
+  if (!von || !bis) return tage;
+  const d = new Date(von + "T12:00:00");
+  const ende = new Date(bis + "T12:00:00");
+  if (isNaN(d.getTime()) || isNaN(ende.getTime())) return tage;
+  while (d <= ende && tage.length < FC_MAX_TAGE) {
+    tage.push(d.toLocaleDateString("sv-SE"));
+    d.setDate(d.getDate() + 1);
+  }
+  return tage;
+}
+
+// Gleicht die Tage eines Camps an einen geaenderten Zeitraum an.
+//
+// ⚠️ Ein wegfallender Tag, auf dem noch jemand eingetragen ist, wird NICHT
+// stillschweigend entfernt -- sonst zieht man einem Helfer den Termin unter den
+// Fuessen weg, ohne dass es jemand merkt. Stattdessen ein Fehler mit Begruendung.
+function fcTageAngleichen(camp, von, bis) {
+  const soll = fcTageAusZeitraum(von, bis);
+  const vorhanden = new Set((camp.tage || []).map((t) => t.datum));
+  const sollSet = new Set(soll);
+
+  const wegMitBesetzung = (camp.tage || [])
+    .filter((t) => !sollSet.has(t.datum))
+    .filter((t) => (t.jobs || []).some((j) => (j.besetzung || []).length));
+  if (wegMitBesetzung.length) {
+    throw new FcFehler(
+      `Der neue Zeitraum lässt ${wegMitBesetzung.length === 1 ? "einen Tag" : wegMitBesetzung.length + " Tage"} wegfallen, auf ${wegMitBesetzung.length === 1 ? "dem" : "denen"} noch Helfer eingetragen sind (${wegMitBesetzung.map((t) => fcDatumDe(t.datum)).join(", ")}). Bitte dort zuerst austragen.`, 409);
+  }
+
+  let dazu = 0, weg = 0;
+  camp.tage = (camp.tage || []).filter((t) => {
+    if (sollSet.has(t.datum)) return true;
+    weg++;
+    return false;
+  });
+  soll.forEach((datum) => {
+    if (vorhanden.has(datum)) return;
+    // Neue Tage bekommen die Aufgaben aus dem Katalog als eigene Kopie -- damit
+    // ein verlaengertes Camp nicht mit leeren Tagen dasteht.
+    camp.tage.push({ datum, jobs: [] });
+    dazu++;
+  });
+  camp.tage.sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
+
+  if (!dazu && !weg) return "";
+  const teile = [];
+  if (dazu) teile.push(`${dazu} ${dazu === 1 ? "Tag" : "Tage"} dazu`);
+  if (weg) teile.push(`${weg} ${weg === 1 ? "Tag" : "Tage"} entfernt`);
+  return teile.join(", ");
+}
+
+function fcJobsAusKatalog(doc, camp, datum) {
+  return (doc.jobKatalog || []).map((k) => ({
+    id: crypto.randomUUID(), katalogId: k.id || "",
+    name: capStr(k.name, 80), beschreibung: capStr(k.beschreibung, 200),
+    anzahl: fcZahl(k.anzahl, 1, FC_MAX_ANZAHL) || 1,
+    von: fcZeit(k.von) || camp.taeglichVon || "", bis: fcZeit(k.bis) || camp.taeglichBis || "",
+    besetzung: []
+  })).slice(0, FC_MAX_JOBS).map((j) => { void datum; return j; });
+}
+
+// ============================================================
+//  OEFFENTLICH -- ohne Login
+// ============================================================
+//
+// ⚠️ Diese sechs Aktionen laufen OHNE Sitzung. Ausweis ist ein Token aus dem
+// Link. Jede prueft ihn selbst und gibt nur heraus, was die jeweilige Seite
+// braucht -- nie das ganze Camp und nie fremde Anmeldungen.
+
+// Was ein Camp an die OEFFENTLICHKEIT herausgibt. Bewusst eine eigene, kleine
+// Abbildung statt "Camp minus ein paar Felder": bei der Minus-Schreibweise landet
+// jedes spaeter ergaenzte Feld automatisch im Netz.
+function fcOeffentlicheSicht(camp) {
+  return {
+    token: camp.token,
+    name: camp.name,
+    kurzbeschreibung: camp.kurzbeschreibung || "",
+    vonDatum: camp.vonDatum, bisDatum: camp.bisDatum,
+    taeglichVon: camp.taeglichVon, taeglichBis: camp.taeglichBis,
+    ort: camp.ort || "",
+    jahrgangVon: camp.jahrgangVon || null, jahrgangBis: camp.jahrgangBis || null,
+    preis: camp.preis || 0,
+    frei: fcFrei(camp),
+    voll: fcFrei(camp) <= 0,
+    warteliste: fcWartende(camp).length,
+    anmeldungBis: camp.anmeldungBis || ""
+  };
+}
+
+// Liste der offenen Camps fuer das Fenster auf der Vereinsseite (popup.js).
+// Antwortet jeder Herkunft (FC_OEFFENTLICHE_AKTIONEN) -- gibt aber nichts
+// Personenbezogenes heraus.
+async function handleFcOeffentlich(env, authHeader, corsHeaders) {
+  try {
+    const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+    const camps = doc.camps
+      .filter((c) => fcNimmtAn(c).ok)
+      .sort((a, b) => String(a.vonDatum || "").localeCompare(String(b.vonDatum || "")))
+      .map(fcOeffentlicheSicht);
+    return json({ camps }, 200, corsHeaders);
+  } catch (_) {
+    // ⚠️ Nie ein Fehler nach aussen: popup.js laeuft in der Vereinsseite. Ein 502
+    // dort waere ein roter Fehler in deren Konsole, ohne dass jemand versteht,
+    // woher er kommt. Ein leeres Ergebnis heisst schlicht "kein Fenster".
+    return json({ camps: [] }, 200, corsHeaders);
+  }
+}
+
+function fcCampZuToken(doc, token) {
+  const t = capStr(token, 80);
+  if (!t) return null;
+  return doc.camps.find((c) => c.token && c.token === t) || null;
+}
+
+function fcAnmeldungZuToken(doc, token) {
+  const t = capStr(token, 80);
+  if (!t) return null;
+  for (const camp of doc.camps) {
+    const a = (camp.anmeldungen || []).find((x) => x.token && x.token === t);
+    if (a) return { camp, anmeldung: a };
+  }
+  return null;
+}
+
+// Camp-Angaben und Feldkonfiguration fuer das Anmeldeformular.
+async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(FC_LESE_ZAEHLER, FC_LESE_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+    const camp = fcCampZuToken(doc, body.token);
+    if (!camp) return json({ error: "Dieses Camp gibt es nicht." }, 404, corsHeaders);
+
+    // Ein ENTWURF ist auch mit gueltigem Token unsichtbar: der Link kann aus einer
+    // frueheren Runde stammen, in der das Camp schon einmal offen war.
+    if (camp.status === "entwurf") return json({ error: "Dieses Camp gibt es nicht." }, 404, corsHeaders);
+
+    const nimmt = fcNimmtAn(camp);
+    if (!nimmt.ok) return json({ error: nimmt.grund }, 410, corsHeaders);
+
+    return json({
+      camp: Object.assign(fcOeffentlicheSicht(camp), {
+        beschreibung: camp.beschreibung || "",
+        preisHinweis: camp.preisHinweis || "",
+        zusatzfrage: camp.zusatzfrage || "",
+        felder: camp.felder || {}
+      })
+    }, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Nimmt die eingegebenen Felder entgegen und gibt zurueck, was gespeichert werden
+// darf: nur bekannte Felder, nur eingeschaltete, gekappt auf ihre Laenge.
+//
+// ⚠️ Der Client entscheidet NICHT mit. Wer das Formular umbaut und ein
+// abgeschaltetes Feld mitschickt, bekommt es hier weggeworfen.
+function fcFelderPruefen(camp, roh) {
+  const konf = camp.felder || {};
+  const sauber = {};
+  const fehlend = [];
+
+  Object.keys(FC_FELDER).forEach((id) => {
+    const def = FC_FELDER[id];
+    const stufe = def.fest ? "pflicht" : (konf[id] || "aus");
+    if (stufe === "aus") return;
+
+    const wert = roh ? roh[id] : undefined;
+    if (def.typ === "haken") {
+      sauber[id] = wert === true || wert === "true";
+      // Ein Pflicht-HAKEN muss gesetzt sein -- sonst waere "Pflicht" fuer eine
+      // Einwilligung sinnlos.
+      if (stufe === "pflicht" && !sauber[id]) fehlend.push(id);
+      return;
+    }
+
+    let v = capStr(wert === null || wert === undefined ? "" : String(wert), def.max || 200).trim();
+    if (def.typ === "datum") v = fcDatum(v);
+    if (def.typ === "email" && v && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v)) {
+      throw new FcFehler("Die E-Mail-Adresse sieht nicht richtig aus.", 400);
+    }
+    sauber[id] = v;
+    if (stufe === "pflicht" && !v) fehlend.push(id);
+  });
+
+  if (fehlend.length) {
+    throw new FcFehler("Es fehlen noch Pflichtangaben. Bitte das Formular vollständig ausfüllen.", 400);
+  }
+  return sauber;
+}
+
+async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, execCtx) {
+  if (!kboBremse(FC_SCHREIB_ZAEHLER, FC_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anmeldungen von diesem Anschluss. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    // ⚠️ Ohne diesen Haken keine Anmeldung. Die Einwilligung in die Verarbeitung
+    // der Gesundheitsangaben (Art. 9 Abs. 2 lit. a DSGVO) ist die Grundlage, auf
+    // der diese Daten ueberhaupt erhoben werden duerfen.
+    if (body.datenschutz !== true) {
+      throw new FcFehler("Ohne das Einverständnis mit der Datenschutz-Information ist keine Anmeldung möglich.", 400);
+    }
+
+    let ergebnis = null;
+    await fcMutiere(authHeader, (doc) => {
+      const camp = fcCampZuToken(doc, body.token);
+      if (!camp || camp.status === "entwurf") throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const nimmt = fcNimmtAn(camp);
+      if (!nimmt.ok) throw new FcFehler(nimmt.grund, 410);
+      if ((camp.anmeldungen || []).length >= FC_MAX_ANMELDUNGEN) {
+        throw new FcFehler("Für dieses Camp liegen bereits sehr viele Anmeldungen vor. Bitte wende dich direkt an den Verein.", 409);
+      }
+
+      const felder = fcFelderPruefen(camp, body.daten);
+
+      // Dieselbe Familie meldet dasselbe Kind zweimal an -- meistens, weil der
+      // erste Versuch im Netz haengen blieb. Statt einer zweiten Anmeldung die
+      // bestehende zurueckgeben; der Platz bleibt derselbe.
+      const doppelt = (camp.anmeldungen || []).find((a) =>
+        a.status !== "abgesagt" &&
+        String(a.kindVorname || "").toLowerCase() === String(felder.kindVorname || "").toLowerCase() &&
+        String(a.kindNachname || "").toLowerCase() === String(felder.kindNachname || "").toLowerCase() &&
+        String(a.elternEmail || "").toLowerCase() === String(felder.elternEmail || "").toLowerCase());
+      if (doppelt) {
+        ergebnis = { camp, anmeldung: doppelt, schonDa: true };
+        return {};
+      }
+
+      // ⚠️ Der Status wird HIER entschieden, nie aus dem Koerper uebernommen.
+      const aufWarteliste = fcFrei(camp) <= 0;
+      const nummer = ((camp.anmeldungen || []).reduce((m, a) => Math.max(m, a.nummer || 0), 0)) + 1;
+
+      const neu = Object.assign({
+        id: crypto.randomUUID(),
+        token: kboHexToken(24),
+        nummer,
+        status: aufWarteliste ? "warteliste" : "angemeldet",
+        bezahlt: false, bezahltAm: "", bezahltVon: "",
+        notiz: "",
+        zusatzantwort: camp.zusatzfrage ? capStr(body.daten && body.daten.zusatzantwort, 200) : "",
+        datenschutzAm: new Date().toISOString(),
+        erstelltAm: new Date().toISOString(),
+        geaendertAm: "", elternAenderung: "", absageGrund: "",
+        startErinnertAm: "", zahlErinnertAm: ""
+      }, felder);
+
+      camp.anmeldungen.push(neu);
+      fcVerlaufNotiz(camp, { was: "angemeldet", wen: fcKindName(neu), quelle: "eltern" });
+      ergebnis = { camp, anmeldung: neu, schonDa: false };
+      return {};
+    });
+
+    if (!ergebnis) throw new FcFehler("Die Anmeldung konnte nicht gespeichert werden.", 502);
+
+    const { camp, anmeldung, schonDa } = ergebnis;
+    const doc2 = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+    const einst = doc2.einstellungen || fcEinstellungenLeer();
+
+    // Ist die Anmeldung einmal vermerkt, gilt sie als angekommen. Ein Mailfehler
+    // danach darf sie nicht zurueckdrehen -- die Familie stuende sonst vor einer
+    // Fehlermeldung, obwohl der Platz laengst vergeben ist. Deshalb waitUntil:
+    // die Antwort geht sofort raus, die Mail laeuft dahinter weiter.
+    //
+    // ⚠️ Der else-Zweig ist kein Beiwerk. Ohne ihn haengt die Bestaetigungsmail
+    // allein daran, dass der Aufrufer den Ausfuehrungskontext durchreicht --
+    // vergisst das jemand beim Umbauen des Routers, kommt bei den Eltern
+    // LAUTLOS nie eine Bestaetigung an, samt Zahldaten und Aenderungslink. Der
+    // Preis fuer den Rueckweg sind ein paar hundert Millisekunden Wartezeit beim
+    // Absenden; das ist der bessere Tausch.
+    if (!schonDa) {
+      const versand = fcBestaetigungMail(env, camp, anmeldung, einst).catch(() => false);
+      if (execCtx && execCtx.waitUntil) execCtx.waitUntil(versand);
+      else await versand;
+    }
+
+    const wartePlatz = anmeldung.status === "warteliste"
+      ? fcWartende(camp).findIndex((a) => a.id === anmeldung.id) + 1 : 0;
+
+    return json({
+      ok: true,
+      status: anmeldung.status,
+      schonDa,
+      kind: fcKindName(anmeldung),
+      email: anmeldung.elternEmail || "",
+      wartePlatz,
+      zahlung: anmeldung.status === "angemeldet" ? {
+        betrag: camp.preis || 0,
+        iban: einst.iban || "", bic: einst.bic || "",
+        kontoinhaber: einst.kontoinhaber || "",
+        verwendungszweck: fcVerwendungszweck(camp, anmeldung),
+        frist: camp.vonDatum || ""
+      } : null,
+      aendernLink: FC_APP_URL + "meine-anmeldung.html?a=" + encodeURIComponent(anmeldung.token)
+    }, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Die eigene Anmeldung ansehen. Gibt GENAU EINE heraus, nie das Camp mit allen
+// anderen.
+async function handleFcMeineInfo(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(FC_LESE_ZAEHLER, FC_LESE_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+    const treffer = fcAnmeldungZuToken(doc, body.token);
+    if (!treffer) return json({ error: "Diese Anmeldung gibt es nicht." }, 404, corsHeaders);
+
+    const { camp, anmeldung } = treffer;
+    if (camp.aufgeraeumtAm) {
+      return json({ error: "Dieses Camp ist abgeschlossen, die Anmeldedaten wurden gelöscht." }, 410, corsHeaders);
+    }
+
+    const wartePlatz = anmeldung.status === "warteliste"
+      ? fcWartende(camp).findIndex((a) => a.id === anmeldung.id) + 1 : 0;
+    const einst = doc.einstellungen || fcEinstellungenLeer();
+
+    // ⚠️ Nur die Felder der Anmeldung selbst, kein Durchreichen des Objekts:
+    // notiz (interne Notiz der Verwaltung) und absageGrund gehen die Eltern
+    // nichts an.
+    const sicht = { status: anmeldung.status, bezahlt: !!anmeldung.bezahlt, wartePlatz, zusatzantwort: anmeldung.zusatzantwort || "" };
+    Object.keys(FC_FELDER).forEach((id) => { if (anmeldung[id] !== undefined) sicht[id] = anmeldung[id]; });
+
+    return json({
+      camp: {
+        name: camp.name, vonDatum: camp.vonDatum, bisDatum: camp.bisDatum,
+        taeglichVon: camp.taeglichVon, taeglichBis: camp.taeglichBis,
+        ort: camp.ort || "", preis: camp.preis || 0,
+        zusatzfrage: camp.zusatzfrage || "", felder: camp.felder || {}
+      },
+      anmeldung: sicht,
+      zahlung: {
+        betrag: camp.preis || 0, iban: einst.iban || "", bic: einst.bic || "",
+        kontoinhaber: einst.kontoinhaber || "",
+        verwendungszweck: fcVerwendungszweck(camp, anmeldung)
+      }
+    }, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcMeineSpeichern(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(FC_SCHREIB_ZAEHLER, FC_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Änderungen von diesem Anschluss. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const treffer = fcAnmeldungZuToken(doc, body.token);
+      if (!treffer) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+      const { camp, anmeldung } = treffer;
+      if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist abgeschlossen.", 410);
+      if (anmeldung.status === "abgesagt") throw new FcFehler("Diese Anmeldung ist abgesagt und lässt sich nicht mehr ändern.", 410);
+
+      const felder = fcFelderPruefen(camp, body.daten);
+      Object.assign(anmeldung, felder);
+      if (camp.zusatzfrage) anmeldung.zusatzantwort = capStr(body.daten && body.daten.zusatzantwort, 200);
+      anmeldung.geaendertAm = new Date().toISOString();
+      // ⚠️ Die Markierung ist der ganze Meldeweg: es geht KEINE Mail an den
+      // Verein (Michel-Entscheidung). Ohne sie bliebe eine Aenderung unbemerkt.
+      anmeldung.elternAenderung = "geaendert";
+      fcVerlaufNotiz(camp, { was: "geaendert", wen: fcKindName(anmeldung), quelle: "eltern" });
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(FC_SCHREIB_ZAEHLER, FC_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const treffer = fcAnmeldungZuToken(doc, body.token);
+      if (!treffer) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+      const { camp, anmeldung } = treffer;
+      if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist abgeschlossen.", 410);
+      if (anmeldung.status === "abgesagt") return { schonAbgesagt: true };
+
+      anmeldung.status = "abgesagt";
+      anmeldung.absageGrund = "von den Eltern abgesagt";
+      anmeldung.geaendertAm = new Date().toISOString();
+      anmeldung.elternAenderung = "abgesagt";
+      fcVerlaufNotiz(camp, { was: "abgesagt", wen: fcKindName(anmeldung), quelle: "eltern" });
+      // ⚠️ Der Platz wird frei, aber es rueckt NIEMAND automatisch nach
+      // (Michel-Entscheidung): eine Zusage ist eine Zusage und soll ein bewusster
+      // Klick der Verwaltung bleiben.
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ============================================================
+//  MIT LOGIN
+// ============================================================
+
+// ⚠️ DER wichtigste Punkt dieser App: was `camps[].anmeldungen` enthaelt, haengt
+// am Recht des Aufrufers.
+//
+//   mit Bearbeiten : die volle Liste.
+//   ohne Bearbeiten: das Feld fehlt GANZ -- nicht etwa leer, sondern gar nicht.
+//                    Nur die gerechneten Zahlen kommen mit.
+//
+// Ausblenden im Client waere hier keine Zurueckhaltung: die Daten waeren dann
+// bereits im Browser jedes Nutzers, der das Tool sehen darf. Die verkuerzte
+// Betreuer-Sicht ist eine eigene Aktion (handleFcTeilnehmer).
+async function handleFcLoad(request, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+
+  const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+  const einst = doc.einstellungen || fcEinstellungenLeer();
+
+  // Anzeigenamen aus nutzer.json (steckt in der Sitzung, kostet keinen
+  // zusaetzlichen Read). Bewusst nicht im Eintrag gespeichert: nach einer
+  // Umbenennung soll ein alter Eintrag nicht den frueheren Namen zeigen.
+  const namen = Object.create(null);
+  const merke = (u) => { if (u && !namen[u]) namen[u] = aufgabenAnzeigeName(ctx.session.usersDoc, u); };
+  doc.camps.forEach((c) => (c.tage || []).forEach((t) => (t.jobs || []).forEach((j) =>
+    (j.besetzung || []).forEach((b) => { if (b) { merke(b.username); merke(b.von); } }))));
+  merke(ctx.session.username);
+
+  const camps = doc.camps.map((c) => {
+    const sicht = {
+      id: c.id, name: c.name, ort: c.ort || "",
+      vonDatum: c.vonDatum, bisDatum: c.bisDatum,
+      taeglichVon: c.taeglichVon, taeglichBis: c.taeglichBis,
+      jahrgangVon: c.jahrgangVon || null, jahrgangBis: c.jahrgangBis || null,
+      plaetze: c.plaetze || 0, preis: c.preis || 0, preisHinweis: c.preisHinweis || "",
+      kurzbeschreibung: c.kurzbeschreibung || "", beschreibung: c.beschreibung || "",
+      zusatzfrage: c.zusatzfrage || "", felder: c.felder || {},
+      status: c.status, anmeldungVon: c.anmeldungVon || "", anmeldungBis: c.anmeldungBis || "",
+      token: c.token || "", tage: c.tage || [],
+      aufgeraeumtAm: c.aufgeraeumtAm || "",
+      // Gerechnet, damit auch ohne Bearbeiten-Recht die Auslastung sichtbar ist.
+      belegt: fcBelegt(c), warteliste: fcWartende(c).length, jobsFrei: fcJobsFrei(c),
+      // Damit der Client "Anmeldung öffnen" mit einer Warnung versehen kann,
+      // ohne die IBAN selbst zu kennen.
+      hatKonto: !!einst.iban,
+      aufraeumenFaellig: ctx.canAdmin ? fcAufraeumFaellig(c, einst) : false
+    };
+    if (ctx.canEdit) {
+      const wartend = fcWartende(c);
+      sicht.anmeldungen = (c.anmeldungen || []).map((a) => Object.assign({}, a, {
+        // Der Wartelisten-Platz ist gerechnet, nicht gespeichert -- nach einer
+        // Absage stimmt ein gespeicherter Wert sonst nicht mehr.
+        wartePlatz: a.status === "warteliste" ? wartend.findIndex((x) => x.id === a.id) + 1 : 0,
+        // ⚠️ Der Aendern-Token der Eltern verlaesst den Server NIE, auch nicht an
+        // Bearbeiter: er ist der Ausweis der Familie, kein Verwaltungsdatum.
+        token: undefined
+      }));
+    }
+    return sicht;
+  });
+
+  return json({
+    camps,
+    jobKatalog: doc.jobKatalog,
+    // Die Kontoverbindung geht nur an die Verwaltung.
+    einstellungen: ctx.canAdmin ? einst : null,
+    lauf: ctx.canAdmin ? (doc.lauf || null) : null,
+    namen,
+    me: {
+      username: ctx.session.username, isAdmin: !!ctx.session.isAdmin,
+      canEdit: ctx.canEdit, canAdmin: ctx.canAdmin
+    }
+  }, 200, corsHeaders);
+}
+
+// Die verkuerzte Teilnehmerliste fuer die Betreuer.
+//
+// ⚠️ Das Gate ist NICHT canEdit, sondern "steht an diesem Camp auf mindestens
+// einer Aufgabe" (Muster: schulsport-meldung). Genau deshalb ist das eine eigene
+// Aktion: mit canEdit als Gate braeuchte es sie gar nicht, und mit einem
+// clientseitigen Filter waere sie wirkungslos.
+async function handleFcTeilnehmer(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+
+  const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+  const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+  if (!camp) return json({ error: "Dieses Camp gibt es nicht." }, 404, corsHeaders);
+
+  if (!ctx.canEdit && !fcIstBetreuer(camp, ctx.session.username)) {
+    return json({ error: "Diese Liste sehen nur die Betreuer dieses Camps." }, 403, corsHeaders);
+  }
+
+  // Abgesagte gehoeren nicht auf die Liste am Platz -- sie kommen nicht.
+  // Wartende ebenso wenig: sie haben keinen Platz.
+  const teilnehmer = (camp.anmeldungen || [])
+    .filter((a) => a.status === "angemeldet")
+    .sort((a, b) => String(a.kindNachname || "").localeCompare(String(b.kindNachname || ""), "de"))
+    .map((a) => {
+      const kurz = {};
+      FC_BETREUER_FELDER.forEach((id) => { if (a[id] !== undefined && a[id] !== "") kurz[id] = a[id]; });
+      return kurz;
+    });
+
+  return json({ campId: camp.id, campName: camp.name, teilnehmer }, 200, corsHeaders);
+}
+
+// ---------- Camps ----------
+
+async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const roh = body.camp || {};
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const id = capStr(roh.id, 80);
+      let camp = id ? doc.camps.find((c) => c.id === id) : null;
+      const neu = !camp;
+      if (id && !camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      if (neu && doc.camps.length >= FC_MAX_CAMPS) throw new FcFehler("Es sind bereits sehr viele Camps angelegt.", 409);
+
+      const name = capStr(roh.name, 100).trim();
+      const von = fcDatum(roh.vonDatum);
+      const bis = fcDatum(roh.bisDatum);
+      if (!name) throw new FcFehler("Das Camp braucht einen Namen.", 400);
+      if (!von || !bis) throw new FcFehler("Erster und letzter Tag fehlen.", 400);
+      if (bis < von) throw new FcFehler("Der letzte Tag liegt vor dem ersten.", 400);
+      if (fcTageAusZeitraum(von, bis).length >= FC_MAX_TAGE) {
+        throw new FcFehler(`Ein Camp kann höchstens ${FC_MAX_TAGE} Tage dauern.`, 400);
+      }
+
+      const anmVon = fcDatum(roh.anmeldungVon);
+      const anmBis = fcDatum(roh.anmeldungBis);
+      if (anmVon && anmBis && anmBis < anmVon) throw new FcFehler("Das Anmeldefenster endet vor seinem Beginn.", 400);
+
+      const plaetze = fcZahl(roh.plaetze, 1, FC_MAX_PLAETZE);
+      if (!plaetze) throw new FcFehler("Wie viele Plätze hat das Camp?", 400);
+
+      if (neu) {
+        camp = {
+          id: crypto.randomUUID(),
+          // Der oeffentliche Link-Schluessel. 24 Byte, damit er nicht zu erraten
+          // ist -- er ist der einzige Schutz vor Anmeldungen auf ein Camp, das
+          // noch gar nicht beworben wurde.
+          token: kboHexToken(24),
+          status: "entwurf",
+          tage: [], anmeldungen: [], verlauf: [],
+          erstelltAm: new Date().toISOString(), erstelltVon: ctx.session.username,
+          aufgeraeumtAm: ""
+        };
+        doc.camps.push(camp);
+      }
+
+      // Eine Verkleinerung unter die Zahl der bereits Angemeldeten wuerde
+      // niemanden hinauswerfen -- aber fcFrei() waere negativ und die Auslastung
+      // sinnlos. Lieber jetzt ablehnen.
+      const belegt = fcBelegt(camp);
+      if (plaetze < belegt) {
+        throw new FcFehler(`Es sind bereits ${belegt} Kinder angemeldet — weniger als ${belegt} Plätze gehen nicht.`, 409);
+      }
+
+      const tageInfo = fcTageAngleichen(camp, von, bis);
+      // Nur bei einem NEUEN Camp den Katalog auf die Tage kopieren. Bei einem
+      // bestehenden waere das eine zweite Runde derselben Aufgaben.
+      if (neu) camp.tage.forEach((t) => { t.jobs = fcJobsAusKatalog(doc, camp, t.datum); });
+
+      camp.name = name;
+      camp.ort = capStr(roh.ort, 120).trim();
+      camp.vonDatum = von;
+      camp.bisDatum = bis;
+      camp.taeglichVon = fcZeit(roh.taeglichVon);
+      camp.taeglichBis = fcZeit(roh.taeglichBis);
+      camp.jahrgangVon = fcZahl(roh.jahrgangVon, 1990, 2050);
+      camp.jahrgangBis = fcZahl(roh.jahrgangBis, 1990, 2050);
+      camp.plaetze = plaetze;
+      camp.preis = fcZahl(roh.preis, 0, FC_MAX_PREIS) || 0;
+      camp.preisHinweis = capStr(roh.preisHinweis, 200).trim();
+      camp.kurzbeschreibung = capStr(roh.kurzbeschreibung, 200).trim();
+      camp.beschreibung = capStr(roh.beschreibung, 2000).trim();
+      camp.zusatzfrage = capStr(roh.zusatzfrage, 200).trim();
+      camp.anmeldungVon = anmVon;
+      camp.anmeldungBis = anmBis;
+
+      // Nur bekannte Feld-Ids, nur bekannte Stufen. Feste Felder stehen nicht in
+      // der Konfiguration -- sie sind immer Pflicht.
+      const felder = {};
+      Object.keys(roh.felder || {}).forEach((id) => {
+        const def = FC_FELDER[id];
+        if (!def || def.fest) return;
+        const stufe = String((roh.felder || {})[id] || "aus");
+        if (["aus", "optional", "pflicht"].includes(stufe)) felder[id] = stufe;
+      });
+      camp.felder = felder;
+
+      fcVerlaufNotiz(camp, { was: neu ? "camp-angelegt" : "camp-geaendert", von: ctx.session.username });
+      return { id: camp.id, tageGeaendert: tageInfo };
+    });
+
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Statuswechsel als eigene, schmale Aktion: "Anmeldung oeffnen" stellt das Camp
+// auf die oeffentliche Homepage, und dieser Schritt soll mit Zeitpunkt und Person
+// im Verlauf stehen statt in einem Sammel-Speichern unterzugehen.
+async function handleFcCampStatus(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const ziel = String(body.status || "");
+    if (!FC_STATUS.includes(ziel)) throw new FcFehler("Unbekannter Status.", 400);
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.id, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      if (camp.aufgeraeumtAm) throw new FcFehler("Ein aufgeräumtes Camp lässt sich nicht wieder öffnen.", 409);
+
+      const vorher = camp.status;
+      camp.status = ziel;
+      fcVerlaufNotiz(camp, { was: "status", von: ctx.session.username, vorher, nachher: ziel });
+      return { status: ziel };
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcCampLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeAdmin(ctx);
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const i = doc.camps.findIndex((c) => c.id === capStr(body.id, 80));
+      if (i < 0) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      // ⚠️ Ein Camp mit Anmeldungen laesst sich nicht loeschen. Wer es wirklich
+      // los werden will, raeumt es auf -- das ist der dokumentierte Weg und
+      // hinterlaesst die Zahlen.
+      const anzahl = (doc.camps[i].anmeldungen || []).length;
+      if (anzahl) {
+        throw new FcFehler(`Zu diesem Camp liegen ${anzahl} Anmeldungen vor. Löschen geht nur über „Aufräumen“, damit die Zahlen erhalten bleiben.`, 409);
+      }
+      doc.camps.splice(i, 1);
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Aufgaben ----------
+
+async function handleFcJobSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const roh = body.job || {};
+    const name = capStr(roh.name, 80).trim();
+    if (!name) throw new FcFehler("Die Aufgabe braucht einen Namen.", 400);
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+
+      const vorlage = {
+        name,
+        beschreibung: capStr(roh.beschreibung, 200).trim(),
+        anzahl: fcZahl(roh.anzahl, 1, FC_MAX_ANZAHL) || 1,
+        von: fcZeit(roh.von), bis: fcZeit(roh.bis)
+      };
+
+      const jobId = capStr(roh.id, 80);
+      // „Auf allen Tagen" gilt nur beim ANLEGEN. Beim Bearbeiten waere es
+      // mehrdeutig -- es wuerde bestehende Aufgaben gleichen Namens
+      // ueberschreiben statt neue anzulegen.
+      const alleTage = body.alleTage === true && !jobId;
+      const ziele = alleTage ? camp.tage : camp.tage.filter((t) => t.datum === fcDatum(body.datum));
+      if (!ziele.length) throw new FcFehler("Diesen Camp-Tag gibt es nicht.", 404);
+
+      let angelegt = 0;
+      ziele.forEach((tag) => {
+        if (jobId) {
+          const job = (tag.jobs || []).find((j) => j.id === jobId);
+          if (!job) return;
+          // Die Personenzahl unter die bereits Eingetragenen zu senken wuerde
+          // jemanden verdraengen, ohne dass es jemand merkt.
+          if (vorlage.anzahl < (job.besetzung || []).length) {
+            throw new FcFehler(`Auf dieser Aufgabe stehen bereits ${job.besetzung.length} Personen — weniger Plätze gehen nicht.`, 409);
+          }
+          Object.assign(job, vorlage);
+          angelegt++;
+          return;
+        }
+        if ((tag.jobs || []).length >= FC_MAX_JOBS) return;
+        tag.jobs.push(Object.assign({ id: crypto.randomUUID(), katalogId: "", besetzung: [] }, vorlage));
+        angelegt++;
+      });
+
+      if (!angelegt) throw new FcFehler("Diese Aufgabe gibt es nicht (mehr).", 404);
+      fcVerlaufNotiz(camp, { was: jobId ? "aufgabe-geaendert" : "aufgabe-angelegt", von: ctx.session.username, jobName: name, tage: angelegt });
+      return { angelegt };
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcJobLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const tag = (camp.tage || []).find((t) => t.datum === fcDatum(body.datum));
+      if (!tag) throw new FcFehler("Diesen Camp-Tag gibt es nicht.", 404);
+      const i = (tag.jobs || []).findIndex((j) => j.id === capStr(body.jobId, 80));
+      if (i < 0) throw new FcFehler("Diese Aufgabe gibt es nicht (mehr).", 404);
+      // Eine besetzte Aufgabe nicht mitsamt Besetzung entfernen -- sonst steht
+      // jemand plötzlich nicht mehr im Plan und erfährt es nie.
+      if ((tag.jobs[i].besetzung || []).length) {
+        throw new FcFehler("Auf dieser Aufgabe stehen noch Helfer. Bitte sie zuerst austragen.", 409);
+      }
+      const name = tag.jobs[i].name;
+      tag.jobs.splice(i, 1);
+      fcVerlaufNotiz(camp, { was: "aufgabe-geloescht", von: ctx.session.username, jobName: name });
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Wen traegt dieser Aufruf ein? Ein FREMDER Name -- ob Vereinskonto oder freier
+// Text -- nur mit Administrieren-Recht.
+function fcZielPerson(ctx, body) {
+  const username = capStr(body.username, 80);
+  const freierName = capStr(body.freierName, 80).trim();
+  if (freierName) {
+    if (!ctx.canAdmin) throw new FcFehler("Einen freien Namen darf nur die Verwaltung eintragen.", 403);
+    return { username: "", freierName };
+  }
+  if (!username || username === ctx.session.username) return { username: ctx.session.username, freierName: "" };
+  if (!ctx.canAdmin) throw new FcFehler("Andere Personen darf nur die Verwaltung eintragen.", 403);
+  return { username, freierName: "" };
+}
+
+async function handleFcEintragen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    // Auch der Selbsteintrag ist ein Schreibvorgang und braucht die Stufe
+    // (Flottenregel vom 2026-07-24). "Sehen" heisst hier wirklich nur sehen.
+    fcVerlangeEdit(ctx);
+    const ziel = fcZielPerson(ctx, body);
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const tag = (camp.tage || []).find((t) => t.datum === fcDatum(body.datum));
+      if (!tag) throw new FcFehler("Diesen Camp-Tag gibt es nicht.", 404);
+      const job = (tag.jobs || []).find((j) => j.id === capStr(body.jobId, 80));
+      if (!job) throw new FcFehler("Diese Aufgabe gibt es nicht (mehr).", 404);
+
+      if ((job.besetzung || []).length >= (job.anzahl || 1)) {
+        throw new FcFehler("Diese Aufgabe ist bereits voll besetzt.", 409);
+      }
+      // Auf DERSELBEN Aufgabe steht niemand zweimal.
+      //
+      // ⚠️ Anders als in der Spieltagscrew gibt es KEINE Sperre "eine Person je
+      // Tag nur eine Aufgabe" (Michel-Entscheidung): vormittags Betreuung,
+      // mittags Essensausgabe ist beim Camp der Normalfall.
+      const schonDa = (job.besetzung || []).some((b) =>
+        (ziel.username && b.username === ziel.username) ||
+        (ziel.freierName && String(b.freierName || "").toLowerCase() === ziel.freierName.toLowerCase()));
+      if (schonDa) throw new FcFehler("Diese Person steht auf dieser Aufgabe schon.", 409);
+
+      job.besetzung.push({
+        username: ziel.username, freierName: ziel.freierName,
+        am: new Date().toISOString(), von: ctx.session.username
+      });
+      fcVerlaufNotiz(camp, {
+        was: "eingetragen", von: ctx.session.username,
+        wen: ziel.freierName || ziel.username, datum: tag.datum, jobName: job.name
+      });
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcAustragen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const ziel = fcZielPerson(ctx, body);
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const tag = (camp.tage || []).find((t) => t.datum === fcDatum(body.datum));
+      if (!tag) throw new FcFehler("Diesen Camp-Tag gibt es nicht.", 404);
+      const job = (tag.jobs || []).find((j) => j.id === capStr(body.jobId, 80));
+      if (!job) throw new FcFehler("Diese Aufgabe gibt es nicht (mehr).", 404);
+
+      const i = (job.besetzung || []).findIndex((b) =>
+        (ziel.username && b.username === ziel.username) ||
+        (ziel.freierName && String(b.freierName || "").toLowerCase() === ziel.freierName.toLowerCase()));
+      if (i < 0) throw new FcFehler("Diese Person steht auf dieser Aufgabe nicht.", 404);
+
+      job.besetzung.splice(i, 1);
+      fcVerlaufNotiz(camp, {
+        was: "ausgetragen", von: ctx.session.username,
+        wen: ziel.freierName || ziel.username, datum: tag.datum, jobName: job.name
+      });
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Job-Katalog ----------
+
+async function handleFcKatalogSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeAdmin(ctx);
+    const eingang = Array.isArray(body.jobKatalog) ? body.jobKatalog : [];
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      doc.jobKatalog = eingang.slice(0, FC_MAX_JOBS)
+        .map((j) => ({
+          id: capStr(j.id, 80) || crypto.randomUUID(),
+          name: capStr(j.name, 80).trim(),
+          beschreibung: capStr(j.beschreibung, 200).trim(),
+          anzahl: fcZahl(j.anzahl, 1, FC_MAX_ANZAHL) || 1,
+          von: fcZeit(j.von), bis: fcZeit(j.bis)
+        }))
+        .filter((j) => j.name);
+      // ⚠️ Der Katalog ist eine VORLAGE. Diese Aenderung fasst bestehende Camps
+      // nicht an -- die tragen ihre eigene Kopie.
+      return { anzahl: doc.jobKatalog.length };
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Anmeldungen ----------
+
+async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const roh = body.anmeldung || {};
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const a = (camp.anmeldungen || []).find((x) => x.id === capStr(roh.id, 80));
+      if (!a) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+
+      if (roh.bezahlt !== undefined) {
+        const neu = roh.bezahlt === true;
+        if (neu !== !!a.bezahlt) {
+          a.bezahlt = neu;
+          a.bezahltAm = neu ? fcHeuteBerlin() : "";
+          a.bezahltVon = neu ? ctx.session.username : "";
+          fcVerlaufNotiz(camp, { was: neu ? "bezahlt" : "bezahlt-zurueck", von: ctx.session.username, wen: fcKindName(a) });
+        }
+      }
+      if (roh.notiz !== undefined) a.notiz = capStr(roh.notiz, 600);
+
+      // Korrektur einzelner Felder durch die Verwaltung (Tippfehler im Namen).
+      // Nur bekannte, am Camp eingeschaltete Felder -- gleiche Regel wie beim
+      // Eltern-Weg, nur ohne Pflichtpruefung: eine bestehende Anmeldung soll
+      // nicht daran scheitern, dass ein Feld nachtraeglich Pflicht wurde.
+      if (roh.felder && typeof roh.felder === "object") {
+        Object.keys(roh.felder).forEach((id) => {
+          const def = FC_FELDER[id];
+          if (!def) return;
+          if (!def.fest && (camp.felder || {})[id] === "aus") return;
+          a[id] = def.typ === "haken"
+            ? roh.felder[id] === true
+            : capStr(String(roh.felder[id] === null || roh.felder[id] === undefined ? "" : roh.felder[id]), def.max || 200).trim();
+        });
+      }
+
+      // Die Verwaltung hat die Aenderung der Eltern gesehen, indem sie die
+      // Anmeldung geoeffnet und gespeichert hat.
+      a.elternAenderung = "";
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcNachruecken(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+
+    let mailDaten = null;
+    await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const a = (camp.anmeldungen || []).find((x) => x.id === capStr(body.anmeldungId, 80));
+      if (!a) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+      if (a.status !== "warteliste") throw new FcFehler("Diese Anmeldung steht nicht auf der Warteliste.", 409);
+      // ⚠️ Serverseitig geprueft, nicht nur im Client: zwischen dem Zeichnen des
+      // Knopfes und dem Klick kann jemand anders nachgerueckt sein.
+      if (fcFrei(camp) <= 0) throw new FcFehler("Es ist gerade kein Platz frei.", 409);
+
+      a.status = "angemeldet";
+      a.geaendertAm = new Date().toISOString();
+      fcVerlaufNotiz(camp, { was: "nachgerueckt", von: ctx.session.username, wen: fcKindName(a) });
+      mailDaten = { camp: JSON.parse(JSON.stringify(camp)), anmeldung: JSON.parse(JSON.stringify(a)), einstellungen: doc.einstellungen };
+      return {};
+    });
+
+    // ⚠️ Das Nachruecken steht, auch wenn die Mail klemmt. Eine Zusage
+    // zurueckzudrehen, nur weil Brevo nicht antwortet, waere der schlechtere
+    // Tausch -- die Verwaltung sieht `sent: false` und kann selbst Bescheid geben.
+    let sent = false;
+    if (mailDaten) {
+      try {
+        sent = await fcZusageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen);
+      } catch (_) { sent = false; }
+    }
+    void execCtx;
+    return json({ ok: true, sent }, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcAbsagen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const a = (camp.anmeldungen || []).find((x) => x.id === capStr(body.anmeldungId, 80));
+      if (!a) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+      if (a.status === "abgesagt") return { schonAbgesagt: true };
+
+      a.status = "abgesagt";
+      a.absageGrund = capStr(body.grund, 300).trim();
+      a.geaendertAm = new Date().toISOString();
+      a.elternAenderung = "";
+      fcVerlaufNotiz(camp, { was: "abgesagt", von: ctx.session.username, wen: fcKindName(a), quelle: "verwaltung" });
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcAnmeldungLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeAdmin(ctx);
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      const i = (camp.anmeldungen || []).findIndex((x) => x.id === capStr(body.anmeldungId, 80));
+      if (i < 0) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+      const name = fcKindName(camp.anmeldungen[i]);
+      camp.anmeldungen.splice(i, 1);
+      // ⚠️ Der Verlauf haelt fest, DASS geloescht wurde -- ohne die Daten selbst.
+      // Sonst waere die Loeschung aus dem Verlauf wieder rekonstruierbar.
+      fcVerlaufNotiz(camp, { was: "anmeldung-geloescht", von: ctx.session.username, wen: name });
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleFcGesehen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+    const ids = Array.isArray(body.anmeldungIds) ? body.anmeldungIds.map((x) => capStr(x, 80)) : [];
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      let n = 0;
+      (camp.anmeldungen || []).forEach((a) => {
+        if (ids.includes(a.id) && a.elternAenderung) { a.elternAenderung = ""; n++; }
+      });
+      return { vermerkt: n };
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Einstellungen ----------
+
+async function handleFcEinstellungenSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeAdmin(ctx);
+    const roh = body.einstellungen || {};
+    const iban = capStr(roh.iban, 40).replace(/\s+/g, "").toUpperCase();
+    if (iban && !/^[A-Z]{2}[0-9A-Z]{13,32}$/.test(iban)) throw new FcFehler("Die IBAN sieht nicht richtig aus.", 400);
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      doc.einstellungen = {
+        iban,
+        bic: capStr(roh.bic, 20).trim().toUpperCase(),
+        kontoinhaber: capStr(roh.kontoinhaber, 120).trim(),
+        bank: capStr(roh.bank, 80).trim(),
+        kontaktName: capStr(roh.kontaktName, 120).trim(),
+        kontaktEmail: capStr(roh.kontaktEmail, 160).trim(),
+        startErinnerung: roh.startErinnerung !== false,
+        startErinnerungTage: fcZahl(roh.startErinnerungTage, 1, 60) || 3,
+        zahlErinnerung: roh.zahlErinnerung !== false,
+        zahlErinnerungTage: fcZahl(roh.zahlErinnerungTage, 1, 120) || 14,
+        aufraeumenNachMonaten: fcZahl(roh.aufraeumenNachMonaten, 1, 60) || 6
+      };
+      return {};
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Aufraeumen ----------
+
+// Loescht die personenbezogenen Angaben aller Anmeldungen eines abgeschlossenen
+// Camps und behaelt nur die Zahlen.
+//
+// ⚠️ Nicht umkehrbar. Deshalb drei Bedingungen: Administrieren-Recht, Status
+// "abgeschlossen", und die Frist muss abgelaufen sein. Die App fragt zusaetzlich
+// nach -- aber verlassen kann man sich nur auf die Pruefung hier.
+async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeAdmin(ctx);
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
+      if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
+      if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist bereits aufgeräumt.", 409);
+      if (camp.status !== "abgeschlossen") throw new FcFehler("Aufräumen geht erst, wenn das Camp abgeschlossen ist.", 409);
+      if (!fcAufraeumFaellig(camp, doc.einstellungen)) {
+        throw new FcFehler("Die Aufbewahrungsfrist für dieses Camp läuft noch.", 409);
+      }
+
+      const vorher = (camp.anmeldungen || []).length;
+      // Was bleibt: die reinen Zahlen fuer die Statistik. Was geht: jeder Bezug
+      // zu einem Menschen -- Namen, Anschrift, Kontakt, Gesundheit, Notiz und
+      // der Aendern-Token.
+      camp.anmeldungen = (camp.anmeldungen || []).map((a) => ({
+        id: a.id,
+        nummer: a.nummer,
+        status: a.status,
+        bezahlt: !!a.bezahlt,
+        // Nur das Geburtsjahr, nicht das Datum: fuer "welche Jahrgaenge waren da"
+        // reicht es, und allein ist es niemandem zuzuordnen.
+        jahrgang: String(a.geburtsdatum || "").slice(0, 4),
+        erstelltAm: a.erstelltAm
+      }));
+      camp.aufgeraeumtAm = new Date().toISOString();
+      fcVerlaufNotiz(camp, { was: "aufgeraeumt", von: ctx.session.username, anzahl: vorher });
+      return { geloescht: vorher };
+    });
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ============================================================
+//  Mails an die Eltern
+// ============================================================
+//
+// ⚠️ Fehlt BREVO_API_KEY, ist der Versand ein stiller No-Op (false), kein Fehler:
+// die Anmeldung ist der wichtige Teil und darf nicht daran scheitern, dass der
+// Mailschluessel fehlt. Die Verwaltung sieht die Anmeldung in ihrer Liste und
+// kann von Hand nachfassen.
+
+const FC_MAIL_FUSS = `
+Mit sportlichen Grüßen
+1. SC 1911 e.V. Heilbad Heiligenstadt
+Nachwuchsbereich`;
+
+async function fcMailSenden(env, empfaenger, betreff, text) {
+  if (!env.BREVO_API_KEY) return false;
+  const to = String(empfaenger || "").trim();
+  if (!to || !to.includes("@")) return false;
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: to }],
+        subject: betreff,
+        textContent: text
+      })
+    });
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Der Block mit den Zahlungsangaben. Steht in mehreren Mails und darf ueberall
+// gleich aussehen -- eine zweite Fassung liefe frueher oder spaeter auseinander.
+function fcZahlungsBlock(camp, a, einst) {
+  if (!einst.iban) {
+    return `Der Beitrag beträgt ${fcEuro(camp.preis)}.
+Die Kontoverbindung schicken wir dir gesondert zu.`;
+  }
+  return `Bitte überweise den Beitrag${camp.vonDatum ? " bis zum " + fcDatumDe(camp.vonDatum) : ""} auf dieses Konto:
+
+  Betrag            ${fcEuro(camp.preis)}
+  Empfänger         ${einst.kontoinhaber || "1. SC 1911 e.V. Heilbad Heiligenstadt"}
+  IBAN              ${fcIbanLesbar(einst.iban)}${einst.bic ? "\n  BIC               " + einst.bic : ""}
+  Verwendungszweck  ${fcVerwendungszweck(camp, a)}
+
+Bitte gib den Verwendungszweck genau so an — sonst lässt sich die Zahlung nicht
+zuordnen.`;
+}
+
+function fcKontaktBlock(einst) {
+  if (!einst.kontaktEmail && !einst.kontaktName) return "";
+  return `\n\nBei Fragen wende dich an ${einst.kontaktName || "den Nachwuchsbereich"}${einst.kontaktEmail ? " (" + einst.kontaktEmail + ")" : ""}.`;
+}
+
+function fcCampBlock(camp) {
+  return `  Camp     ${camp.name}
+  Wann     ${fcDatumDe(camp.vonDatum)}${camp.bisDatum && camp.bisDatum !== camp.vonDatum ? " bis " + fcDatumDe(camp.bisDatum) : ""}
+  Täglich  ${camp.taeglichVon || "?"} bis ${camp.taeglichBis || "?"} Uhr
+  Wo       ${camp.ort || "wird noch bekannt gegeben"}`;
+}
+
+function fcAendernBlock(a) {
+  return `Etwas geändert oder doch verhindert? Über diesen Link kommst du jederzeit
+an die Anmeldung — dort kannst du die Angaben ändern oder absagen:
+
+  ${FC_APP_URL}meine-anmeldung.html?a=${encodeURIComponent(a.token)}
+
+Bitte gib den Link nicht weiter — wer ihn hat, sieht die Anmeldung.`;
+}
+
+async function fcBestaetigungMail(env, camp, a, einst) {
+  const wartend = a.status === "warteliste";
+  const text = wartend
+    ? `Hallo ${a.elternName || ""},
+
+danke für die Anmeldung von ${fcKindName(a)} zu unserem Fußballcamp.
+
+${fcCampBlock(camp)}
+
+Das Camp ist im Moment ausgebucht. ${fcKindName(a)} steht deshalb auf der
+Warteliste. Sagt jemand ab, rücken wir nach und melden uns sofort bei dir.
+
+BITTE ÜBERWEISE JETZT NOCH NICHTS. Der Beitrag wird erst fällig, wenn wir dir
+einen festen Platz zusagen konnten.
+
+${fcAendernBlock(a)}${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil über unsere Vereinsseite eine
+Anmeldung zum Fußballcamp abgeschickt wurde.`
+    : `Hallo ${a.elternName || ""},
+
+${fcKindName(a)} ist zum Fußballcamp angemeldet. Wir freuen uns!
+
+${fcCampBlock(camp)}
+
+${fcZahlungsBlock(camp, a, einst)}
+
+${fcAendernBlock(a)}${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil über unsere Vereinsseite eine
+Anmeldung zum Fußballcamp abgeschickt wurde.`;
+
+  return fcMailSenden(env, a.elternEmail,
+    wartend ? `Warteliste: ${camp.name}` : `Anmeldung bestätigt: ${camp.name}`, text);
+}
+
+async function fcZusageMail(env, camp, a, einst) {
+  const text = `Hallo ${a.elternName || ""},
+
+gute Nachricht: es ist ein Platz frei geworden. ${fcKindName(a)} ist damit fest
+zum Fußballcamp angemeldet.
+
+${fcCampBlock(camp)}
+
+${fcZahlungsBlock(camp, a, einst)}
+
+${fcAendernBlock(a)}${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil dein Kind auf der Warteliste
+dieses Camps stand.`;
+
+  return fcMailSenden(env, a.elternEmail, `Ein Platz ist frei: ${camp.name}`, text);
+}
+
+async function fcStartMail(env, camp, a, einst) {
+  const text = `Hallo ${a.elternName || ""},
+
+in wenigen Tagen geht es los — ${fcKindName(a)} ist beim Fußballcamp dabei.
+
+${fcCampBlock(camp)}
+
+Bitte denkt an Sportsachen, Fußballschuhe, Schienbeinschoner, eine Trinkflasche
+und wettergemäße Kleidung.${a.bezahlt ? "" : "\n\nDer Beitrag ist bei uns übrigens noch nicht eingegangen. Falls die Überweisung\nschon unterwegs ist, ist alles gut — sonst wäre jetzt ein guter Zeitpunkt."}
+
+${fcAendernBlock(a)}${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil dein Kind zu diesem Camp
+angemeldet ist.`;
+
+  return fcMailSenden(env, a.elternEmail, `Bald geht es los: ${camp.name}`, text);
+}
+
+async function fcZahlMail(env, camp, a, einst) {
+  const text = `Hallo ${a.elternName || ""},
+
+für die Anmeldung von ${fcKindName(a)} zum Fußballcamp ist bei uns noch kein
+Beitrag eingegangen.
+
+${fcZahlungsBlock(camp, a, einst)}
+
+Falls die Überweisung schon unterwegs ist oder sich unsere Nachrichten gekreuzt
+haben, betrachte diese Mail bitte als gegenstandslos.
+
+${fcAendernBlock(a)}${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
+uns noch offen steht.`;
+
+  return fcMailSenden(env, a.elternEmail, `Beitrag noch offen: ${camp.name}`, text);
+}
+
+// ============================================================
+//  Erinnerungen
+// ============================================================
+
+// Beide Erinnerungen teilen sich diese Funktion -- der naechtliche Lauf und der
+// Knopf "Jetzt auslösen" in der Verwaltung. Dadurch laesst sich der Automatiklauf
+// gegenpruefen, ohne bis zum naechsten Morgen zu warten.
+//
+// ⚠️ `startErinnertAm` / `zahlErinnertAm` verhindern, dass dieselbe Familie die
+// gleiche Mail zweimal bekommt. Der Vermerk wird gesetzt, BEVOR die Mail rausgeht:
+// lieber eine Erinnerung verpassen als sie jede Nacht neu verschicken.
+async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
+  const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+  const einst = doc.einstellungen || fcEinstellungenLeer();
+  const heute = fcHeuteBerlin();
+
+  const faellig = [];
+
+  doc.camps.forEach((camp) => {
+    if (nurCampId && camp.id !== nurCampId) return;
+    if (camp.aufgeraeumtAm) return;
+    if (camp.status === "entwurf" || camp.status === "abgeschlossen") return;
+
+    (camp.anmeldungen || []).forEach((a) => {
+      if (a.status !== "angemeldet" || !a.elternEmail) return;
+
+      if (art === "start") {
+        if (!einst.startErinnerung) return;
+        if (a.startErinnertAm) return;
+        // Das Fenster ist eine SPANNE, kein Stichtag: laeuft der Cron einen Tag
+        // nicht, faellt die Erinnerung sonst lautlos aus.
+        const ab = fcTagPlus(einst.startErinnerungTage || 3);
+        if (!camp.vonDatum || camp.vonDatum > ab || camp.vonDatum < heute) return;
+        faellig.push({ camp, a, feld: "startErinnertAm" });
+        return;
+      }
+
+      if (art === "zahlung") {
+        if (!einst.zahlErinnerung) return;
+        if (a.bezahlt || a.zahlErinnertAm) return;
+        if (!camp.preis) return;
+        // Erst erinnern, wenn seit der Anmeldung genug Zeit vergangen ist.
+        const seit = a.erstelltAm ? String(a.erstelltAm).slice(0, 10) : "";
+        if (!seit) return;
+        const grenze = new Date(seit + "T12:00:00");
+        grenze.setDate(grenze.getDate() + (einst.zahlErinnerungTage || 14));
+        if (grenze.toLocaleDateString("sv-SE") > heute) return;
+        faellig.push({ camp, a, feld: "zahlErinnertAm" });
+      }
+    });
+  });
+
+  if (!faellig.length) return { gesendet: 0, gefunden: 0 };
+
+  // Erst den Vermerk setzen (ein Schreibvorgang fuer alle), dann verschicken.
+  const jetzt = new Date().toISOString();
+  await fcMutiere(authHeader, (d) => {
+    faellig.forEach((f) => {
+      const camp = d.camps.find((c) => c.id === f.camp.id);
+      if (!camp) return;
+      const a = (camp.anmeldungen || []).find((x) => x.id === f.a.id);
+      if (a) a[f.feld] = jetzt;
+    });
+    d.lauf = { zuletztAm: jetzt, ergebnis: `${art}: ${faellig.length} Erinnerungen` };
+    return {};
+  });
+
+  let gesendet = 0;
+  for (const f of faellig) {
+    const ok = art === "start"
+      ? await fcStartMail(env, f.camp, f.a, einst)
+      : await fcZahlMail(env, f.camp, f.a, einst);
+    if (ok) gesendet++;
+  }
+
+  return { gesendet, gefunden: faellig.length };
+}
+
+async function handleFcErinnern(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeAdmin(ctx);
+    const art = String(body.art || "");
+    if (!["start", "zahlung"].includes(art)) throw new FcFehler("Unbekannte Art der Erinnerung.", 400);
+    const ergebnis = await fcErinnerungslauf(env, authHeader, art, capStr(body.campId, 80) || "");
+    void execCtx;
+    return json(Object.assign({ ok: true }, ergebnis), 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Haengt sich an den BESTEHENDEN naechtlichen Lauf, statt einen weiteren
+// Cron-Trigger zu verlangen: ein neuer Trigger muesste von Hand im
+// Cloudflare-Dashboard angelegt werden und waere genau die Art Schritt, die beim
+// naechsten Deploy vergessen wird (gleiche Ueberlegung wie beim Busplan).
+async function fcNaechtlicherLauf(env, authHeader) {
+  try {
+    await fcErinnerungslauf(env, authHeader, "start", "");
+  } catch (_) { /* die Zahlungserinnerung soll trotzdem laufen */ }
+  try {
+    await fcErinnerungslauf(env, authHeader, "zahlung", "");
+  } catch (_) { /* still */ }
 }
