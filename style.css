@@ -2118,7 +2118,10 @@ main { flex: 1; min-width: 0; }
 /* Rechte Nav-Gruppe (Einstellungen/Verwaltung + Info). Das margin haengt
    am Wrapper, damit die Gruppe rechts bleibt, auch wenn einzelne Buttons
    fuer Nicht-Admins ausgeblendet sind. */
-nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
+/* flex-wrap, weil die Gruppe sonst als ein Stueck ueber den rechten Rand
+   hinauslaeuft: bei 375px bleiben neben dem linken Reiter nur ~319px, und
+   vier Reiter brauchen mehr. Ohne den Umbruch ist der letzte nicht antippbar. */
+nav .nav-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: inherit; }
 
 /* ---------- Handy: Formularfelder mindestens 16px ----------
    iOS Safari zoomt beim Antippen eines Feldes unter 16px automatisch in die
