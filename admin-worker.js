@@ -18202,11 +18202,12 @@ const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "alle
 // ueber `fussballcamp-load` und legt ihn ins Formularfeld -- eine zweite Fassung
 // im Client liefe unweigerlich auseinander, und niemand wuesste, welche gilt.
 //
-// Fassung: Michael Apel (Nachwuchsbereich), 2026-08-21. Wortlaut unveraendert.
+// Fassung: Michael Apel (Nachwuchsbereich), Stand August 2026, vollstaendig
+// (18 Punkte). Wortlaut unveraendert uebernommen.
 // ⚠️ Der Vereinsname lautet hier "1. SC 1911 Heiligenstadt e.V." und weicht damit
 // von der uebrigen App ("1. SC 1911 e.V. Heilbad Heiligenstadt") ab. Bewusst NICHT
 // angeglichen: an einem fremden Vertragstext wird nichts eigenmaechtig geaendert.
-const FC_AGB_STAND_VORGABE = "vorgabe-2026-08-21";
+const FC_AGB_STAND_VORGABE = "vorgabe-august-2026";
 const FC_AGB_VORGABE = `Allgemeine Teilnahmebedingungen für Fußballcamps des 1. SC 1911 Heiligenstadt e.V.
 
 1. Veranstalter und Geltungsbereich
@@ -18264,7 +18265,139 @@ Kann ein Kind wegen Erkrankung, Verletzung oder aus anderen persönlichen Gründ
 
 In begründeten Ausnahmefällen kann der 1. SC 1911 Heiligenstadt e.V. eine individuelle Kulanzregelung treffen. Ein Rechtsanspruch hierauf besteht nicht.
 
-Diese Teilnahmebedingungen werden derzeit ergänzt. Die vorstehenden Punkte 1 bis 5 gelten in der hier abgedruckten Fassung. Für alles Weitere — insbesondere Fragen zu Aufsicht, Haftung und zur Absage eines Camps durch den Verein — wende dich bitte an den Verein; die Kontaktdaten stehen in der Anmeldebestätigung.`;
+Erkrankt oder verletzt sich ein Kind während des Camps oder ist eine weitere Teilnahme aus gesundheitlichen Gründen nicht möglich, werden die bei der Anmeldung angegebenen Kontaktpersonen informiert.
+
+6. Gesundheitliche Voraussetzungen
+
+Mit der Anmeldung bestätigen die Erziehungsberechtigten, dass das Kind aus ihrer Sicht gesundheitlich in der Lage ist, an den vorgesehenen sportlichen Aktivitäten teilzunehmen.
+
+Gesundheitliche Besonderheiten, Allergien, Unverträglichkeiten oder sonstige Umstände, die für eine sichere Betreuung des Kindes während des Camps erforderlich sind, müssen dem Veranstalter rechtzeitig vor Campbeginn mitgeteilt werden.
+
+Bei akuten Erkrankungen, ansteckenden Krankheiten oder gesundheitlichen Beschwerden, durch die eine Teilnahme für das Kind oder andere Teilnehmende ein erhöhtes Risiko darstellen könnte, darf das Kind nicht am Camp teilnehmen.
+
+Der Verein ist berechtigt, bei erkennbaren gesundheitlichen Problemen die sportliche Teilnahme vorübergehend zu untersagen und die Erziehungsberechtigten bzw. hinterlegten Kontaktpersonen zu informieren.
+
+7. Medikamente und medizinische Versorgung
+
+Benötigt ein Kind während des Camps regelmäßig Medikamente oder bestehen medizinische Besonderheiten, müssen die Erziehungsberechtigten den Verein hierüber vor Beginn des Camps informieren.
+
+Die eigenständige Verabreichung von Medikamenten durch Trainer, Betreuer oder sonstige Helfer des Vereins erfolgt nur, wenn dies zuvor ausdrücklich abgestimmt wurde und organisatorisch verantwortbar ist.
+
+Bei Verletzungen oder medizinischen Notfällen ist der Verein berechtigt, die erforderlichen Erste-Hilfe-Maßnahmen einzuleiten und, soweit erforderlich, den Rettungsdienst zu verständigen.
+
+Die Erziehungsberechtigten bzw. die hinterlegten Notfallkontakte werden in einem solchen Fall schnellstmöglich informiert.
+
+8. Betreuung, Aufsicht und Weisungen
+
+Während der offiziell angegebenen Campzeiten werden die Teilnehmenden durch die vom Veranstalter eingesetzten Trainer und Betreuer beaufsichtigt.
+
+Die Aufsichtspflicht beginnt mit der ordnungsgemäßen Übergabe bzw. Anmeldung des Kindes am vereinbarten Treffpunkt und endet mit dem Ende der jeweiligen Betreuungszeit beziehungsweise der vereinbarten Abholung.
+
+Den Anweisungen der Trainer und Betreuer ist insbesondere dann Folge zu leisten, wenn diese der Sicherheit, dem geordneten Ablauf oder dem respektvollen Umgang innerhalb der Gruppe dienen.
+
+Die Erziehungsberechtigten sind dafür verantwortlich, ihre Kinder rechtzeitig zu den angegebenen Zeiten zu bringen und abzuholen, soweit keine andere Regelung vereinbart wurde.
+
+9. Verhalten während des Camps
+
+Fairness, gegenseitiger Respekt und ein angemessenes Verhalten gegenüber Mitspielern, Trainern, Betreuern und weiteren Beteiligten gehören zu den Grundvoraussetzungen für die Teilnahme.
+
+Bei erheblichen oder wiederholten Verstößen gegen Anweisungen, bei aggressivem Verhalten, Mobbing, Gewalt oder einer erheblichen Gefährdung anderer Personen kann ein Kind nach vorheriger Ermahnung von einzelnen Programmpunkten oder – bei schwerwiegenden Fällen – von der weiteren Teilnahme ausgeschlossen werden.
+
+Soweit es die Situation zulässt, werden zuvor die Erziehungsberechtigten kontaktiert.
+
+Bei einem berechtigten Ausschluss aus Gründen, die der Teilnehmer zu vertreten hat, besteht grundsätzlich kein Anspruch auf Erstattung des Teilnehmerbeitrages. Dem Erziehungsberechtigten bleibt der Nachweis vorbehalten, dass dem Verein hierdurch Aufwendungen erspart wurden oder kein entsprechender Schaden entstanden ist.
+
+10. Programm und organisatorische Änderungen
+
+Der 1. SC 1911 Heiligenstadt e.V. ist berechtigt, den vorgesehenen Ablauf des Camps anzupassen, wenn dies aus organisatorischen, sportlichen oder sicherheitsrelevanten Gründen erforderlich ist.
+
+Hierzu zählen insbesondere Änderungen aufgrund der Witterung, der Platzverhältnisse, kurzfristiger Ausfälle von Trainern oder anderer nicht vorhersehbarer Umstände.
+
+Der grundsätzliche Charakter des Fußballcamps und die wesentlichen vereinbarten Leistungen sollen dabei erhalten bleiben.
+
+Ein Anspruch auf die Durchführung einzelner Übungen, Trainingseinheiten, Spielformen oder sonstiger Programmpunkte besteht nicht.
+
+11. Wetter und außergewöhnliche Umstände
+
+Das Fußballcamp findet grundsätzlich auch bei wechselhaften Wetterbedingungen statt, soweit eine sichere Durchführung möglich ist.
+
+Bei extremer Hitze, Gewitter, Unwetter, Unbespielbarkeit der Sportanlage oder anderen Umständen, die eine sichere Durchführung einzelner Programmpunkte verhindern, können Trainingseinheiten zeitlich verschoben, verändert, verkürzt oder durch geeignete alternative Angebote ersetzt werden.
+
+Muss das gesamte Camp aufgrund von Umständen abgesagt werden, die der 1. SC 1911 Heiligenstadt e.V. nicht zu vertreten hat, informiert der Verein die Teilnehmenden schnellstmöglich über das weitere Vorgehen.
+
+Gesetzliche Erstattungsansprüche bleiben unberührt.
+
+12. Absage durch den Veranstalter
+
+Der 1. SC 1911 Heiligenstadt e.V. behält sich vor, ein Fußballcamp aus wichtigem Grund abzusagen.
+
+Ein wichtiger Grund kann insbesondere vorliegen, wenn die für die Durchführung erforderliche Mindestteilnehmerzahl nicht erreicht wird, die Sportanlage nicht zur Verfügung steht oder außergewöhnliche Umstände eine sichere oder ordnungsgemäße Durchführung unmöglich machen.
+
+Wird das gesamte Camp durch den Veranstalter abgesagt und keine geeignete Ersatzveranstaltung angeboten bzw. angenommen, werden bereits gezahlte Teilnehmerbeiträge grundsätzlich zurückerstattet.
+
+Weitergehende Ansprüche bestehen nur nach Maßgabe der gesetzlichen Vorschriften.
+
+13. Persönliche Gegenstände und Wertsachen
+
+Die Teilnehmenden sind selbst dafür verantwortlich, ihre persönlichen Gegenstände und Sportausrüstung sorgfältig aufzubewahren.
+
+Wertgegenstände, größere Bargeldbeträge oder andere nicht benötigte wertvolle Gegenstände sollten nicht zum Camp mitgebracht werden.
+
+Für Verlust, Beschädigung oder Diebstahl persönlicher Gegenstände haftet der 1. SC 1911 Heiligenstadt e.V. nur nach Maßgabe der gesetzlichen Vorschriften und der nachfolgenden Haftungsregelungen.
+
+14. Versicherung
+
+Die Erziehungsberechtigten sind dafür verantwortlich, dass für das teilnehmende Kind ein ausreichender Krankenversicherungsschutz besteht.
+
+Soweit für Teilnehmende Versicherungsschutz über den Verein, einen Sportverband oder eine Sportversicherung besteht, richtet sich dessen Umfang ausschließlich nach den jeweils geltenden Versicherungsbedingungen.
+
+Der Verein empfiehlt darüber hinaus einen ausreichenden privaten Haftpflichtversicherungsschutz.
+
+15. Haftung
+
+Der 1. SC 1911 Heiligenstadt e.V. haftet uneingeschränkt für Schäden aus der Verletzung des Lebens, des Körpers oder der Gesundheit, soweit diese auf einer vorsätzlichen oder fahrlässigen Pflichtverletzung des Vereins, seiner gesetzlichen Vertreter oder Erfüllungsgehilfen beruhen.
+
+Für sonstige Schäden haftet der Verein uneingeschränkt bei Vorsatz und grober Fahrlässigkeit.
+
+Bei leicht fahrlässiger Verletzung wesentlicher Vertragspflichten haftet der Verein für den vertragstypischen und vorhersehbaren Schaden. Wesentliche Vertragspflichten sind solche Pflichten, deren Erfüllung die ordnungsgemäße Durchführung des Camps überhaupt erst ermöglicht und auf deren Einhaltung die Teilnehmenden regelmäßig vertrauen dürfen.
+
+Im Übrigen ist die Haftung für leicht fahrlässig verursachte Sach- und Vermögensschäden ausgeschlossen, soweit gesetzlich zulässig.
+
+Die gesetzlichen Haftungsvorschriften bleiben im Übrigen unberührt.
+
+16. Foto- und Videoaufnahmen
+
+Im Rahmen des Fußballcamps können durch den 1. SC 1911 Heiligenstadt e.V. oder durch vom Verein beauftragte Personen Foto- und Videoaufnahmen der Teilnehmenden erstellt werden.
+
+Mit der Anmeldung zum Fußballcamp und der Zustimmung zu diesen Teilnahmebedingungen erklärt sich der Erziehungsberechtigte damit einverstanden, dass während des Camps Foto- und Videoaufnahmen des angemeldeten Kindes angefertigt werden dürfen.
+
+Die Aufnahmen dürfen vom 1. SC 1911 Heiligenstadt e.V. für die Berichterstattung und Öffentlichkeitsarbeit rund um das Fußballcamp und den Verein verwendet werden. Dies umfasst insbesondere die Veröffentlichung auf der Internetseite des Vereins sowie auf den offiziellen Social-Media-Kanälen des 1. SC 1911 Heiligenstadt e.V.
+
+Die Aufnahmen können insbesondere Trainingssituationen, Spiele, Gruppen- und Mannschaftsfotos, Siegerehrungen sowie weitere Eindrücke aus dem Campgeschehen zeigen.
+
+Die Aufnahmen werden ausschließlich im Zusammenhang mit der Vereins-, Nachwuchs- und Öffentlichkeitsarbeit des 1. SC 1911 Heiligenstadt e.V. verwendet und nicht zu vereinsfremden Werbezwecken an Dritte weitergegeben.
+
+Eine erteilte Einwilligung kann jederzeit mit Wirkung für die Zukunft gegenüber dem 1. SC 1911 Heiligenstadt e.V. widerrufen werden. Die Rechtmäßigkeit der bis zum Zeitpunkt des Widerrufs erfolgten Verarbeitung bleibt hiervon unberührt.
+
+17. Datenschutz
+
+Personenbezogene Daten der Teilnehmenden und ihrer Erziehungsberechtigten werden ausschließlich im Rahmen der geltenden Datenschutzbestimmungen verarbeitet.
+
+Die im Zuge der Anmeldung erhobenen Daten werden insbesondere zur Organisation und Durchführung des Fußballcamps, zur Kommunikation mit den Erziehungsberechtigten, zur Zahlungsabwicklung sowie – soweit erforderlich – zur Gewährleistung einer sicheren Betreuung verarbeitet.
+
+Weitere Informationen über Art, Umfang, Rechtsgrundlagen, Speicherdauer und Rechte der betroffenen Personen ergeben sich aus den Datenschutzinformationen des 1. SC 1911 Heiligenstadt e.V.
+
+Soweit für bestimmte Datenverarbeitungen eine Einwilligung erforderlich ist, wird diese gesondert eingeholt.
+
+18. Schlussbestimmungen
+
+Es gilt das Recht der Bundesrepublik Deutschland.
+
+Sollten einzelne Regelungen dieser Teilnahmebedingungen ganz oder teilweise unwirksam sein oder werden, bleibt die Wirksamkeit der übrigen Regelungen davon unberührt. An die Stelle der unwirksamen Regelung treten die gesetzlichen Vorschriften.
+
+Zwingende gesetzliche Rechte der Teilnehmenden und ihrer Erziehungsberechtigten bleiben von diesen Teilnahmebedingungen unberührt.
+
+Stand: August 2026`;
 
 const FC_AGB_MAX = 30000;
 
@@ -18725,7 +18858,7 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
 
     // ⚠️ Die Teilnahmebedingungen kommen NUR hier mit, nicht in
     // `fcOeffentlicheSicht` -- die speist auch das Fenster auf der Homepage, und
-    // dort waeren 5 KB Rechtstext bei jedem Seitenaufruf der Vereinsseite reine
+    // dort waeren 14 KB Rechtstext bei jedem Seitenaufruf der Vereinsseite reine
     // Last fuer etwas, das niemand sieht.
     const einst = doc.einstellungen || {};
     return json({
