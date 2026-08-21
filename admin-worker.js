@@ -18495,6 +18495,11 @@ const FC_LESE_MAX_PRO_STUNDE = 300;
 const FC_SCHREIB_ZAEHLER = new Map();
 const FC_SCHREIB_MAX_PRO_STUNDE = 20;
 
+// Pause, bevor derselben Anmeldung ein zweites Mal der Aendern-Link
+// nachgeschickt wird. Ohne sie waere das wiederholte Absenden des
+// Anmeldeformulars ein Weg, eine Familie mit Mails zuzudecken.
+const FC_LINK_ERNEUT_PAUSE_MS = 10 * 60 * 1000;
+
 class FcFehler extends Error {
   constructor(message, status) {
     super(message);
@@ -18977,15 +18982,33 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
       const felder = fcFelderPruefen(camp, body.daten);
 
       // Dieselbe Familie meldet dasselbe Kind zweimal an -- meistens, weil der
-      // erste Versuch im Netz haengen blieb. Statt einer zweiten Anmeldung die
-      // bestehende zurueckgeben; der Platz bleibt derselbe.
+      // erste Versuch im Netz haengen blieb. Dann entsteht KEINE zweite
+      // Anmeldung; der Platz bleibt derselbe.
       const doppelt = (camp.anmeldungen || []).find((a) =>
         a.status !== "abgesagt" &&
         String(a.kindVorname || "").toLowerCase() === String(felder.kindVorname || "").toLowerCase() &&
         String(a.kindNachname || "").toLowerCase() === String(felder.kindNachname || "").toLowerCase() &&
         String(a.elternEmail || "").toLowerCase() === String(felder.elternEmail || "").toLowerCase());
       if (doppelt) {
-        ergebnis = { camp, anmeldung: doppelt, schonDa: true };
+        // ⚠️ Bis 21.08.2026 ging die vorhandene Anmeldung hier ZURUECK an den
+        // Absender -- samt ihrem Aendern-Token. Wer den Camp-Token kannte (der ist
+        // oeffentlich), dazu Vor- und Nachnamen des Kindes und die Mailadresse der
+        // Eltern, bekam damit Lese- UND Schreibzugriff auf eine fremde Anmeldung:
+        // Allergien, Medikamente, Krankheiten, Anschrift. Alles drei ist im Verein
+        // bekannt, keins davon ist ein Geheimnis.
+        //
+        // Jetzt geht der Link NUR noch per Mail an die HINTERLEGTE Adresse. Der
+        // echte Fall bleibt bedient (erster Versuch blieb im Netz haengen, Eltern
+        // senden noch einmal ab), der Abgriff nicht: wer die Anfrage stellt,
+        // erfaehrt nichts, was er nicht schon wusste.
+        //
+        // ⚠️ Der Merker wird gesetzt, BEVOR die Mail rausgeht -- ein Fehlschlag
+        // beim Versand darf die Bremse nicht oeffnen. Lieber eine Mail zu wenig als
+        // ein Postfach voll.
+        const zuletzt = Date.parse(doppelt.linkErneutAm || "") || 0;
+        const nachschicken = Date.now() - zuletzt > FC_LINK_ERNEUT_PAUSE_MS;
+        if (nachschicken) doppelt.linkErneutAm = new Date().toISOString();
+        ergebnis = { camp, anmeldung: doppelt, schonDa: true, nachschicken };
         return {};
       }
 
@@ -19019,7 +19042,7 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
 
     if (!ergebnis) throw new FcFehler("Die Anmeldung konnte nicht gespeichert werden.", 502);
 
-    const { camp, anmeldung, schonDa } = ergebnis;
+    const { camp, anmeldung, schonDa, nachschicken } = ergebnis;
     const doc2 = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
     const einst = doc2.einstellungen || fcEinstellungenLeer();
 
@@ -19034,11 +19057,27 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
     // LAUTLOS nie eine Bestaetigung an, samt Zahldaten und Aenderungslink. Der
     // Preis fuer den Rueckweg sind ein paar hundert Millisekunden Wartezeit beim
     // Absenden; das ist der bessere Tausch.
-    if (!schonDa) {
-      const versand = fcBestaetigungMail(env, camp, anmeldung, einst).catch(() => false);
-      if (execCtx && execCtx.waitUntil) execCtx.waitUntil(versand);
-      else await versand;
+    // ⚠️ LAG SCHON EINE ANMELDUNG VOR, endet die Antwort HIER -- und sie
+    // enthaelt genau ein Feld. Kein Aendern-Token, kein Kindername, keine
+    // Mailadresse, kein Status, kein Wartelistenplatz, keine Zahldaten. Wer
+    // hier etwas ergaenzt, gibt es an jeden heraus, der Name und Mailadresse
+    // einer Familie raten kann.
+    //
+    // Was sich NICHT verbergen laesst: dass ueberhaupt schon eine Anmeldung
+    // besteht. Das ist der Preis dafuer, dass die Eltern eine verstaendliche
+    // Antwort bekommen -- und es ist der ungefaehrlichere Teil.
+    if (schonDa) {
+      if (nachschicken) {
+        const erneut = fcBestaetigungMail(env, camp, anmeldung, einst).catch(() => false);
+        if (execCtx && execCtx.waitUntil) execCtx.waitUntil(erneut);
+        else await erneut;
+      }
+      return json({ ok: true, schonDa: true }, 200, corsHeaders);
     }
+
+    const versand = fcBestaetigungMail(env, camp, anmeldung, einst).catch(() => false);
+    if (execCtx && execCtx.waitUntil) execCtx.waitUntil(versand);
+    else await versand;
 
     const wartePlatz = anmeldung.status === "warteliste"
       ? fcWartende(camp).findIndex((a) => a.id === anmeldung.id) + 1 : 0;
@@ -19046,7 +19085,7 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
     return json({
       ok: true,
       status: anmeldung.status,
-      schonDa,
+      schonDa: false,
       kind: fcKindName(anmeldung),
       email: anmeldung.elternEmail || "",
       wartePlatz,
