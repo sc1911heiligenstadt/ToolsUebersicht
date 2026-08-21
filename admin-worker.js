@@ -18172,7 +18172,12 @@ const FC_FELDER = {
   vegetarisch:      { typ: "haken" },
   essenHinweis:     { typ: "text",  max: 300, sensibel: true },
   einwilligungFoto: { typ: "haken" },
-  alleinNachHause:  { typ: "haken" },
+  // ⚠️ KEIN Haken, sondern eine Ja/Nein-Frage. Bei einem Haken waeren "nein" und
+  // "nicht angekreuzt" derselbe gespeicherte Wert (false) -- am letzten Camptag
+  // sieht man dem nicht an, ob die Eltern verneint oder es uebersehen haben. Und
+  // als PFLICHTfeld waere ein Haken nur erfuellbar, indem man JEDEM Kind erlaubt
+  // allein zu gehen. Werte: "ja" | "nein" | "" (noch nicht beantwortet).
+  alleinNachHause:  { typ: "janein" },
   abholberechtigt:  { typ: "text",  max: 300 },
   bemerkung:        { typ: "text",  max: 800 }
 };
@@ -18185,6 +18190,164 @@ const FC_FELDER = {
 // alles Dinge, die am Sportplatz niemand braucht. Wer hier etwas ergaenzt, gibt
 // es an einen deutlich groesseren Kreis heraus.
 const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "allergien", "medikamente", "krankheiten", "essenHinweis", "elternTelefon", "alleinNachHause"];
+
+// ---------- Teilnahmebedingungen ----------
+//
+// Der wirksame Text steht in `einstellungen.agbText`. Ist der leer, gilt DIESE
+// Vorgabe. Zweck der Bauform: der Rechtstext steht an genau EINER Stelle im Code
+// und laesst sich trotzdem ohne Deploy pflegen, sobald jemand ihn einmal in der
+// Verwaltung speichert.
+//
+// ⚠️ NICHT zusaetzlich in config.js kopieren. Die App laedt den wirksamen Text
+// ueber `fussballcamp-load` und legt ihn ins Formularfeld -- eine zweite Fassung
+// im Client liefe unweigerlich auseinander, und niemand wuesste, welche gilt.
+//
+// Fassung: Michael Apel (Nachwuchsbereich), 2026-08-21. Wortlaut unveraendert.
+// ⚠️ Der Vereinsname lautet hier "1. SC 1911 Heiligenstadt e.V." und weicht damit
+// von der uebrigen App ("1. SC 1911 e.V. Heilbad Heiligenstadt") ab. Bewusst NICHT
+// angeglichen: an einem fremden Vertragstext wird nichts eigenmaechtig geaendert.
+const FC_AGB_STAND_VORGABE = "vorgabe-2026-08-21";
+const FC_AGB_VORGABE = `Allgemeine Teilnahmebedingungen für Fußballcamps des 1. SC 1911 Heiligenstadt e.V.
+
+1. Veranstalter und Geltungsbereich
+
+Veranstalter des jeweiligen Fußballcamps ist, soweit in der Ausschreibung nicht ausdrücklich ein anderer Veranstalter genannt wird, der 1. SC 1911 Heiligenstadt e.V.
+
+Diese Teilnahmebedingungen gelten für die Anmeldung und Teilnahme an den vom Verein angebotenen Fußballcamps, Ferienangeboten und vergleichbaren Nachwuchsveranstaltungen.
+
+Mit der Anmeldung eines minderjährigen Kindes erkennt der anmeldende Erziehungsberechtigte diese Teilnahmebedingungen an.
+
+2. Anmeldung und Vertragsschluss
+
+Die Anmeldung zum Fußballcamp erfolgt über das vom 1. SC 1911 Heiligenstadt e.V. bereitgestellte Anmeldeverfahren.
+
+Die Darstellung eines Fußballcamps auf der Internetseite stellt zunächst ein Angebot zur Anmeldung dar. Ein Anspruch auf Teilnahme entsteht erst mit der Bestätigung der Anmeldung durch den Verein.
+
+Die Plätze werden grundsätzlich nach Verfügbarkeit vergeben. Ist die maximale Teilnehmerzahl erreicht, kann der Verein weitere Anmeldungen ablehnen oder eine Warteliste führen.
+
+Die Anmeldung eines minderjährigen Teilnehmers darf nur durch einen Erziehungsberechtigten oder eine hierzu berechtigte Person erfolgen.
+
+Der anmeldende Erziehungsberechtigte bestätigt, zur Anmeldung des Kindes berechtigt zu sein.
+
+3. Teilnehmerbeitrag und Zahlung
+
+Die Höhe des Teilnehmerbeitrages ergibt sich aus der jeweiligen Ausschreibung des Fußballcamps.
+
+Nach erfolgter Anmeldung und Bestätigung ist der Teilnehmerbeitrag innerhalb der in der Anmeldebestätigung genannten Zahlungsfrist auf das dort angegebene Konto zu überweisen.
+
+Sofern keine andere Zahlungsfrist angegeben wird, ist der vollständige Teilnehmerbeitrag innerhalb von 14 Tagen nach Erhalt der Anmeldebestätigung fällig.
+
+Erfolgt die Anmeldung weniger als 14 Tage vor Beginn des Camps, ist der Teilnehmerbeitrag spätestens vor Beginn des Camps vollständig zu entrichten.
+
+Bei nicht fristgerechter Zahlung ist der 1. SC 1911 Heiligenstadt e.V. nach vorheriger Zahlungsaufforderung und angemessener Fristsetzung berechtigt, den reservierten Teilnehmerplatz anderweitig zu vergeben.
+
+4. Rücktritt und Stornierung durch Teilnehmende
+
+Eine bereits bestätigte Teilnahme kann vor Beginn des Fußballcamps storniert werden. Die Stornierung muss in Textform, beispielsweise per E-Mail, gegenüber dem 1. SC 1911 Heiligenstadt e.V. erklärt werden.
+
+Für die Berechnung der Frist ist der Eingang der Stornierung beim Verein maßgeblich.
+
+Bei einer Stornierung gelten folgende Erstattungsregelungen:
+
+* bis einschließlich 28 Tage vor Campbeginn: 100 % des Teilnehmerbeitrages
+* 27 bis einschließlich 7 Tage vor Campbeginn: 50 % des Teilnehmerbeitrages
+* ab 6 Tage vor Campbeginn: keine Erstattung
+* bei Nichterscheinen ohne vorherige Stornierung: keine Erstattung
+
+Dem anmeldenden Erziehungsberechtigten bleibt ausdrücklich der Nachweis gestattet, dass dem Verein durch die Stornierung kein oder ein wesentlich geringerer Schaden entstanden ist. In diesem Fall wird die Erstattung entsprechend angepasst.
+
+Kann der frei gewordene Platz kurzfristig vollständig anderweitig vergeben werden, kann der Verein unabhängig von den genannten Fristen auf die Einbehaltung des Teilnehmerbeitrages ganz oder teilweise verzichten.
+
+5. Erkrankung oder vorzeitiger Abbruch
+
+Kann ein Kind wegen Erkrankung, Verletzung oder aus anderen persönlichen Gründen nicht oder nur teilweise am Fußballcamp teilnehmen, besteht grundsätzlich kein Anspruch auf anteilige Erstattung für bereits in Anspruch genommene oder kurzfristig nicht mehr anderweitig vergebbare Leistungen.
+
+In begründeten Ausnahmefällen kann der 1. SC 1911 Heiligenstadt e.V. eine individuelle Kulanzregelung treffen. Ein Rechtsanspruch hierauf besteht nicht.
+
+Diese Teilnahmebedingungen werden derzeit ergänzt. Die vorstehenden Punkte 1 bis 5 gelten in der hier abgedruckten Fassung. Für alles Weitere — insbesondere Fragen zu Aufsicht, Haftung und zur Absage eines Camps durch den Verein — wende dich bitte an den Verein; die Kontaktdaten stehen in der Anmeldebestätigung.`;
+
+const FC_AGB_MAX = 30000;
+
+// Der WIRKSAME Text und seine Fassungskennung. Ueberall benutzen, wo die
+// Bedingungen gebraucht werden -- nie `einst.agbText` direkt lesen, sonst faellt
+// die Vorgabe still weg, solange niemand in der Verwaltung gespeichert hat.
+function fcAgbText(einst) {
+  const eigen = einst && typeof einst.agbText === "string" ? einst.agbText.trim() : "";
+  return eigen || FC_AGB_VORGABE;
+}
+
+// Kennung der gerade geltenden Fassung. Wird bei jeder Anmeldung mitgespeichert,
+// damit spaeter nachweisbar bleibt, WELCHEM Text jemand zugestimmt hat.
+function fcAgbStand(einst) {
+  const eigen = einst && typeof einst.agbText === "string" ? einst.agbText.trim() : "";
+  if (!eigen) return FC_AGB_STAND_VORGABE;
+  return (einst && einst.agbStand) || FC_AGB_STAND_VORGABE;
+}
+
+// Die Fassung zu einer Kennung -- aus dem Archiv, aus der Vorgabe oder, wenn es
+// die aktuelle ist, aus den Einstellungen.
+//
+// ⚠️ Liefert `null`, wenn die Fassung nirgends mehr liegt. Dann zeigt die App
+// ehrlich gar keinen Text statt eines falschen; siehe fcAgbFuerAnmeldung.
+// ⚠️ Reihenfolge: geltende Fassung, dann ARCHIV, erst danach die Vorgabe aus dem
+// Code. Das Archiv haelt den Wortlaut fest, dem wirklich zugestimmt wurde -- die
+// Codekonstante kann sich seither geaendert haben und ist nur der Rueckfall fuer
+// den Fall, dass die Fassung nie archiviert wurde.
+function fcAgbTextZuStand(doc, stand) {
+  if (!stand) return null;
+  const einst = doc.einstellungen || {};
+  if (stand === fcAgbStand(einst)) return fcAgbText(einst);
+  const archiv = Array.isArray(doc.agbArchiv) ? doc.agbArchiv : [];
+  const treffer = archiv.find((a) => a && a.stand === stand);
+  if (treffer) return treffer.text;
+  if (stand === FC_AGB_STAND_VORGABE) return FC_AGB_VORGABE;
+  return null;
+}
+
+// Was die Eltern unter "Meine Anmeldung" zu den Bedingungen sehen -- und ob sie
+// erneut zustimmen muessen.
+//
+// Zwei Faelle, und der Unterschied ist der ganze Punkt:
+//   unveraendert  -> die Fassung, der SIE zugestimmt haben, zum Nachlesen.
+//   geaendert     -> die NEUE Fassung, und ohne frische Zustimmung wird nicht
+//                    gespeichert.
+//
+// ⚠️ Eine Anmeldung ohne `agbStand` (angelegt, bevor es die Bedingungen gab)
+// gilt als "geaendert" -- sie hat nie zugestimmt. Wer das auf "unveraendert"
+// stellt, erzeugt einen Nachweis, den es nicht gibt.
+function fcAgbFuerAnmeldung(doc, anmeldung) {
+  const jetzt = fcAgbStand(doc.einstellungen || {});
+  const meiner = anmeldung && anmeldung.agbStand ? String(anmeldung.agbStand) : "";
+  const geaendert = meiner !== jetzt;
+
+  // Bei "geaendert" zaehlt die neue Fassung, sonst die eigene. Findet sich die
+  // eigene nicht mehr (aus dem Archiv geraeumt), lieber gar keinen Text zeigen
+  // als den falschen -- der Zeitpunkt der Zustimmung bleibt trotzdem stehen.
+  const text = geaendert ? fcAgbText(doc.einstellungen || {}) : fcAgbTextZuStand(doc, meiner);
+
+  return {
+    text: text || "",
+    stand: geaendert ? jetzt : meiner,
+    geaendert,
+    akzeptiertAm: (anmeldung && anmeldung.agbAm) || ""
+  };
+}
+
+// Wirft archivierte Fassungen weg, auf die sich keine Anmeldung mehr beruft.
+//
+// Der Auslöser dafür ist in aller Regel das Aufraeumen eines Camps: sind die
+// Anmeldungen weg, braucht auch der Text, dem sie zugestimmt haben, nicht mehr
+// aufgehoben zu werden. Laeuft bei jeder Aenderung der Bedingungen und nach jedem
+// Aufraeumlauf mit -- eine eigene Aktion dafuer waere ein Knopf, den nie jemand
+// druecken wuerde.
+function fcAgbArchivAufraeumen(doc) {
+  if (!Array.isArray(doc.agbArchiv) || !doc.agbArchiv.length) return;
+  const gebraucht = new Set();
+  doc.camps.forEach((c) => (c.anmeldungen || []).forEach((a) => {
+    if (a && a.agbStand) gebraucht.add(String(a.agbStand));
+  }));
+  doc.agbArchiv = doc.agbArchiv.filter((a) => a && gebraucht.has(String(a.stand)));
+}
 
 // Zaehlwerke gegen Ausprobieren. Getrennt nach lesen und schreiben, weil das
 // grosse Kontingent sonst auch das Anlegen von 300 Anmeldungen je Stunde
@@ -18241,6 +18404,8 @@ function fcEinstellungenLeer() {
   return {
     iban: "", bic: "", kontoinhaber: "1. SC 1911 e.V. Heilbad Heiligenstadt", bank: "",
     kontaktName: "", kontaktEmail: "",
+    // Leer heisst "nimm FC_AGB_VORGABE". Siehe fcAgbText.
+    agbText: "", agbStand: "",
     startErinnerung: true, startErinnerungTage: 3,
     zahlErinnerung: true, zahlErinnerungTage: 14,
     aufraeumenNachMonaten: 6
@@ -18248,7 +18413,7 @@ function fcEinstellungenLeer() {
 }
 
 function fcLeer() {
-  return { version: 1, jobKatalog: [], camps: [], einstellungen: fcEinstellungenLeer(), lauf: null };
+  return { version: 1, jobKatalog: [], camps: [], einstellungen: fcEinstellungenLeer(), agbArchiv: [], lauf: null };
 }
 
 function fcNormalisiere(doc) {
@@ -18256,6 +18421,7 @@ function fcNormalisiere(doc) {
   if (!Array.isArray(doc.jobKatalog)) doc.jobKatalog = [];
   if (!Array.isArray(doc.camps)) doc.camps = [];
   if (!doc.einstellungen || typeof doc.einstellungen !== "object") doc.einstellungen = fcEinstellungenLeer();
+  if (!Array.isArray(doc.agbArchiv)) doc.agbArchiv = [];
   doc.camps.forEach((c) => {
     if (!Array.isArray(c.tage)) c.tage = [];
     if (!Array.isArray(c.anmeldungen)) c.anmeldungen = [];
@@ -18557,12 +18723,19 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
     const nimmt = fcNimmtAn(camp);
     if (!nimmt.ok) return json({ error: nimmt.grund }, 410, corsHeaders);
 
+    // ⚠️ Die Teilnahmebedingungen kommen NUR hier mit, nicht in
+    // `fcOeffentlicheSicht` -- die speist auch das Fenster auf der Homepage, und
+    // dort waeren 5 KB Rechtstext bei jedem Seitenaufruf der Vereinsseite reine
+    // Last fuer etwas, das niemand sieht.
+    const einst = doc.einstellungen || {};
     return json({
       camp: Object.assign(fcOeffentlicheSicht(camp), {
         beschreibung: camp.beschreibung || "",
         preisHinweis: camp.preisHinweis || "",
         zusatzfrage: camp.zusatzfrage || "",
-        felder: camp.felder || {}
+        felder: camp.felder || {},
+        agbText: fcAgbText(einst),
+        agbStand: fcAgbStand(einst)
       })
     }, 200, corsHeaders);
   } catch (e) {
@@ -18594,6 +18767,20 @@ function fcFelderPruefen(camp, roh) {
       return;
     }
 
+    // Ja/Nein. Als Pflicht muss EINE der beiden Antworten dastehen -- anders als
+    // beim Haken ist "nein" hier eine vollwertige Antwort und keine Verweigerung.
+    //
+    // ⚠️ `true` aus der Haken-Zeit wird zu "ja". `false` wird NICHT zu "nein",
+    // sondern bleibt leer: ein nicht gesetzter Haken war nie eine belastbare
+    // Verneinung. Bei einem Pflichtfeld fragt die App dann noch einmal nach --
+    // genau richtig, denn beantwortet wurde es nie.
+    if (def.typ === "janein") {
+      const v = wert === true ? "ja" : (wert === "ja" || wert === "nein" ? wert : "");
+      sauber[id] = v;
+      if (stufe === "pflicht" && !v) fehlend.push(id);
+      return;
+    }
+
     let v = capStr(wert === null || wert === undefined ? "" : String(wert), def.max || 200).trim();
     if (def.typ === "datum") v = fcDatum(v);
     if (def.typ === "email" && v && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v)) {
@@ -18621,12 +18808,30 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
       throw new FcFehler("Ohne das Einverständnis mit der Datenschutz-Information ist keine Anmeldung möglich.", 400);
     }
 
+    // ⚠️ Zweiter, eigenstaendiger Haken -- bewusst NICHT mit dem Datenschutz
+    // zusammengelegt. Es sind zwei verschiedene Erklaerungen: die eine ist eine
+    // Einwilligung nach Art. 9 DSGVO, die andere die Anerkennung von
+    // Vertragsbedingungen. Ein gemeinsames Haekchen liesse beide gemeinsam
+    // fallen, wenn eine davon je angefochten wird.
+    if (body.agb !== true) {
+      throw new FcFehler("Ohne die Anerkennung der Teilnahmebedingungen ist keine Anmeldung möglich.", 400);
+    }
+
     let ergebnis = null;
     await fcMutiere(authHeader, (doc) => {
       const camp = fcCampZuToken(doc, body.token);
       if (!camp || camp.status === "entwurf") throw new FcFehler("Dieses Camp gibt es nicht.", 404);
       const nimmt = fcNimmtAn(camp);
       if (!nimmt.ok) throw new FcFehler(nimmt.grund, 410);
+
+      // ⚠️ Der mitgeschickte Stand muss der GERADE GELTENDE sein. Wird der Text
+      // geaendert, waehrend jemand das Formular offen hat, waere die gespeicherte
+      // Zustimmung sonst ein Nachweis fuer einen Text, den diese Eltern nie zu
+      // sehen bekamen. Lieber einmal neu laden lassen.
+      const agbStandJetzt = fcAgbStand(doc.einstellungen || {});
+      if (String(body.agbStand || "") !== agbStandJetzt) {
+        throw new FcFehler("Die Teilnahmebedingungen wurden gerade geändert. Bitte lade die Seite neu, lies sie noch einmal und sende die Anmeldung erneut ab.", 409);
+      }
       if ((camp.anmeldungen || []).length >= FC_MAX_ANMELDUNGEN) {
         throw new FcFehler("Für dieses Camp liegen bereits sehr viele Anmeldungen vor. Bitte wende dich direkt an den Verein.", 409);
       }
@@ -18659,6 +18864,10 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
         notiz: "",
         zusatzantwort: camp.zusatzfrage ? capStr(body.daten && body.daten.zusatzantwort, 200) : "",
         datenschutzAm: new Date().toISOString(),
+        // Der Nachweis: WANN zugestimmt wurde und WELCHER Fassung. Ueber den Stand
+        // laesst sich der damalige Wortlaut aus dem Archiv zurueckholen.
+        agbAm: new Date().toISOString(),
+        agbStand: agbStandJetzt,
         erstelltAm: new Date().toISOString(),
         geaendertAm: "", elternAenderung: "", absageGrund: "",
         startErinnertAm: "", zahlErinnertAm: ""
@@ -18751,6 +18960,7 @@ async function handleFcMeineInfo(request, body, env, authHeader, corsHeaders) {
         zusatzfrage: camp.zusatzfrage || "", felder: camp.felder || {}
       },
       anmeldung: sicht,
+      agb: fcAgbFuerAnmeldung(doc, anmeldung),
       zahlung: {
         betrag: camp.preis || 0, iban: einst.iban || "", bic: einst.bic || "",
         kontoinhaber: einst.kontoinhaber || "",
@@ -18773,6 +18983,20 @@ async function handleFcMeineSpeichern(request, body, env, authHeader, corsHeader
       const { camp, anmeldung } = treffer;
       if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist abgeschlossen.", 410);
       if (anmeldung.status === "abgesagt") throw new FcFehler("Diese Anmeldung ist abgesagt und lässt sich nicht mehr ändern.", 410);
+
+      // ⚠️ Haben sich die Bedingungen seit dieser Anmeldung geaendert, wird ohne
+      // frische Zustimmung nicht gespeichert. Sonst waere das Aendern der
+      // Telefonnummer der Weg, an einer Neufassung vorbeizukommen -- und die
+      // Anmeldung truege danach eine Zustimmung zu einem Text, den diese Eltern
+      // nie gesehen haben.
+      const agbJetzt = fcAgbStand(doc.einstellungen || {});
+      if (String(anmeldung.agbStand || "") !== agbJetzt) {
+        if (body.agb !== true || String(body.agbStand || "") !== agbJetzt) {
+          throw new FcFehler("Die Teilnahmebedingungen haben sich geändert. Bitte lies sie durch und bestätige sie, dann lässt sich speichern.", 409);
+        }
+        anmeldung.agbStand = agbJetzt;
+        anmeldung.agbAm = new Date().toISOString();
+      }
 
       const felder = fcFelderPruefen(camp, body.daten);
       Object.assign(anmeldung, felder);
@@ -18881,11 +19105,26 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
     return sicht;
   });
 
+  // ⚠️ `agbText` geht als der WIRKSAME Text raus, nicht als das gespeicherte
+  // Feld: das ist leer, solange die Vorgabe gilt. Ein leeres Textfeld im
+  // Verwaltungs-Tab sähe aus, als gäbe es gar keine Bedingungen -- und wer dann
+  // etwas hineinschriebe, ersetzte den geltenden Text unbemerkt.
+  const einstFuerAdmin = ctx.canAdmin
+    ? Object.assign({}, einst, {
+        agbText: fcAgbText(einst),
+        agbStand: fcAgbStand(einst),
+        agbIstVorgabe: !(einst.agbText && String(einst.agbText).trim())
+      })
+    : null;
+
   return json({
     camps,
     jobKatalog: doc.jobKatalog,
     // Die Kontoverbindung geht nur an die Verwaltung.
-    einstellungen: ctx.canAdmin ? einst : null,
+    einstellungen: einstFuerAdmin,
+    // Frühere Fassungen der Bedingungen -- der Nachweis, welchem Wortlaut eine
+    // ältere Anmeldung zugestimmt hat. Enthält nur noch benutzte Fassungen.
+    agbArchiv: ctx.canAdmin ? doc.agbArchiv : null,
     lauf: ctx.canAdmin ? (doc.lauf || null) : null,
     namen,
     me: {
@@ -19459,6 +19698,17 @@ async function handleFcEinstellungenSpeichern(request, body, env, authHeader, co
     if (iban && !/^[A-Z]{2}[0-9A-Z]{13,32}$/.test(iban)) throw new FcFehler("Die IBAN sieht nicht richtig aus.", 400);
 
     const antwort = await fcMutiere(authHeader, (doc) => {
+      const altText = fcAgbText(doc.einstellungen || {});
+      const altStand = fcAgbStand(doc.einstellungen || {});
+
+      // Ein Text, der zeichengleich der Vorgabe entspricht, wird als "leer"
+      // gespeichert -- dann gilt weiter FC_AGB_VORGABE und niemand hat sich
+      // versehentlich eine eingefrorene Kopie eingehandelt, nur weil er den
+      // Verwaltungs-Tab einmal gespeichert hat.
+      let agbText = capStr(roh.agbText, FC_AGB_MAX).trim();
+      if (agbText === FC_AGB_VORGABE.trim()) agbText = "";
+      const geaendert = agbText !== (doc.einstellungen && doc.einstellungen.agbText ? String(doc.einstellungen.agbText).trim() : "");
+
       doc.einstellungen = {
         iban,
         bic: capStr(roh.bic, 20).trim().toUpperCase(),
@@ -19466,12 +19716,35 @@ async function handleFcEinstellungenSpeichern(request, body, env, authHeader, co
         bank: capStr(roh.bank, 80).trim(),
         kontaktName: capStr(roh.kontaktName, 120).trim(),
         kontaktEmail: capStr(roh.kontaktEmail, 160).trim(),
+        agbText,
+        // Neue Kennung nur bei echter Aenderung -- sonst muessten alle Eltern bei
+        // jedem Speichern des Verwaltungs-Tabs erneut zustimmen, auch wenn nur
+        // die IBAN korrigiert wurde.
+        agbStand: geaendert ? new Date().toISOString() : ((doc.einstellungen && doc.einstellungen.agbStand) || ""),
         startErinnerung: roh.startErinnerung !== false,
         startErinnerungTage: fcZahl(roh.startErinnerungTage, 1, 60) || 3,
         zahlErinnerung: roh.zahlErinnerung !== false,
         zahlErinnerungTage: fcZahl(roh.zahlErinnerungTage, 1, 120) || 14,
         aufraeumenNachMonaten: fcZahl(roh.aufraeumenNachMonaten, 1, 60) || 6
       };
+
+      // ⚠️ Die bisherige Fassung wird archiviert, aber NUR wenn eine Anmeldung
+      // sich darauf beruft. Sonst wuechse die Datei mit jedem Tippfehler um 5 KB.
+      //
+      // ⚠️ Das gilt AUCH fuer die eingebaute Vorgabe. Naheliegend waere, sie
+      // auszunehmen ("steht ja im Code") -- aber dann zeigte jede Anmeldung mit
+      // dem Stand "vorgabe-…" den Text an, der SPAETER einmal im Code steht, und
+      // nicht den, dem diese Eltern zugestimmt haben. Der Nachweis gehoert in die
+      // Datei, nicht in eine Codezeile, die jemand fortschreibt.
+      if (geaendert) {
+        const nochInBenutzung = doc.camps.some((c) =>
+          (c.anmeldungen || []).some((a) => a && a.agbStand === altStand));
+        const schonDrin = doc.agbArchiv.some((a) => a && a.stand === altStand);
+        if (nochInBenutzung && !schonDrin) {
+          doc.agbArchiv.push({ stand: altStand, text: altText, abgeloestAm: new Date().toISOString() });
+        }
+      }
+      fcAgbArchivAufraeumen(doc);
       return {};
     });
     return json(antwort, 200, corsHeaders);
@@ -19518,6 +19791,9 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
       }));
       camp.aufgeraeumtAm = new Date().toISOString();
       fcVerlaufNotiz(camp, { was: "aufgeraeumt", von: ctx.session.username, anzahl: vorher });
+      // Beruft sich keine Anmeldung mehr auf eine archivierte Fassung der
+      // Bedingungen, wird auch sie nicht mehr gebraucht.
+      fcAgbArchivAufraeumen(doc);
       return { geloescht: vorher };
     });
     return json(antwort, 200, corsHeaders);
