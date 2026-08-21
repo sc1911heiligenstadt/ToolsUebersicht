@@ -18712,9 +18712,65 @@ function fcAufraeumFaellig(camp, einstellungen) {
   return ende.toLocaleDateString("sv-SE") <= fcHeuteBerlin();
 }
 
+// Arten von Verlaufseintraegen, die zu einer ANMELDUNG gehoeren -- also zu einem
+// Kind. Bei ihnen darf nie ein Name stehen, nur die laufende Nummer.
+//
+// ⚠️ Die Eintraege "eingetragen"/"ausgetragen" fehlen hier mit Absicht: dort ist
+// `wen` ein HELFER, also ein Erwachsener aus dem Verein. Der Verlauf ist fuer ihn
+// der Arbeitsnachweis, und das Loeschversprechen im Anmeldeformular gilt ihm
+// nicht. Wer diese Liste erweitert, loescht also den falschen Nachweis.
+const FC_VERLAUF_ANMELDE_ARTEN = new Set([
+  "angemeldet", "geaendert", "abgesagt", "bezahlt", "bezahlt-zurueck",
+  "nachgerueckt", "anmeldung-geloescht"
+]);
+
+// Ist ein Camp laengst vorbei, ohne dass es je jemand abgeschlossen hat?
+//
+// ⚠️ Das ist das Loch im Aufraeum-Hinweis, und es ist ein leises: fcAufraeumFaellig
+// verlangt den Status "abgeschlossen". Bleibt ein Camp auf "offen" oder
+// "geschlossen" stehen -- weil nach dem letzten Tag niemand mehr hineinschaut --,
+// wird das Aufraeumen nie faellig, der Hinweis erscheint nie, und Namen,
+// Anschriften und Gesundheitsangaben der Kinder bleiben unbefristet stehen.
+// Genau das versprechen wir den Eltern im Anmeldeformular anders.
+//
+// ⚠️ Loescht nichts. Das Aufraeumen bleibt ein Klick (Michel-Entscheidung) --
+// hier wird nur sichergestellt, dass der Klick ueberhaupt angeboten wird.
+function fcAbschlussFaellig(camp, einstellungen) {
+  if (camp.status === "entwurf" || camp.status === "abgeschlossen") return false;
+  if (camp.aufgeraeumtAm) return false;
+  // Ohne Anmeldungen steht nichts Personenbezogenes drin -- dann ist es eine
+  // Aufraeumarbeit, keine Datenschutzfrage, und der Hinweis waere nur Laerm.
+  if (!(camp.anmeldungen || []).length) return false;
+  const monate = Number((einstellungen || {}).aufraeumenNachMonaten) || 6;
+  const ende = camp.bisDatum ? new Date(camp.bisDatum + "T12:00:00") : null;
+  if (!ende || isNaN(ende.getTime())) return false;
+  ende.setMonth(ende.getMonth() + monate);
+  return ende.toLocaleDateString("sv-SE") <= fcHeuteBerlin();
+}
+
 function fcVerlaufNotiz(camp, eintrag) {
-  camp.verlauf.push(Object.assign({ am: new Date().toISOString() }, eintrag));
+  const e = Object.assign({ am: new Date().toISOString() }, eintrag);
+  // ⚠️ Letzte Sperre: ein Name zu einer Anmeldung kommt hier nicht durch, auch
+  // wenn eine spaetere Aenderung ihn wieder mitgibt. Der Verlauf wird nirgends
+  // angezeigt -- ein Name darin hat also keinen Nutzen, nur ein Risiko.
+  if (FC_VERLAUF_ANMELDE_ARTEN.has(String(e.was || ""))) delete e.wen;
+  camp.verlauf.push(e);
   if (camp.verlauf.length > FC_MAX_VERLAUF) camp.verlauf.splice(0, camp.verlauf.length - FC_MAX_VERLAUF);
+}
+
+// Nimmt die Kindernamen aus dem Verlauf eines Camps -- ohne die Eintraege selbst
+// zu verlieren. Laeuft beim Loeschen einer einzelnen Anmeldung und beim
+// Aufraeumen des ganzen Camps.
+//
+// ⚠️ Raeumt auch das weg, was eine FRUEHERE Fassung liegen gelassen hat. Bis zum
+// 2026-08-21 schrieb jeder dieser Eintraege den vollen Namen des Kindes mit, und
+// weder das Loeschen noch das Aufraeumen fasste ihn an. Wer das an einen eigenen
+// Knopf haengt, verlaesst sich darauf, dass jemand von diesen Zeilen weiss --
+// und genau das war der Fund.
+function fcVerlaufNamenRaeumen(camp) {
+  (camp.verlauf || []).forEach((e) => {
+    if (e && FC_VERLAUF_ANMELDE_ARTEN.has(String(e.was || ""))) delete e.wen;
+  });
 }
 
 // ---------- Camp-Tage aus dem Zeitraum erzeugen ----------
@@ -19035,7 +19091,7 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
       }, felder);
 
       camp.anmeldungen.push(neu);
-      fcVerlaufNotiz(camp, { was: "angemeldet", wen: fcKindName(neu), quelle: "eltern" });
+      fcVerlaufNotiz(camp, { was: "angemeldet", nr: neu.nummer || 0, quelle: "eltern" });
       ergebnis = { camp, anmeldung: neu, schonDa: false };
       return {};
     });
@@ -19182,7 +19238,7 @@ async function handleFcMeineSpeichern(request, body, env, authHeader, corsHeader
       // ⚠️ Die Markierung ist der ganze Meldeweg: es geht KEINE Mail an den
       // Verein (Michel-Entscheidung). Ohne sie bliebe eine Aenderung unbemerkt.
       anmeldung.elternAenderung = "geaendert";
-      fcVerlaufNotiz(camp, { was: "geaendert", wen: fcKindName(anmeldung), quelle: "eltern" });
+      fcVerlaufNotiz(camp, { was: "geaendert", nr: anmeldung.nummer || 0, quelle: "eltern" });
       return {};
     });
     return json(antwort, 200, corsHeaders);
@@ -19207,7 +19263,7 @@ async function handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders)
       anmeldung.absageGrund = "von den Eltern abgesagt";
       anmeldung.geaendertAm = new Date().toISOString();
       anmeldung.elternAenderung = "abgesagt";
-      fcVerlaufNotiz(camp, { was: "abgesagt", wen: fcKindName(anmeldung), quelle: "eltern" });
+      fcVerlaufNotiz(camp, { was: "abgesagt", nr: anmeldung.nummer || 0, quelle: "eltern" });
       // ⚠️ Der Platz wird frei, aber es rueckt NIEMAND automatisch nach
       // (Michel-Entscheidung): eine Zusage ist eine Zusage und soll ein bewusster
       // Klick der Verwaltung bleiben.
@@ -19266,7 +19322,10 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       // Damit der Client "Anmeldung öffnen" mit einer Warnung versehen kann,
       // ohne die IBAN selbst zu kennen.
       hatKonto: !!einst.iban,
-      aufraeumenFaellig: ctx.canAdmin ? fcAufraeumFaellig(c, einst) : false
+      aufraeumenFaellig: ctx.canAdmin ? fcAufraeumFaellig(c, einst) : false,
+      // Vorbei, aber nie abgeschlossen -- dann wird oben nie true. Siehe
+      // fcAbschlussFaellig.
+      abschlussFaellig: ctx.canAdmin ? fcAbschlussFaellig(c, einst) : false
     };
     if (ctx.canEdit) {
       const wartend = fcWartende(c);
@@ -19723,7 +19782,7 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
           a.bezahlt = neu;
           a.bezahltAm = neu ? fcHeuteBerlin() : "";
           a.bezahltVon = neu ? ctx.session.username : "";
-          fcVerlaufNotiz(camp, { was: neu ? "bezahlt" : "bezahlt-zurueck", von: ctx.session.username, wen: fcKindName(a) });
+          fcVerlaufNotiz(camp, { was: neu ? "bezahlt" : "bezahlt-zurueck", von: ctx.session.username, nr: a.nummer || 0 });
         }
       }
       if (roh.notiz !== undefined) a.notiz = capStr(roh.notiz, 600);
@@ -19773,7 +19832,7 @@ async function handleFcNachruecken(request, body, env, authHeader, corsHeaders, 
 
       a.status = "angemeldet";
       a.geaendertAm = new Date().toISOString();
-      fcVerlaufNotiz(camp, { was: "nachgerueckt", von: ctx.session.username, wen: fcKindName(a) });
+      fcVerlaufNotiz(camp, { was: "nachgerueckt", von: ctx.session.username, nr: a.nummer || 0 });
       mailDaten = { camp: JSON.parse(JSON.stringify(camp)), anmeldung: JSON.parse(JSON.stringify(a)), einstellungen: doc.einstellungen };
       return {};
     });
@@ -19810,7 +19869,7 @@ async function handleFcAbsagen(request, body, env, authHeader, corsHeaders) {
       a.absageGrund = capStr(body.grund, 300).trim();
       a.geaendertAm = new Date().toISOString();
       a.elternAenderung = "";
-      fcVerlaufNotiz(camp, { was: "abgesagt", von: ctx.session.username, wen: fcKindName(a), quelle: "verwaltung" });
+      fcVerlaufNotiz(camp, { was: "abgesagt", von: ctx.session.username, nr: a.nummer || 0, quelle: "verwaltung" });
       return {};
     });
     return json(antwort, 200, corsHeaders);
@@ -19829,11 +19888,18 @@ async function handleFcAnmeldungLoeschen(request, body, env, authHeader, corsHea
       if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
       const i = (camp.anmeldungen || []).findIndex((x) => x.id === capStr(body.anmeldungId, 80));
       if (i < 0) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
-      const name = fcKindName(camp.anmeldungen[i]);
+      const nummer = camp.anmeldungen[i].nummer || 0;
       camp.anmeldungen.splice(i, 1);
       // ⚠️ Der Verlauf haelt fest, DASS geloescht wurde -- ohne die Daten selbst.
-      // Sonst waere die Loeschung aus dem Verlauf wieder rekonstruierbar.
-      fcVerlaufNotiz(camp, { was: "anmeldung-geloescht", von: ctx.session.username, wen: name });
+      // Sonst waere die Loeschung aus dem Verlauf wieder rekonstruierbar. Deshalb
+      // nur die laufende Nummer, nie der Name des Kindes.
+      //
+      // ⚠️ Und im selben Zug die AELTEREN Eintraege dieser Anmeldung entschaerfen:
+      // bis zum 2026-08-21 stand in "angemeldet", "bezahlt", "abgesagt" usw. der
+      // Kindname. Ohne diesen Aufruf ueberlebte er die Loeschung -- die Loeschung
+      // muss allen Kopien folgen, nicht nur der Haupttabelle.
+      fcVerlaufNamenRaeumen(camp);
+      fcVerlaufNotiz(camp, { was: "anmeldung-geloescht", von: ctx.session.username, nr: nummer });
       return {};
     });
     return json(antwort, 200, corsHeaders);
@@ -19966,6 +20032,10 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
         jahrgang: String(a.geburtsdatum || "").slice(0, 4),
         erstelltAm: a.erstelltAm
       }));
+      // ⚠️ Der Verlauf ist die zweite Kopie derselben Kinder. Ohne diese Zeile
+      // stuenden die Namen nach dem Aufraeumen weiter in der Datei -- eine
+      // Loeschung, die nur die Haelfte erwischt.
+      fcVerlaufNamenRaeumen(camp);
       camp.aufgeraeumtAm = new Date().toISOString();
       fcVerlaufNotiz(camp, { was: "aufgeraeumt", von: ctx.session.username, anzahl: vorher });
       // Beruft sich keine Anmeldung mehr auf eine archivierte Fassung der
