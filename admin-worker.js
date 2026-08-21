@@ -9038,7 +9038,7 @@ async function handleSchulsportNachweisSenden(request, body, env, authHeader, co
     "können Sie dort statt einer Bestätigung eine Rückfrage stellen; wir melden uns\n" +
     "dann bei Ihnen. Sie müssen auf diese Mail nicht antworten.\n\n" +
     "Mit freundlichen Grüßen\n" +
-    "1. SC 1911 e.V. Heilbad Heiligenstadt\n" +
+    "1. SC 1911 Heiligenstadt e.V.\n" +
     "Leineberg 2, 37308 Heilbad Heiligenstadt\n" +
     "Telefon 03606 612206";
 
@@ -14443,7 +14443,7 @@ Börse, damit sich niemand mehr darauf meldet:
 Vielen Dank, dass du die Sachen weitergibst.
 
 Mit sportlichen Grüßen
-1. SC 1911 e.V. Heilbad Heiligenstadt
+1. SC 1911 Heiligenstadt e.V.
 Nachwuchsbereich
 
 --
@@ -18204,9 +18204,9 @@ const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "alle
 //
 // Fassung: Michael Apel (Nachwuchsbereich), Stand August 2026, vollstaendig
 // (18 Punkte). Wortlaut unveraendert uebernommen.
-// ⚠️ Der Vereinsname lautet hier "1. SC 1911 Heiligenstadt e.V." und weicht damit
-// von der uebrigen App ("1. SC 1911 e.V. Heilbad Heiligenstadt") ab. Bewusst NICHT
-// angeglichen: an einem fremden Vertragstext wird nichts eigenmaechtig geaendert.
+// ⚠️ Der Vereinsname lautet hier "1. SC 1911 Heiligenstadt e.V." -- das ist laut
+// Michel (2026-08-21) die richtige Schreibweise. Die App trug vorher ueberall
+// "1. SC 1911 e.V. Heilbad Heiligenstadt"; das war falsch und ist nachgezogen.
 const FC_AGB_STAND_VORGABE = "vorgabe-august-2026";
 const FC_AGB_VORGABE = `Allgemeine Teilnahmebedingungen für Fußballcamps des 1. SC 1911 Heiligenstadt e.V.
 
@@ -18535,7 +18535,7 @@ function fcVerlangeAdmin(ctx) {
 
 function fcEinstellungenLeer() {
   return {
-    iban: "", bic: "", kontoinhaber: "1. SC 1911 e.V. Heilbad Heiligenstadt", bank: "",
+    iban: "", bic: "", kontoinhaber: "1. SC 1911 Heiligenstadt e.V.", bank: "",
     kontaktName: "", kontaktEmail: "",
     // Leer heisst "nimm FC_AGB_VORGABE". Siehe fcAgbText.
     agbText: "", agbStand: "",
@@ -19946,7 +19946,7 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
 
 const FC_MAIL_FUSS = `
 Mit sportlichen Grüßen
-1. SC 1911 e.V. Heilbad Heiligenstadt
+1. SC 1911 Heiligenstadt e.V.
 Nachwuchsbereich`;
 
 async function fcMailSenden(env, empfaenger, betreff, text) {
@@ -19984,7 +19984,7 @@ Die Kontoverbindung schicken wir dir gesondert zu.`;
   return `Bitte überweise den Beitrag${camp.vonDatum ? " bis zum " + fcDatumDe(camp.vonDatum) : ""} auf dieses Konto:
 
   Betrag            ${fcEuro(camp.preis)}
-  Empfänger         ${einst.kontoinhaber || "1. SC 1911 e.V. Heilbad Heiligenstadt"}
+  Empfänger         ${einst.kontoinhaber || "1. SC 1911 Heiligenstadt e.V."}
   IBAN              ${fcIbanLesbar(einst.iban)}${einst.bic ? "\n  BIC               " + einst.bic : ""}
   Verwendungszweck  ${fcVerwendungszweck(camp, a)}
 
