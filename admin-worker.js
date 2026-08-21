@@ -18171,7 +18171,12 @@ const FC_FELDER = {
   krankenkasse:     { typ: "text",  max: 100, sensibel: true },
   vegetarisch:      { typ: "haken" },
   essenHinweis:     { typ: "text",  max: 300, sensibel: true },
-  einwilligungFoto: { typ: "haken" },
+  // ⚠️ Hier stand bis 2026-08-21 `einwilligungFoto: { typ: "haken" }`. Entfallen
+  // (Michel-Entscheidung): die Foto-Einwilligung regelt allein Punkt 16 der
+  // Teilnahmebedingungen, und die sind Pflicht. Solange das Feld hier fehlt, wird
+  // ein mitgeschicktes `einwilligungFoto` von fcFelderPruefen VERWORFEN -- auch
+  // wenn ein alter Client es noch sendet. Das ist gewollt: es soll nicht zwei
+  // Stellen geben, die dieselbe Frage unterschiedlich beantworten koennen.
   // ⚠️ KEIN Haken, sondern eine Ja/Nein-Frage. Bei einem Haken waeren "nein" und
   // "nicht angekreuzt" derselbe gespeicherte Wert (false) -- am letzten Camptag
   // sieht man dem nicht an, ob die Eltern verneint oder es uebersehen haben. Und
