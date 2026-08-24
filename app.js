@@ -7873,6 +7873,7 @@ function mannschaftKopie(t) {
     stufe: t.stufe || "sonstige",
     nummer: t.nummer || 0,
     archiviert: !!t.archiviert,
+    verborgen: !!t.verborgen,
     jahrgaenge: t.jahrgaenge || "",
     aliase: Array.isArray(t.aliase) ? t.aliase.slice() : [],
     trainer: (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {
@@ -7958,6 +7959,7 @@ function renderMannschaftenListe() {
       (t.lang && t.lang !== t.kurz ? ' <span class="muted">· ' + escapeHtml(t.lang) + "</span>" : "") +
       (t.liga ? ' <span class="muted">· ' + escapeHtml(t.liga) + "</span>" : "") +
       (t.archiviert ? ' <span class="muted">· archiviert</span>' : "") +
+      (t.verborgen ? ' <span class="muted">· nicht in Übersichten</span>' : "") +
       ' <span class="muted">· ' + t.trainer.length + (t.trainer.length === 1 ? " Person" : " Personen") + "</span>";
 
     return '' +
@@ -7992,6 +7994,13 @@ function renderMannschaftenListe() {
         '<div class="mannschaft-schalter">' +
           '<label><input type="checkbox" class="m-archiviert"' + (t.archiviert ? " checked" : "") + " /> " +
             "Archiviert (aufgelöst — bleibt für alte Daten stehen, wird nirgends mehr angeboten)</label>" +
+          // ⚠️ Positiv gefragt, negativ gespeichert (`verborgen` im Worker). Der
+          // Haken steht per Vorgabe, damit eine neue Mannschaft sichtbar ist.
+          // Das ist NICHT „Archiviert light": archivieren nimmt der Mannschaft
+          // auch die Trainer-Zuordnung, das hier nur den Platz im Aushang.
+          '<label><input type="checkbox" class="m-anzeigen"' + (t.verborgen ? "" : " checked") + " /> " +
+            "In Übersichten anzeigen (aus: bleibt in der Liste und behält ihre Trainer, " +
+            "erscheint aber nicht unter „Wer betreut welche Mannschaft“)</label>" +
         "</div>" +
         '<div class="mannschaft-personen">' +
           "<label>Wer betreut diese Mannschaft</label>" +
@@ -8032,6 +8041,7 @@ function mannschaftenAusDom() {
       personen.push({ username: name.value, rolle: (rolle && rolle.value) || "trainer" });
     });
     const archiviert = z.querySelector(".m-archiviert");
+    const anzeigen = z.querySelector(".m-anzeigen");
     neu.push({
       kurz: wert(".m-kurz"),
       lang: wert(".m-lang"),
@@ -8039,6 +8049,9 @@ function mannschaftenAusDom() {
       stufe: wert(".m-stufe") || "sonstige",
       nummer: parseInt(wert(".m-nummer"), 10) || 0,
       archiviert: !!(archiviert && archiviert.checked),
+      // Fehlt das Feld im DOM (alte Zeile), gilt „anzeigen" — nie verbergen,
+      // was niemand verborgen hat.
+      verborgen: !(anzeigen ? anzeigen.checked : true),
       jahrgaenge: wert(".m-jahrgaenge"),
       // ⚠️ Aus dem ENTWURF, nicht aus dem DOM: das Eingabefeld dafür ist seit
       // 2026-08-12 entfernt. Würde hier wie bisher `.m-aliase` gelesen, käme

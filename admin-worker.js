@@ -161,7 +161,8 @@
 //     Dieselbe Freigabe, nach Mannschaften sortiert: wer betreut welche Mannschaft, und wie ist er zu
 //     erreichen. Name und Rolle kommen aus mannschaften.json und stehen jedem Angemeldeten offen (siehe
 //     handleMannschaftenLoad); Telefon und E-Mail kommen aus Trainerdaten und nur bei Freigabe. Die
-//     Anschrift wird hier bewusst nicht ausgeliefert, auch wenn sie freigegeben ist.
+//     Anschrift wird hier bewusst nicht ausgeliefert, auch wenn sie freigegeben ist. Archivierte und als
+//     `verborgen` markierte Mannschaften bleiben draussen.
 //     Ohne `kontaktFreigabe.name === true` erscheint die Person überhaupt nicht.
 //   POST { action: "raumnutzung-kontakt-lookup", name } (Raumnutzung-Bearbeiter via resolveEditPermission)
 //     -> { treffer: {strasse, plz, ort, telefon, email} | null } — Kontaktdaten GENAU EINER namentlich
@@ -3321,7 +3322,9 @@ async function handleKontakteMannschaften(request, body, env, authHeader, corsHe
   // Archivierte Mannschaften bleiben draussen: sie sind aufgeloest und werden
   // laut ihrem eigenen Beschriftungstext "nirgends mehr angeboten".
   const teams = mannschaftenSortieren(mannschaftenSaisonTeams(mDoc, saison))
-    .filter(function (t) { return t && !t.archiviert; })
+    // Zwei verschiedene Gruende, nicht zu erscheinen: archiviert (aufgeloest) und
+    // verborgen (kein Aushang, aber die Mannschaft lebt und traegt ihre Trainer).
+    .filter(function (t) { return t && !t.archiviert && !t.verborgen; })
     .map(function (t) {
       const ab = mannschaftAbleitung(t.kurz);
       const stufe = ab ? ab.stufe : mannschaftStufe(t.stufe);
@@ -15745,6 +15748,21 @@ function mannschaftSaeubern(roh, bekannteNutzer) {
     nummer: ab ? ab.nummer
       : Math.max(0, Math.min(99, Math.round(Number(roh && roh.nummer) || 0))),
     archiviert: !!(roh && roh.archiviert),
+    // ⚠️ NEGATIV gespeichert, obwohl das Panel positiv fragt ("In Uebersichten
+    // anzeigen"). Grund ist die Richtung, in die ein FEHLENDES Feld fallen muss:
+    // jeder Bestandsdatensatz hat es nicht, und der soll weiter sichtbar sein.
+    // Ein positives `anzeigen` waere bei Altbestand undefined -> unsichtbar, und
+    // die halbe Liste verschwaende beim ersten Speichern (gleiche Ueberlegung wie
+    // bei kontaktFreigabe, nur mit umgekehrtem Vorzeichen: dort faellt das Fehlen
+    // bewusst in die geschlossene Richtung, hier in die offene).
+    //
+    // ⚠️ NICHT dasselbe wie `archiviert`. Archiviert heisst aufgeloest und faellt
+    // deshalb aus dem PROFIL-ABGLEICH -- wer eine archivierte Mannschaft betreut,
+    // verliert seine Zuordnung in nutzer.json und damit flottenweit Filter und
+    // Rechte. `verborgen` laesst die Zuordnung unberuehrt und wirkt nur auf die
+    // Uebersicht in E:\kontakte. Fuer Altbestand wie "U12-U15" ist genau das
+    // gefragt: kein Aushang, aber die Trainer haengen weiter daran.
+    verborgen: !!(roh && roh.verborgen),
     // Leer heisst: die Automatik rechnet (mannschaftJahrgaengeAuto). Bewusst
     // Freitext und keine zwei Jahreszahlen -- die Ausnahmen sind keine Paare
     // ("2020-2022" bei den Bambini, "jahrgangsuebergreifend" bei den Maedchen).
@@ -15861,6 +15879,7 @@ function mannschaftenAntwort(doc, usersDoc, saisonWunsch) {
       stufe: ab ? ab.stufe : mannschaftStufe(t.stufe),
       nummer: ab ? ab.nummer : (t.nummer || 0),
       archiviert: !!t.archiviert,
+      verborgen: !!t.verborgen,
       // Beides mitliefern: `jahrgaenge` ist der Handeintrag (meist leer) und
       // gehoert ins Eingabefeld, `jahrgaengeAuto` der gerechnete Wert und
       // gehoert als Platzhalter dahinter. Wer nur einen fertigen Text braucht,

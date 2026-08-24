@@ -494,6 +494,21 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.31",
+    groups: [
+      {
+        title: "Welche Mannschaften im Aushang stehen",
+        items: [
+          "Jede Mannschaft hat in der Verwaltung ein neues Häkchen „In Übersichten anzeigen“. Es steht per Vorgabe, jede Mannschaft erscheint also weiterhin.",
+          "Nimmt man das Häkchen weg, verschwindet die Mannschaft aus „Wer betreut welche Mannschaft“ im Werkzeug „Kontakte“ — bleibt aber vollständig in der Liste stehen und behält ihre Trainer.",
+          "Gedacht ist das für die Einträge aus dem Altbestand, die keine echte Mannschaft sind: „U12-U15“, „U12-U23“ und Ähnliches. Die Trainer hängen weiter daran, nur im Aushang haben sie nichts zu suchen.",
+          "⚠️ Das ist ausdrücklich etwas anderes als „Archiviert“. Archivieren heißt aufgelöst und nimmt der Mannschaft auch die Trainer-Zuordnung — wer sie betreut hat, verliert sie in seinem Profil und damit flottenweit Filter und Rechte. Das neue Häkchen rührt daran nicht.",
+          "Zugeklappt steht bei einer so ausgeblendeten Mannschaft „nicht in Übersichten“ hinter dem Namen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.30",
     groups: [
       {
