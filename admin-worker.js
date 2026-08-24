@@ -156,6 +156,12 @@
 //     wer sich in Trainerdaten selbst dafür freigegeben hat (Feld `kontaktFreigabe`, gesetzt über die dortige
 //     Aktion `kontakt-freigabe-speichern`), und je Person NUR die einzeln freigegebenen Felder — ein nicht
 //     freigegebenes Feld fehlt im Objekt, statt leer mitzukommen. Nie IBAN/Geburtsdatum/Dokumente/Vertrag.
+//   POST { action: "kontakte-mannschaften", saison? } (gleiches Gate wie kontakte-liste)
+//     -> { saison, saisons[], teams: [{kurz, lang, liga, stufe, jahrgaenge, personen: [{name, rolle, rolleLabel, telefon?, email?}]}] }
+//     Dieselbe Freigabe, nach Mannschaften sortiert: wer betreut welche Mannschaft, und wie ist er zu
+//     erreichen. Name und Rolle kommen aus mannschaften.json und stehen jedem Angemeldeten offen (siehe
+//     handleMannschaftenLoad); Telefon und E-Mail kommen aus Trainerdaten und nur bei Freigabe. Die
+//     Anschrift wird hier bewusst nicht ausgeliefert, auch wenn sie freigegeben ist.
 //     Ohne `kontaktFreigabe.name === true` erscheint die Person überhaupt nicht.
 //   POST { action: "raumnutzung-kontakt-lookup", name } (Raumnutzung-Bearbeiter via resolveEditPermission)
 //     -> { treffer: {strasse, plz, ort, telefon, email} | null } — Kontaktdaten GENAU EINER namentlich
@@ -1229,6 +1235,8 @@ export default {
         return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
       case "kontakte-liste":
         return handleKontakteListe(request, env, authHeader, corsHeaders);
+      case "kontakte-mannschaften":
+        return handleKontakteMannschaften(request, body, env, authHeader, corsHeaders);
       case "my-trainerdaten-status":
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
       case "raumnutzung-kontakt-lookup":
@@ -3251,6 +3259,105 @@ async function handleKontakteListe(request, env, authHeader, corsHeaders) {
     (a.vorname || "").localeCompare(b.vorname || "", "de")
   );
   return json({ kontakte }, 200, corsHeaders);
+}
+
+// ---------- Aktion: Mannschaften mit Betreuern und freigegebenen Kontakten ----------
+//
+// Die Uebersicht "Wer betreut welche Mannschaft" fuer die Kontakte-App. Gate
+// identisch zu handleKontakteListe -- dieselbe Personengruppe sieht dieselben
+// Daten, nur anders sortiert. Ein eigenes, weicheres Gate waere ein zweiter Weg
+// auf dieselben Felder und liefe frueher oder spaeter auseinander.
+//
+// ⚠️ Zwei Quellen mit zwei verschiedenen Regeln, die nicht vermischt werden duerfen:
+//   NAME und ROLLE stammen aus mannschaften.json und nutzer.json. Das ist
+//   Vereinsorganisation; handleMannschaftenLoad gibt dieselbe Zuordnung schon
+//   heute jedem Angemeldeten ("die Trainernamen stehen ohnehin an jedem Aushang").
+//   Deshalb steht eine Person hier auch dann mit Namen, wenn sie NICHTS
+//   freigegeben hat -- sonst saehe eine Mannschaft aus, als haette sie keinen
+//   Trainer, und die Uebersicht waere unbrauchbar.
+//   TELEFON und E-MAIL stammen aus Trainerdaten und nur bei ausdruecklicher
+//   Freigabe, mit kontaktFreigabe.name als Hauptschalter davor -- exakt wie in
+//   handleKontakteListe. Ohne diesen Hauptschalter waere diese Aktion ein
+//   zweiter Weg an der Einwilligung vorbei.
+//
+// ⚠️ Die ANSCHRIFT bleibt hier draussen, auch wenn sie freigegeben ist: fuer
+// "wie erreiche ich den Trainer der D2" reichen Telefon und E-Mail. Wer die
+// Anschrift braucht, findet sie in der Kontaktliste selbst. Weniger zeigen als
+// erlaubt ist die Vorgabe (gleiche Linie wie list-birthdays-today).
+//
+// ⚠️ Aufgebaut aus BENANNTEN Einzelfeldern, nie durch Kopieren des
+// Trainerdaten-Satzes mit anschliessendem delete: die Quelldatei enthaelt IBAN,
+// Bankverbindung, Geburtsdatum und Vertragspfade.
+async function handleKontakteMannschaften(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (session.art === USER_ART_SPIELER) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  if (!(await userMayAccessTool("kontakte", session, env, authHeader))) {
+    return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  }
+
+  const mDoc = await readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+  const tDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+
+  // Saisonwahl wie in mannschaftenAntwort: ohne Angabe die laufende, eine
+  // andere nur, wenn es sie wirklich gibt.
+  const saisons = Object.keys((mDoc && mDoc.saisons) || {}).sort().reverse();
+  const wunsch = capStr(body && body.saison, 10);
+  const saison = (wunsch && saisons.indexOf(wunsch) >= 0)
+    ? wunsch
+    : (capStr(mDoc && mDoc.aktuelleSaison, 10) || saisons[0] || "");
+
+  // username -> Nutzerobjekt, damit findTrainerdatenRecord seine Rangfolge
+  // (username > linkedUsername > Namensabgleich) anwenden kann.
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+  const nutzerNachName = Object.create(null);
+  Object.keys(users).forEach(function (k) {
+    const u = users[k];
+    if (!u) return;
+    const uname = normalizeUsername(u.username || k);
+    if (uname && uname !== "__proto__") nutzerNachName[uname] = u;
+  });
+
+  // Archivierte Mannschaften bleiben draussen: sie sind aufgeloest und werden
+  // laut ihrem eigenen Beschriftungstext "nirgends mehr angeboten".
+  const teams = mannschaftenSortieren(mannschaftenSaisonTeams(mDoc, saison))
+    .filter(function (t) { return t && !t.archiviert; })
+    .map(function (t) {
+      const ab = mannschaftAbleitung(t.kurz);
+      const stufe = ab ? ab.stufe : mannschaftStufe(t.stufe);
+      const eigen = capStr(t.jahrgaenge, MANNSCHAFT_MAX_JAHRGAENGE);
+      const personen = (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {
+        const uname = normalizeUsername(capStr(p && p.username, 80));
+        const rolle = MANNSCHAFT_ROLLEN.includes(p && p.rolle) ? p.rolle : "trainer";
+        const eintrag = {
+          name: aufgabenAnzeigeName(session.usersDoc, uname),
+          rolle: rolle,
+          rolleLabel: MANNSCHAFT_ROLLE_LABELS[rolle]
+        };
+        const user = nutzerNachName[uname] || null;
+        const rec = user ? findTrainerdatenRecord(tDoc, user) : null;
+        const f = rec && rec.kontaktFreigabe;
+        // Hauptschalter zuerst, dann das einzelne Feld. Ueberall === true, nie
+        // ein truthy-Check: ein fehlendes Feld muss in die GESCHLOSSENE
+        // Richtung fallen (siehe handleKontakteListe).
+        if (f && f.name === true) {
+          if (f.telefon === true && String(rec.telefon || "").trim()) eintrag.telefon = String(rec.telefon).trim();
+          if (f.email === true && String(rec.email || "").trim()) eintrag.email = String(rec.email).trim();
+        }
+        return eintrag;
+      }).filter(function (p) { return !!p.name; });
+
+      return {
+        kurz: t.kurz,
+        lang: t.lang || t.kurz,
+        liga: t.liga || "",
+        stufe: stufe,
+        jahrgaenge: eigen || mannschaftJahrgaengeAuto(stufe, saison),
+        personen: personen
+      };
+    });
+
+  return json({ saison: saison, saisons: saisons, teams: teams }, 200, corsHeaders);
 }
 
 // Kontaktdaten-Prefill für den Raumnutzungs-Antrag (Veranstaltungsleitung/
@@ -15460,6 +15567,7 @@ const MANNSCHAFT_MAX_ALIASE = 25;
 const MANNSCHAFT_MAX_KURZ = 20;
 const MANNSCHAFT_MAX_LANG = 80;
 const MANNSCHAFT_MAX_LIGA = 60;
+const MANNSCHAFT_MAX_JAHRGAENGE = 40;
 const MANNSCHAFT_MAX_SAISONS = 20;
 // Form der Saison: "2026/27". Sie wird Objekt-Schluessel und darf deshalb
 // weder Pfadzeichen noch __proto__ sein.
@@ -15531,6 +15639,38 @@ function mannschaftAbleitung(kurz) {
   if (jugend) return { stufe: jugend[1].toLowerCase(), nummer: parseInt(jugend[2], 10) || 1 };
 
   return null;
+}
+
+// Welche U-Stufe ein Buchstabe meint -- eingetragen ist die OBERE der beiden
+// Jahrgangsstufen. Quelle ist derselbe DFB-Leitfaden, aus dem auch
+// E:\ausbildungsplan seinen Aufbau nimmt: A = U18/U19, B = U16/U17,
+// C = U14/U15, D = U12/U13, E = U10/U11, F = U8/U9, G = Bambini (U7).
+const MANNSCHAFT_STUFE_U = { a: 19, b: 17, c: 15, d: 13, e: 11, f: 9, g: 7 };
+
+// Der Jahrgang einer Mannschaft: gerechnet statt gepflegt.
+//
+// In der Saison 2026/27 spielt bei den A-Junioren, wer 2008 oder 2009 geboren
+// ist -- der U19-Jahrgang ist 2026 minus 18, der U18-Jahrgang einen spaeter.
+// Von Hand gepflegt muesste das jede Saison jemand nachziehen, und genau das
+// bleibt erfahrungsgemaess liegen (gleicher Grund wie bei Stufe und Nummer, die
+// seit 2026-08-12 aus dem Kurznamen kommen statt aus einem Feld).
+//
+// Liefert bewusst NICHTS fuer Herren, Maedchen und "sonstige": dort gibt es
+// keine Altersklasse, aus der sich etwas ableiten liesse, und eine geratene
+// Zahl waere schlechter als eine fehlende Zeile. Fuer diese Mannschaften -- und
+// fuer echte Ausnahmen wie einen dreijaehrigen Bambini-Kader -- gibt es das
+// Handfeld `jahrgaenge`, das immer Vorrang hat.
+//
+// G-Junioren enden nach unten offen ("und juenger"): dort spielt mit, was
+// laufen kann, und eine untere Grenze zu behaupten waere schlicht falsch.
+function mannschaftJahrgaengeAuto(stufe, saison) {
+  const u = MANNSCHAFT_STUFE_U[String(stufe || "").toLowerCase()];
+  if (!u) return "";
+  const start = parseInt(String(saison || "").slice(0, 4), 10);
+  if (!(start >= 2000 && start <= 2100)) return "";
+  const aelter = start - (u - 1);
+  if (u <= 7) return aelter + " und j\u00fcnger (U" + u + ")";
+  return aelter + "/" + (aelter + 1) + " (U" + (u - 1) + "/U" + u + ")";
 }
 
 // Sortierschluessel als ganze Zahl statt als Fliesskommawert -- ein Rest
@@ -15605,6 +15745,12 @@ function mannschaftSaeubern(roh, bekannteNutzer) {
     nummer: ab ? ab.nummer
       : Math.max(0, Math.min(99, Math.round(Number(roh && roh.nummer) || 0))),
     archiviert: !!(roh && roh.archiviert),
+    // Leer heisst: die Automatik rechnet (mannschaftJahrgaengeAuto). Bewusst
+    // Freitext und keine zwei Jahreszahlen -- die Ausnahmen sind keine Paare
+    // ("2020-2022" bei den Bambini, "jahrgangsuebergreifend" bei den Maedchen).
+    // Anders als bei der Rolle gibt es hier nichts zu vereinheitlichen: der Wert
+    // wird nur angezeigt, nie verglichen oder zum Schluessel.
+    jahrgaenge: capStr(roh && roh.jahrgaenge, MANNSCHAFT_MAX_JAHRGAENGE),
     trainer: trainer,
     aliase: aliase
   };
@@ -15715,6 +15861,12 @@ function mannschaftenAntwort(doc, usersDoc, saisonWunsch) {
       stufe: ab ? ab.stufe : mannschaftStufe(t.stufe),
       nummer: ab ? ab.nummer : (t.nummer || 0),
       archiviert: !!t.archiviert,
+      // Beides mitliefern: `jahrgaenge` ist der Handeintrag (meist leer) und
+      // gehoert ins Eingabefeld, `jahrgaengeAuto` der gerechnete Wert und
+      // gehoert als Platzhalter dahinter. Wer nur einen fertigen Text braucht,
+      // nimmt `jahrgaenge || jahrgaengeAuto` -- das Handfeld hat Vorrang.
+      jahrgaenge: capStr(t.jahrgaenge, MANNSCHAFT_MAX_JAHRGAENGE),
+      jahrgaengeAuto: mannschaftJahrgaengeAuto(ab ? ab.stufe : mannschaftStufe(t.stufe), saison),
       aliase: Array.isArray(t.aliase) ? t.aliase : [],
       trainer: (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {
         return {

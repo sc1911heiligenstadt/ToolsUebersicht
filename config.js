@@ -284,7 +284,7 @@ const TOOLS = [
   {
     id: "kontakte",
     name: "Kontakte",
-    description: "Das Telefonbuch des Vereins: Wer erreicht wen? Jede Person gibt in Trainerdaten selbst frei, ob und mit welchen Angaben sie hier erscheint — ohne Freigabe steht nichts da.",
+    description: "Das Telefonbuch des Vereins: Wer erreicht wen? Jede Person gibt in Trainerdaten selbst frei, ob und mit welchen Angaben sie hier erscheint — ohne Freigabe steht nichts da. Dazu die Übersicht „Wer betreut welche Mannschaft“ mit Liga und Jahrgang, zum Ausdrucken ohne Kontaktdaten.",
     url: "https://sc1911heiligenstadt.github.io/kontakte/",
     icon: "📇",
     category: "Verein"
@@ -493,6 +493,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.30",
+    groups: [
+      {
+        title: "Jahrgänge in der Mannschaftsliste",
+        items: [
+          "Jede Mannschaft hat in der Verwaltung ein neues Feld „Jahrgänge“. Leer lassen ist der Normalfall: dann steht der Jahrgang von selbst da, gerechnet aus Saison und Altersstufe. Bei den A-Junioren sind das in der Saison 2026/27 die Jahrgänge 2008 und 2009 — und in der nächsten Saison von allein 2009 und 2010.",
+          "Was im leeren Feld grau steht, ist genau das, was die Rechnung ergibt. Wird der Kurzname korrigiert, zieht diese Angabe sofort mit.",
+          "Ausgefüllt wird das Feld nur dort, wo sich nichts rechnen lässt: bei den Herren, bei den Mädchen und zum Beispiel bei einem Bambini-Kader über drei Jahrgänge. Ein Eintrag von Hand hat immer Vorrang.",
+          "Zu sehen ist der Jahrgang in der neuen Mannschafts-Übersicht im Werkzeug „Kontakte“."
+        ]
+      }
+    ]
+  },
   {
     version: "1.29",
     groups: [

@@ -7804,6 +7804,31 @@ function mannschaftAbleitungClient(kurz) {
   return null;
 }
 
+// Der gerechnete Jahrgang. ⚠️ ZWEITE KOPIE von mannschaftJahrgaengeAuto aus
+// admin-worker.js — gleiche Lage und gleiche Pflicht wie bei
+// mannschaftAbleitungClient direkt darüber: wer eine ändert, zieht die andere
+// mit. Sie steht hier nur für den Platzhalter im Eingabefeld; verbindlich
+// gerechnet wird im Worker, wenn die Übersicht die Liste abruft.
+const MANNSCHAFT_STUFE_U_CLIENT = { a: 19, b: 17, c: 15, d: 13, e: 11, f: 9, g: 7 };
+function mannschaftJahrgaengeAutoClient(stufe, saison) {
+  const u = MANNSCHAFT_STUFE_U_CLIENT[String(stufe || "").toLowerCase()];
+  if (!u) return "";
+  const start = parseInt(String(saison || "").slice(0, 4), 10);
+  if (!(start >= 2000 && start <= 2100)) return "";
+  const aelter = start - (u - 1);
+  if (u <= 7) return aelter + " und jünger (U" + u + ")";
+  return aelter + "/" + (aelter + 1) + " (U" + (u - 1) + "/U" + u + ")";
+}
+
+// Was im leeren Feld steht. Bei Herren, Mädchen und Sonstigen gibt es nichts zu
+// rechnen — dort sagt der Platzhalter das offen, statt eine Zahl zu behaupten.
+function mannschaftJahrgangPlatzhalter(kurz, stufe) {
+  const ab = mannschaftAbleitungClient(kurz);
+  const auto = mannschaftJahrgaengeAutoClient(
+    ab ? ab.stufe : stufe, (mannschaftState && mannschaftState.saison) || "");
+  return auto ? "automatisch: " + auto : "z. B. 2011–2014 — leer: keine Angabe";
+}
+
 const MANNSCHAFT_STUFEN_LABEL = {
   herren: "Herren / Senioren",
   a: "A-Junioren",
@@ -7848,6 +7873,7 @@ function mannschaftKopie(t) {
     stufe: t.stufe || "sonstige",
     nummer: t.nummer || 0,
     archiviert: !!t.archiviert,
+    jahrgaenge: t.jahrgaenge || "",
     aliase: Array.isArray(t.aliase) ? t.aliase.slice() : [],
     trainer: (Array.isArray(t.trainer) ? t.trainer : []).map(function (p) {
       return { username: p.username, rolle: p.rolle || "trainer" };
@@ -7955,6 +7981,13 @@ function renderMannschaftenListe() {
           "</select></div>" +
           '<div class="form-field"><label>Nummer (1, 2, 3 …)</label>' +
             '<input type="number" class="m-nummer" min="0" max="99" value="' + (t.nummer || 0) + '" /></div>' +
+          // Leer lassen ist der Normalfall: dann rechnet der Server den Jahrgang
+          // aus Saison und Altersstufe, und niemand muss ihn jede Saison
+          // nachziehen. Das Feld ist nur für die Fälle, die sich nicht rechnen
+          // lassen — Herren, Mädchen, ein dreijähriger Bambini-Kader.
+          '<div class="form-field"><label>Jahrgänge (leer = automatisch)</label>' +
+            '<input type="text" class="m-jahrgaenge" maxlength="40" value="' + escapeHtml(t.jahrgaenge || "") +
+            '" placeholder="' + escapeHtml(mannschaftJahrgangPlatzhalter(t.kurz, t.stufe)) + '" /></div>' +
         "</div>" +
         '<div class="mannschaft-schalter">' +
           '<label><input type="checkbox" class="m-archiviert"' + (t.archiviert ? " checked" : "") + " /> " +
@@ -8006,6 +8039,7 @@ function mannschaftenAusDom() {
       stufe: wert(".m-stufe") || "sonstige",
       nummer: parseInt(wert(".m-nummer"), 10) || 0,
       archiviert: !!(archiviert && archiviert.checked),
+      jahrgaenge: wert(".m-jahrgaenge"),
       // ⚠️ Aus dem ENTWURF, nicht aus dem DOM: das Eingabefeld dafür ist seit
       // 2026-08-12 entfernt. Würde hier wie bisher `.m-aliase` gelesen, käme
       // ein leerer String zurück und jedes Speichern löschte die gespeicherten
@@ -8201,6 +8235,11 @@ function setupMannschaftenPanel() {
     const nummer = zeile.querySelector(".m-nummer");
     if (stufe) stufe.value = ab.stufe;
     if (nummer) nummer.value = ab.nummer;
+    // Der Platzhalter des Jahrgangsfelds hängt an der Stufe und muss mit —
+    // sonst steht hinter einem korrigierten „D2“ weiter der Jahrgang der alten
+    // Stufe, und es sieht aus, als wäre die Automatik falsch.
+    const jg = zeile.querySelector(".m-jahrgaenge");
+    if (jg) jg.placeholder = mannschaftJahrgangPlatzhalter(feld.value, ab.stufe);
   });
 
   // Ein Handler fuer die ganze Liste: die Zeilen werden bei jedem Rendern neu
