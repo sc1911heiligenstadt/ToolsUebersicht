@@ -248,7 +248,7 @@ const TOOLS = [
   {
     id: "spiele",
     name: "Spiele",
-    description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett, Der Maulwurf als Verräterspiel und Depot-Duell als Börsenspiel mit Spielgeld (beide auch solo gegen KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
+    description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett, Der Maulwurf als Verräterspiel, Depot-Duell als Börsenspiel mit Spielgeld und Letzte Karte als Ablegespiel in drei Spielarten (alle drei auch solo gegen KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
     url: "https://sc1911heiligenstadt.github.io/spiele/",
     icon: "🎮",
     category: "Verein"
