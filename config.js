@@ -494,6 +494,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.32",
+    groups: [
+      {
+        title: "Rechte können nicht mehr versehentlich gelöscht werden",
+        items: [
+          "Konnte die Übersicht die gespeicherten Rechte nicht laden (Worker kurz nicht erreichbar), zeigte das Sichtbarkeits-Panel bisher jedes Werkzeug als „Öffentlich“ und ohne Gruppen — obwohl gespeichert etwas ganz anderes stand. Ein Druck auf „Speichern“ hätte genau dieses Bild festgeschrieben und alle Sehen-, Bearbeiten- und Administrieren-Gruppen gelöscht.",
+          "Jetzt steht in diesem Fall ein roter Kasten über der Liste, und Speichern ist gesperrt — im Sichtbarkeits-Panel wie im Bereich „Apps“ einer Gruppe. Ein Knopf „Erneut laden“ holt die Rechte nach; klappt es, verschwindet der Kasten von selbst.",
+          "Neu darunter: „💾 Rechte sichern“ lädt alle Rechte als Datei auf den eigenen Rechner — Sehen, Bearbeiten, Administrieren und Auto-Eintrag für jedes Werkzeug. Am besten nach jeder größeren Änderung.",
+          "„Sicherung einspielen“ ist der Weg zurück: Datei auswählen, die Abfrage nennt Datum und Anzahl, danach ist der alte Stand wieder da. Gruppen, die es zwischenzeitlich nicht mehr gibt, werden vorher beim Namen genannt."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.31",
     groups: [
       {

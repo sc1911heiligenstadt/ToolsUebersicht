@@ -2532,3 +2532,27 @@ nav .nav-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: inherit
   border-radius: 8px;
 }
 .idee-admin-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* ---------- Sicherheitsgurt + Sicherung der Rechte (seit 2026-08-25) ---------- */
+
+/* Der Kasten erscheint nur, wenn die Rechte-Konfiguration NICHT geladen ist. Er muss
+   auffaellig sein: in genau diesem Zustand zeigt das Panel darunter jedes Werkzeug als
+   "Oeffentlich", und ohne die Warnung sieht das wie ein echter Stand aus. */
+.rechte-warnung {
+  background: var(--red-light);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.rechte-sicherung {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.rechte-sicherung .rs-titel { font-weight: 600; font-size: 14px; }

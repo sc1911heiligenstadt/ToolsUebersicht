@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.72" />
+<link rel="stylesheet" href="style.css?v=1.73" />
 </head>
 <body>
 
@@ -1095,6 +1095,15 @@
     <!-- Gruppenverwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-groups-panel" style="display:none;">
       <summary>Gruppen</summary>
+      <div class="rechte-warnung" id="groups-guard" style="display:none;">
+        <strong>⚠️ Die gespeicherten Rechte sind gerade nicht geladen.</strong>
+        Was hier steht, ist nur ein Notbehelf: jedes Werkzeug erscheint als „Öffentlich“ und ohne Gruppen.
+        <strong>Speichern ist gesperrt</strong> — sonst würden damit alle Gruppen-Rechte überschrieben.
+        <div class="btn-row" style="justify-content:flex-start; margin-top:10px;">
+          <button type="button" class="btn small" data-visibility-reload>Erneut laden</button>
+        </div>
+        <p class="muted rw-status" style="display:none; margin:8px 0 0;"></p>
+      </div>
       <div id="groups-list"></div>
       <form id="create-group-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
         <div class="form-field">
@@ -1179,11 +1188,38 @@
     <details class="card collapsible" id="admin-visibility-panel" style="display:none;">
       <summary>Sichtbarkeit der Tools</summary>
       <p class="muted" style="margin-bottom:14px;">Änderungen gelten sofort für alle Besucher der Übersicht. Pro Tool wählbar: versteckt, öffentlich (auch ohne Login), für alle eingeloggten Nutzer, oder nur für bestimmte Gruppen.</p>
+      <div class="rechte-warnung" id="visibility-guard" style="display:none;">
+        <strong>⚠️ Die gespeicherten Rechte sind gerade nicht geladen.</strong>
+        Was hier steht, ist nur ein Notbehelf: jedes Werkzeug erscheint als „Öffentlich“ und ohne Gruppen.
+        <strong>Speichern ist gesperrt</strong> — sonst würden damit alle Gruppen-Rechte überschrieben.
+        <div class="btn-row" style="justify-content:flex-start; margin-top:10px;">
+          <button type="button" class="btn small" data-visibility-reload>Erneut laden</button>
+        </div>
+        <p class="muted rw-status" style="display:none; margin:8px 0 0;"></p>
+      </div>
       <div id="visibility-list"></div>
       <p class="muted" id="admin-save-error" style="display:none; color:#c0392b; margin:10px 0;"></p>
       <p class="muted" id="admin-save-success" style="display:none; color:#2d8c4e; margin:10px 0;">Gespeichert.</p>
       <div class="btn-row" style="margin-top:14px;">
         <button type="button" class="btn" id="btn-save-visibility">Speichern</button>
+      </div>
+
+      <!-- Sicherung der Rechte (seit 2026-08-25). Schreibt über die BESTEHENDE Aktion
+           save-visibility, braucht also keinen Worker-Deploy. Anlass: am 2026-08-25 waren
+           sämtliche Gruppen-Zuordnungen leer und es gab keinen Weg zurück. -->
+      <div class="rechte-sicherung">
+        <div class="rs-titel">💾 Rechte sichern</div>
+        <p class="muted" style="margin:4px 0 10px;">
+          Lädt alle Rechte als Datei auf dieses Gerät — Sehen, Bearbeiten, Administrieren und
+          Auto-Eintrag für jedes Werkzeug. Am besten nach jeder größeren Änderung.
+          „Sicherung einspielen“ ersetzt den jetzigen Stand vollständig durch die Datei.
+        </p>
+        <div class="btn-row" style="justify-content:flex-start; gap:8px;">
+          <button type="button" class="btn small" id="btn-rechte-sichern">Rechte sichern</button>
+          <button type="button" class="btn small secondary" id="btn-rechte-einspielen">Sicherung einspielen</button>
+          <input type="file" id="rechte-einspielen-datei" accept="application/json,.json" style="display:none;" />
+        </div>
+        <p class="muted" id="rechte-sicherung-hinweis" style="display:none; margin-top:8px;"></p>
       </div>
     </details>
 
@@ -1689,7 +1725,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=4.9"></script>
-<script src="app.js?v=1.95"></script>
+<script src="config.js?v=5.0"></script>
+<script src="app.js?v=1.96"></script>
 </body>
 </html>

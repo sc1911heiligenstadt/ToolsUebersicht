@@ -11,6 +11,14 @@ const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
 const ANSICHT_STORAGE_KEY = "tu_ansicht";
 
 let visibilityState = {};
+// Kam die Sichtbarkeits-Konfig wirklich vom Server? Bleibt false, wenn fetchVisibility()
+// scheitert (Worker nicht erreichbar/langsam) -- dann steht in visibilityState der
+// Notbehelf aus defaultVisibility(), und der zeigt JEDES Tool als "Oeffentlich" mit
+// leeren Gruppenlisten. Aus diesem Bild heraus zu speichern schriebe genau das nach
+// Nextcloud und loeschte saemtliche Sehen-/Bearbeiten-/Administrieren-Rechte
+// (2026-08-25, nach genau diesem Vorfall). Deshalb haengen beide Speicher-Wege
+// -- Sichtbarkeits-Panel UND Apps-Auswahl einer Gruppe -- an diesem Schalter.
+let visibilityVomServer = false;
 let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-News, initial das statische Seed/Fallback aus config.js
 let newsReactionCounts = {}; // { newsId: { emoji: anzahl } } — öffentliche Zähler, kommen aus fetchVisibility() (GET)
 let newsReactionNames = {};  // { newsId: { emoji: [anzeigename] } } — WER reagiert hat, für den Tooltip; nur angemeldet befüllt
@@ -954,6 +962,9 @@ function renderGroupsList() {
         }
       });
       panel.style.display = "block";
+      // Der Speichern-Knopf dieses Panels wird bei jedem Aufklappen neu gebaut --
+      // der Sicherheitsgurt muss deshalb hier erneut greifen (siehe applyVisibilityGuard).
+      applyVisibilityGuard();
       panel.querySelector("[data-save-group-tools]").addEventListener("click", async () => {
         const selectedToolIds = getCheckedValues(picker, "see");
         const selectedEditToolIds = getCheckedValues(picker, "edit");
@@ -961,6 +972,13 @@ function renderGroupsList() {
         const selectedProvisionToolIds = getCheckedValues(picker, "provision");
         const errorEl = document.getElementById("groups-error");
         errorEl.style.display = "none";
+        // Zweite, harte Schranke neben dem grauen Knopf: computeGroupToolVisibility baut
+        // aus visibilityState, und der ist ohne geladene Konfig der Notbehelf.
+        if (!visibilityVomServer) {
+          errorEl.textContent = VIS_GUARD_TEXT;
+          errorEl.style.display = "block";
+          return;
+        }
         try {
           const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedAdminToolIds, selectedProvisionToolIds);
           await callWorker("save-visibility", { tools: updatedTools });
@@ -1871,6 +1889,231 @@ function renderVisibilityList() {
     normale.forEach((t) => section.appendChild(buildVisibilityRow(t)));
     container.appendChild(section);
   }
+  applyVisibilityGuard();
+}
+
+// ---------------------------------------------------------------------------
+// Sicherheitsgurt + Sicherung der Rechte-Konfiguration (seit 2026-08-25)
+// ---------------------------------------------------------------------------
+// Anlass: das Panel zeigte an einem Vormittag saemtliche Tools als "Oeffentlich".
+// Gespeichert war das NICHT -- der Client war auf defaultVisibility() zurueckgefallen,
+// weil fetchVisibility() den Worker nicht erreicht hatte. Waere in diesem Zustand
+// "Speichern" gedrueckt worden, haette collectVisibilityTools() genau dieses Bild nach
+// Nextcloud geschrieben: jedes Tool oeffentlich, jede Sehen-, Bearbeiten- und
+// Administrieren-Gruppe leer. Das trifft BEIDE Speicher-Wege -- das Sichtbarkeits-Panel
+// und die Apps-Auswahl einer Gruppe (computeGroupToolVisibility baut ebenfalls auf
+// visibilityState auf und schriebe den Notbehelf fuer alle uebrigen Tools mit fest).
+const VIS_GUARD_TEXT =
+  "Die gespeicherten Rechte sind gerade nicht geladen. Was hier steht, ist nur ein " +
+  "Notbehelf (alles „Oeffentlich“, keine Gruppen). Speichern und Einspielen sind " +
+  "deshalb gesperrt — sonst wuerden alle Gruppen-Rechte ueberschrieben. Bitte " +
+  "„Erneut laden“ druecken.";
+
+// Schaltet Warnung und Speichern-Knoepfe je nach visibilityVomServer. Wird aus
+// renderVisibilityList() UND aus dem Aufbau des Gruppen-Apps-Panels gerufen: beide
+// bauen ihre Knoepfe jedesmal neu, ein einmaliges Sperren beim Seitenstart hielte nicht.
+function applyVisibilityGuard() {
+  const ok = visibilityVomServer;
+  ["visibility-guard", "groups-guard"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = ok ? "none" : "block";
+  });
+  // "Sichern" ist bewusst MIT gesperrt: eine Sicherung des Notbehelfs waere eine Datei
+  // voller leerer Gruppen -- und die spielt spaeter jemand ahnungslos wieder ein.
+  const knoepfe = ["btn-save-visibility", "btn-rechte-sichern", "btn-rechte-einspielen"]
+    .map((id) => document.getElementById(id))
+    .concat(Array.prototype.slice.call(document.querySelectorAll("[data-save-group-tools]")));
+  knoepfe.forEach((b) => {
+    if (!b) return;
+    b.disabled = !ok;
+    b.title = ok ? "" : VIS_GUARD_TEXT;
+  });
+}
+
+// Holt die Konfiguration erneut vom Worker. Der Rueckgabewert sagt, ob es geklappt hat --
+// die Meldung schreibt der Aufrufer, damit ein Fehlschlag nicht still bleibt.
+async function visibilityNeuLaden() {
+  const data = await fetchVisibility();
+  if (!(data && data.tools && typeof data.tools === "object")) return false;
+  visibilityState = data.tools;
+  visibilityVomServer = true;
+  renderToolGrid();
+  renderVisibilityList();
+  return true;
+}
+
+// ---- Sicherung auf den eigenen Rechner und der Rueckweg ----
+//
+// Reine Pages-Sache: geschrieben wird ueber die bestehende Aktion save-visibility, es
+// braucht also KEINEN Worker-Deploy. save-visibility ersetzt config.tools vollstaendig --
+// deshalb muss die Datei den GANZEN tools-Block enthalten, nicht nur die Gruppenfelder.
+const RECHTE_SICHERUNG_ART = "sc1911-rechte-sicherung";
+
+function rechteSicherungBauen() {
+  return {
+    art: RECHTE_SICHERUNG_ART,
+    version: 1,
+    erstelltAm: new Date().toISOString(),
+    erstelltVon: (currentUser && currentUser.username) || "",
+    // Die Gruppen-NAMEN stehen bewusst mit in der Datei: massgeblich beim Zurueckspielen
+    // sind die Ids, aber ohne Namen ist die Datei von Hand nicht lesbar und eine
+    // zwischenzeitlich geloeschte Gruppe beim Einspielen nicht benennbar.
+    gruppen: groupsState.map((g) => ({ id: g.id, name: g.name })),
+    tools: visibilityState
+  };
+}
+
+function rechteSicherungDateiname() {
+  const d = new Date();
+  const z = (n) => String(n).padStart(2, "0");
+  return "rechte-" + d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate()) +
+    "-" + z(d.getHours()) + z(d.getMinutes()) + ".json";
+}
+
+// Zaehlt, was in einer Sicherung wirklich drinsteht -- fuer die Meldung nach dem Sichern
+// und fuer die Sicherheitsabfrage vor dem Einspielen. Ohne Zahlen merkt niemand, dass er
+// gerade eine leere Sicherung anlegt oder eine leere einspielt.
+function rechteZaehlen(tools) {
+  let mitGruppen = 0, zuordnungen = 0, versteckt = 0, oeffentlich = 0;
+  Object.keys(tools || {}).forEach((id) => {
+    const e = tools[id] || {};
+    const n = (e.groupIds || []).length + (e.editGroupIds || []).length +
+      (e.adminGroupIds || []).length + (e.provisionGroupIds || []).length;
+    if (n) { mitGruppen++; zuordnungen += n; }
+    if (e.visible === false) versteckt++;
+    else if (!e.loginRequired) oeffentlich++;
+  });
+  return { tools: Object.keys(tools || {}).length, mitGruppen, zuordnungen, versteckt, oeffentlich };
+}
+
+function rechteHinweis(text, farbe) {
+  const el = document.getElementById("rechte-sicherung-hinweis");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = farbe;
+  el.style.display = "block";
+}
+
+function rechteSichern() {
+  const zahlen = rechteZaehlen(visibilityState);
+  const text = JSON.stringify(rechteSicherungBauen(), null, 2);
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = rechteSicherungDateiname();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  rechteHinweis("Gesichert: " + zahlen.tools + " Werkzeuge, " + zahlen.zuordnungen +
+    " Gruppen-Zuordnungen in " + zahlen.mitGruppen + " Werkzeugen.", "var(--muted)");
+}
+
+// Liest die Datei und prueft sie, BEVOR irgendetwas verschickt wird. Wirft mit einem Satz,
+// der sagt, was an der Datei nicht stimmt -- eine kaputte Sicherung darf nie bis zu
+// save-visibility durchkommen, das ersetzt den Bestand ungeprueft.
+// Bewusst FileReader.readAsText statt dateiAlsBytes + TextDecoder: TextDecoder gibt es
+// erst ab iOS 10.3, und in der Flotte sind aeltere Geraete (gleiche Ueberlegung wie bei
+// Blob.arrayBuffer, siehe dateiAlsBytes). Ein Umlaut im Gruppennamen soll die Sicherung
+// nicht unlesbar machen -- readAsText liest ohne Angabe UTF-8.
+function dateiAlsText(datei) {
+  return new Promise((resolve, reject) => {
+    const leser = new FileReader();
+    leser.onload = () => resolve(String(leser.result));
+    leser.onerror = () => reject(new Error("Die Datei konnte nicht gelesen werden."));
+    leser.readAsText(datei, "utf-8");
+  });
+}
+
+async function rechteSicherungLesen(datei) {
+  const text = await dateiAlsText(datei);
+  let roh;
+  try {
+    roh = JSON.parse(text);
+  } catch (_) {
+    throw new Error("Die Datei ist keine gültige Sicherung (kein lesbares JSON).");
+  }
+  if (!roh || typeof roh !== "object") throw new Error("Die Datei ist keine gültige Sicherung.");
+  if (roh.art !== RECHTE_SICHERUNG_ART) {
+    throw new Error("Das ist keine Rechte-Sicherung dieser Übersicht (Kennung fehlt).");
+  }
+  if (!roh.tools || typeof roh.tools !== "object" || Array.isArray(roh.tools)) {
+    throw new Error("In der Datei fehlt der Rechte-Block.");
+  }
+  const ids = Object.keys(roh.tools);
+  if (!ids.length) throw new Error("Die Sicherung enthält kein einziges Werkzeug.");
+  for (const id of ids) {
+    const e = roh.tools[id];
+    if (!e || typeof e !== "object" || Array.isArray(e)) {
+      throw new Error("Der Eintrag „" + id + "“ in der Sicherung hat eine unerwartete Form.");
+    }
+  }
+  return roh;
+}
+
+// Gruppen-Ids, die die Sicherung benutzt, die es aber nicht mehr gibt. Sie werden beim
+// Einspielen NICHT weggeworfen (eine wieder angelegte Gruppe soll ihr Recht zurueck-
+// bekommen), aber sie muessen vorher benannt werden -- sonst sieht ein erfolgreiches
+// Einspielen so aus, als waeren saemtliche Rechte wieder da.
+function rechteUnbekannteGruppen(tools) {
+  const bekannt = {};
+  groupsState.forEach((g) => { bekannt[g.id] = true; });
+  const fehlend = [];
+  Object.keys(tools).forEach((id) => {
+    const e = tools[id] || {};
+    ["groupIds", "editGroupIds", "adminGroupIds", "provisionGroupIds"].forEach((feld) => {
+      (e[feld] || []).forEach((g) => {
+        if (!bekannt[g] && fehlend.indexOf(g) === -1) fehlend.push(g);
+      });
+    });
+  });
+  return fehlend;
+}
+
+async function rechteEinspielen(datei) {
+  if (!visibilityVomServer) { rechteHinweis(VIS_GUARD_TEXT, "#c0392b"); return; }
+  let sicherung;
+  try {
+    sicherung = await rechteSicherungLesen(datei);
+  } catch (e) {
+    rechteHinweis(e.message, "#c0392b");
+    return;
+  }
+  const neu = rechteZaehlen(sicherung.tools);
+  const jetzt = rechteZaehlen(visibilityState);
+  const fehlend = rechteUnbekannteGruppen(sicherung.tools);
+  const namen = {};
+  (sicherung.gruppen || []).forEach((g) => { if (g && g.id) namen[g.id] = g.name; });
+  const zusatz = fehlend.length
+    ? "\n\nACHTUNG: " + fehlend.length + " Gruppe(n) aus der Sicherung gibt es nicht mehr: " +
+      fehlend.map((g) => namen[g] || g).join(", ") +
+      ".\nIhre Rechte werden mit eingespielt, wirken aber erst wieder, wenn die Gruppe neu angelegt wird."
+    : "";
+  const wann = sicherung.erstelltAm
+    ? String(sicherung.erstelltAm).slice(0, 16).replace("T", " ") + " Uhr"
+    : "unbekannt";
+  const frage =
+    "Rechte aus der Sicherung einspielen?\n\n" +
+    "Sicherung vom " + wann + "\n" +
+    "Sicherung: " + neu.tools + " Werkzeuge, " + neu.zuordnungen + " Gruppen-Zuordnungen\n" +
+    "Jetzt live: " + jetzt.tools + " Werkzeuge, " + jetzt.zuordnungen + " Gruppen-Zuordnungen\n\n" +
+    "Der jetzige Stand wird dabei vollständig ersetzt." + zusatz;
+  if (!window.confirm(frage)) { rechteHinweis("Nicht eingespielt.", "var(--muted)"); return; }
+  try {
+    await callWorker("save-visibility", { tools: sicherung.tools });
+  } catch (e) {
+    rechteHinweis("Nicht eingespielt: " + e.message, "#c0392b");
+    return;
+  }
+  visibilityState = sicherung.tools;
+  renderToolGrid();
+  renderVisibilityList();
+  renderFeedbackTab();
+  rechteHinweis("Eingespielt: " + neu.tools + " Werkzeuge, " + neu.zuordnungen +
+    " Gruppen-Zuordnungen." +
+    (fehlend.length ? " " + fehlend.length + " Gruppe(n) aus der Sicherung gibt es nicht mehr." : ""),
+    "#2d8c4e");
 }
 
 function renderChangelog() {
@@ -9162,11 +9405,18 @@ function setupAuthForms() {
   document.getElementById("btn-save-visibility").addEventListener("click", async () => {
     // Sammelt inkl. des neuen "kritisch"-Flags je Tool (save-visibility ersetzt config.tools
     // komplett, deshalb müssen alle Felder — auch provisionGroupIds — mitgeliefert werden).
-    const tools = collectVisibilityTools();
     const errorEl = document.getElementById("admin-save-error");
     const successEl = document.getElementById("admin-save-success");
     errorEl.style.display = "none";
     successEl.style.display = "none";
+    // Zweite, harte Schranke neben dem grauen Knopf: collectVisibilityTools() liest das
+    // DOM, und das zeigt ohne geladene Konfig den Notbehelf "alles oeffentlich".
+    if (!visibilityVomServer) {
+      errorEl.textContent = VIS_GUARD_TEXT;
+      errorEl.style.display = "block";
+      return;
+    }
+    const tools = collectVisibilityTools();
     try {
       await callWorker("save-visibility", { tools });
       visibilityState = tools;
@@ -9179,6 +9429,44 @@ function setupAuthForms() {
       errorEl.style.display = "block";
     }
   });
+
+  // Zwei Warnkaesten (Sichtbarkeits- und Gruppen-Panel), derselbe Handler. Die Meldung
+  // steht IM Kasten, nicht in admin-save-error -- den gibt es im Gruppen-Panel nicht.
+  document.querySelectorAll("[data-visibility-reload]").forEach((knopf) => {
+    knopf.addEventListener("click", async () => {
+      const status = knopf.closest(".rechte-warnung").querySelector(".rw-status");
+      status.style.display = "none";
+      knopf.disabled = true;
+      knopf.textContent = "Wird geladen \u2026";
+      const ok = await visibilityNeuLaden();
+      knopf.textContent = "Erneut laden";
+      // Bei Erfolg verschwindet der ganze Kasten ueber applyVisibilityGuard(); den Knopf
+      // trotzdem freigeben, sonst bleibt er beim naechsten Ausfall tot.
+      knopf.disabled = false;
+      if (!ok) {
+        status.textContent = "Es hat wieder nicht geklappt. Bitte Internetverbindung " +
+          "pr\u00fcfen und es gleich noch einmal versuchen.";
+        status.style.color = "#c0392b";
+        status.style.display = "block";
+      }
+    });
+  });
+
+  const btnRechteSichern = document.getElementById("btn-rechte-sichern");
+  if (btnRechteSichern) btnRechteSichern.addEventListener("click", rechteSichern);
+
+  const btnRechteEinspielen = document.getElementById("btn-rechte-einspielen");
+  const rechteDatei = document.getElementById("rechte-einspielen-datei");
+  if (btnRechteEinspielen && rechteDatei) {
+    btnRechteEinspielen.addEventListener("click", () => rechteDatei.click());
+    rechteDatei.addEventListener("change", async () => {
+      const datei = rechteDatei.files && rechteDatei.files[0];
+      // Wert IMMER zuruecksetzen, auch bei Erfolg: sonst loest dieselbe Datei beim
+      // zweiten Anwaehlen gar kein change-Ereignis mehr aus.
+      if (datei) await rechteEinspielen(datei);
+      rechteDatei.value = "";
+    });
+  }
 
   const newsForm = document.getElementById("news-form");
   if (newsForm) {
@@ -10002,6 +10290,9 @@ async function init() {
     else ansichtAusCacheVorbelegen();
   }
   visibilityState = (data && data.tools) || defaultVisibility();
+  // Nur ein echtes tools-Objekt vom Server zaehlt; bei data === null steht oben der
+  // Notbehelf, und dann darf nichts gespeichert werden (siehe applyVisibilityGuard).
+  visibilityVomServer = !!(data && data.tools && typeof data.tools === "object");
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {}; // öffentliche Zähler
   newsReactionNames = (data && data.newsReactionNames && typeof data.newsReactionNames === "object") ? data.newsReactionNames : {}; // Namen für den Tooltip, nur angemeldet gefüllt
