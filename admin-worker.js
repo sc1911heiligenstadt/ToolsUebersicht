@@ -19225,6 +19225,22 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
 //
 // ⚠️ Der Client entscheidet NICHT mit. Wer das Formular umbaut und ein
 // abgeschaltetes Feld mitschickt, bekommt es hier weggeworfen.
+// Vergleichsform eines Feldwerts. Nur fuer die Frage "hat sich etwas geaendert",
+// nie zum Speichern.
+//
+// ⚠️ Ein HAKEN kommt aus fcFelderPruefen immer als echtes false zurueck, am
+// gespeicherten Eintrag steht aber undefined, solange ihn nie jemand angefasst
+// hat. Ein blosser String-Vergleich machte daraus "" gegen "false" -- und dann
+// meldete JEDE Speicherung der Eltern eine Aenderung an einem Feld, das niemand
+// beruehrt hat. Deshalb faellt false hier mit leer zusammen: bei einem Haken ist
+// "nicht gesetzt" derselbe Zustand wie "nein" (genau deshalb ist
+// alleinNachHause bewusst KEIN Haken, sondern eine Ja/Nein-Frage).
+function fcWertSchluessel(v) {
+  if (v === undefined || v === null || v === false) return "";
+  if (v === true) return "ja";
+  return String(v);
+}
+
 function fcFelderPruefen(camp, roh) {
   const konf = camp.felder || {};
   const sauber = {};
@@ -19501,23 +19517,43 @@ async function handleFcMeineSpeichern(request, body, env, authHeader, corsHeader
       // Anmeldung truege danach eine Zustimmung zu einem Text, den diese Eltern
       // nie gesehen haben.
       const agbJetzt = fcAgbStand(doc.einstellungen || {});
+      let agbNeuBestaetigt = false;
       if (String(anmeldung.agbStand || "") !== agbJetzt) {
         if (body.agb !== true || String(body.agbStand || "") !== agbJetzt) {
           throw new FcFehler("Die Teilnahmebedingungen haben sich geändert. Bitte lies sie durch und bestätige sie, dann lässt sich speichern.", 409);
         }
         anmeldung.agbStand = agbJetzt;
         anmeldung.agbAm = new Date().toISOString();
+        agbNeuBestaetigt = true;
       }
 
       const felder = fcFelderPruefen(camp, body.daten);
+      // ⚠️ VOR dem Zuweisen vergleichen -- danach ist der alte Stand weg.
+      // Gemerkt werden NUR die Feld-Ids, NIE die Werte: ein aufbewahrter alter
+      // Wert waere eine zweite Kopie derselben Gesundheitsangabe, die keine
+      // Loeschung mehr erwischt (siehe die Durchsicht vom 2026-08-21).
+      const geaendert = Object.keys(felder).filter((id) => fcWertSchluessel(anmeldung[id]) !== fcWertSchluessel(felder[id]));
       Object.assign(anmeldung, felder);
-      if (camp.zusatzfrage) anmeldung.zusatzantwort = capStr(body.daten && body.daten.zusatzantwort, 200);
+      if (camp.zusatzfrage) {
+        const antwortNeu = capStr(body.daten && body.daten.zusatzantwort, 200);
+        if (String(anmeldung.zusatzantwort || "") !== String(antwortNeu || "")) geaendert.push("zusatzantwort");
+        anmeldung.zusatzantwort = antwortNeu;
+      }
+      if (agbNeuBestaetigt) geaendert.push("agb");
       anmeldung.geaendertAm = new Date().toISOString();
       // ⚠️ Die Markierung ist der ganze Meldeweg: es geht KEINE Mail an den
       // Verein (Michel-Entscheidung). Ohne sie bliebe eine Aenderung unbemerkt.
-      anmeldung.elternAenderung = "geaendert";
-      fcVerlaufNotiz(camp, { was: "geaendert", nr: anmeldung.nummer || 0, quelle: "eltern" });
-      return {};
+      //
+      // ⚠️ Aber NUR, wenn wirklich etwas anders ist. Vorher meldete jedes
+      // Absenden eine Aenderung -- auch das blosse Nachsehen mit Klick auf
+      // Speichern. Wer einer solchen Meldung zweimal nachgegangen ist und
+      // nichts gefunden hat, schaut beim dritten Mal nicht mehr hin.
+      if (geaendert.length) {
+        anmeldung.elternAenderung = "geaendert";
+        anmeldung.elternAenderungFelder = geaendert;
+        fcVerlaufNotiz(camp, { was: "geaendert", nr: anmeldung.nummer || 0, quelle: "eltern" });
+      }
+      return { geaendert: geaendert.length };
     });
     return json(antwort, 200, corsHeaders);
   } catch (e) {
@@ -19541,6 +19577,9 @@ async function handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders)
       anmeldung.absageGrund = "von den Eltern abgesagt";
       anmeldung.geaendertAm = new Date().toISOString();
       anmeldung.elternAenderung = "abgesagt";
+      // Eine Absage spricht fuer sich -- eine Feldliste dazu waere die Feldliste
+      // einer frueheren Aenderung und damit schlicht falsch.
+      anmeldung.elternAenderungFelder = [];
       fcVerlaufNotiz(camp, { was: "abgesagt", nr: anmeldung.nummer || 0, quelle: "eltern" });
       // ⚠️ Der Platz wird frei, aber es rueckt NIEMAND automatisch nach
       // (Michel-Entscheidung): eine Zusage ist eine Zusage und soll ein bewusster
@@ -20197,6 +20236,7 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
       // Die Verwaltung hat die Aenderung der Eltern gesehen, indem sie die
       // Anmeldung geoeffnet und gespeichert hat.
       a.elternAenderung = "";
+      a.elternAenderungFelder = [];
       return {};
     });
     return json(antwort, 200, corsHeaders);
@@ -20261,6 +20301,7 @@ async function handleFcAbsagen(request, body, env, authHeader, corsHeaders) {
       a.absageGrund = capStr(body.grund, 300).trim();
       a.geaendertAm = new Date().toISOString();
       a.elternAenderung = "";
+      a.elternAenderungFelder = [];
       fcVerlaufNotiz(camp, { was: "abgesagt", von: ctx.session.username, nr: a.nummer || 0, quelle: "verwaltung" });
       return {};
     });
@@ -20311,7 +20352,7 @@ async function handleFcGesehen(request, body, env, authHeader, corsHeaders) {
       if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
       let n = 0;
       (camp.anmeldungen || []).forEach((a) => {
-        if (ids.includes(a.id) && a.elternAenderung) { a.elternAenderung = ""; n++; }
+        if (ids.includes(a.id) && a.elternAenderung) { a.elternAenderung = ""; a.elternAenderungFelder = []; n++; }
       });
       return { vermerkt: n };
     });
