@@ -19243,16 +19243,33 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
 // 2026-08-25). Vorher stand dort der erste Camp-Tag selbst -- Geld, das am
 // Anreisetag eingeht, ist fuer die Planung zu spaet.
 //
-// ⚠️ Die Teilnahmebedingungen decken das: Punkt 4 nennt "die in der
-// Anmeldebestaetigung genannte Zahlungsfrist" und faellt nur ersatzweise auf
-// 14 Tage nach der Bestaetigung zurueck. Wer die Zahl hier aendert, aendert
-// damit die verbindliche Frist -- kein Darstellungsdetail.
+// ⚠️ Die Teilnahmebedingungen decken das: PUNKT 3 ("Teilnehmerbeitrag und
+// Zahlung") nennt "die in der Anmeldebestaetigung genannte Zahlungsfrist" und
+// faellt nur ersatzweise auf 14 Tage nach der Bestaetigung zurueck. Wer die
+// Zahl hier aendert, aendert damit die verbindliche Frist -- kein
+// Darstellungsdetail.
+//
+// ⚠️ Bis 2026-08-25 stand hier "Punkt 4" -- das ist der Ruecktritt, nicht die
+// Zahlung. Punkt 3 traegt auch den Fall der abgelaufenen Frist: "Erfolgt die
+// Anmeldung weniger als 14 Tage vor Beginn des Camps, ist der Teilnehmerbeitrag
+// spaetestens vor Beginn des Camps vollstaendig zu entrichten." Genau deshalb
+// darf in dem Fall "möglichst umgehend" stehen.
 const FC_ZAHLFRIST_TAGE = 7;
 
 function fcZahlfrist(camp) {
   if (!camp || !camp.vonDatum) return "";
-  // ⚠️ Anker auf 12:00 UTC, nicht Mitternacht: sonst kippt die Rechnung ueber
-  // eine Sommerzeitgrenze um einen Tag.
+  // ⚠️ Tragend ist das "Z", nicht die 12. Mit dem "Z" laeuft die ganze
+  // Rechnung in UTC (setUTCDate, toISOString), und in UTC gibt es keine
+  // Sommerzeit -- die Stunde ist dann egal. Faellt das "Z" weg, wird lokal
+  // geparst: Berliner Mitternacht liegt auf dem UTC-Vortag, und es rechnet an
+  // JEDEM Datum einen Tag zu frueh (20.10. -> 12.10. statt 13.10.), nicht nur
+  // an einer Zeitumstellung. Die 12:00 ist der Guertel zum Hosentraeger und
+  // faengt genau diesen Fall ab. Es muss also BEIDES stehenbleiben.
+  //
+  // ⚠️ Bis 2026-08-25 stand hier, der Anker schuetze vor der Sommerzeit. Das
+  // stimmt nicht: die Mutation "Anker auf Mitternacht" rutschte durch alle
+  // Zusagen. Regel -- entweder durchgehend UTC oder durchgehend lokal, nie
+  // gemischt. Festgenagelt in pruef-zahlfrist.mjs.
   const d = new Date(camp.vonDatum + "T12:00:00Z");
   if (Number.isNaN(d.getTime())) return "";
   d.setUTCDate(d.getUTCDate() - FC_ZAHLFRIST_TAGE);
