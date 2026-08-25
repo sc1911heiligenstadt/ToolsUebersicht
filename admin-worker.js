@@ -19579,6 +19579,15 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       // `anmeldungen` steht.
       bild: c.bild ? { id: c.bild.id, contentType: c.bild.contentType } : null,
       aufgeraeumtAm: c.aufgeraeumtAm || "",
+      // Uebertrag in den Vereinskalender. Nur die zwei Zustaende, nicht die
+      // Termin-Id -- die braucht der Client nirgends.
+      //
+      // ⚠️ kalenderUebertragen heisst "es wurde ein Termin angelegt", nicht
+      // "er steht dort noch". Wer ihn im Vereinskalender von Hand loescht,
+      // aendert daran nichts, und das ist Absicht: den Kalender bei jedem Laden
+      // mitzulesen waere ein zweiter Weg zum Server fuer eine Anzeigezeile.
+      kalenderUebertragen: !!c.kalenderTerminId,
+      kalenderSoll: fcGehoertInKalender(c),
       // Gerechnet, damit auch ohne Bearbeiten-Recht die Auslastung sichtbar ist.
       belegt: fcBelegt(c), warteliste: fcWartende(c).length, jobsFrei: fcJobsFrei(c),
       // Damit der Client "Anmeldung öffnen" mit einer Warnung versehen kann,
@@ -19831,7 +19840,7 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
       camp.felder = felder;
 
       fcVerlaufNotiz(camp, { was: neu ? "camp-angelegt" : "camp-geaendert", von: ctx.session.username });
-      return { id: camp.id, tageGeaendert: tageInfo, altesBild };
+      return { id: camp.id, tageGeaendert: tageInfo, altesBild, schnappschuss: fcKalenderSchnappschuss(camp) };
     });
 
     // ⚠️ Erst NACH dem erfolgreichen Schreiben. Andersherum waere das alte Bild
@@ -19839,6 +19848,9 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
     // stuende eine Kennung ohne Datei dahinter. Das Aufraeumen selbst ist still.
     if (antwort.altesBild) await fcBildDateiLoeschen(antwort.altesBild, authHeader);
     delete antwort.altesBild;
+
+    antwort.kalender = await fcKalenderNachziehen(authHeader, antwort.schnappschuss);
+    delete antwort.schnappschuss;
 
     return json(antwort, 200, corsHeaders);
   } catch (e) {
@@ -19865,8 +19877,12 @@ async function handleFcCampStatus(request, body, env, authHeader, corsHeaders) {
       const vorher = camp.status;
       camp.status = ziel;
       fcVerlaufNotiz(camp, { was: "status", von: ctx.session.username, vorher, nachher: ziel });
-      return { status: ziel };
+      return { status: ziel, schnappschuss: fcKalenderSchnappschuss(camp) };
     });
+    // Der wichtigste Ausloeser: "Anmeldung oeffnen" stellt das Camp zugleich in
+    // den Vereinskalender, "zurueck auf Entwurf" nimmt es wieder heraus.
+    antwort.kalender = await fcKalenderNachziehen(authHeader, antwort.schnappschuss);
+    delete antwort.schnappschuss;
     return json(antwort, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
@@ -19889,13 +19905,19 @@ async function handleFcCampLoeschen(request, body, env, authHeader, corsHeaders)
         throw new FcFehler(`Zu diesem Camp liegen ${anzahl} Anmeldungen vor. Löschen geht nur über „Aufräumen“, damit die Zahlen erhalten bleiben.`, 409);
       }
       const bildId = doc.camps[i].bild ? String(doc.camps[i].bild.id) : "";
+      // ⚠️ VOR dem Entfernen abnehmen. Danach gibt es das Camp nicht mehr -- und
+      // ohne die kalenderTerminId daraus bliebe sein Termin im Vereinskalender
+      // stehen, ohne dass ihn noch irgendetwas herausnehmen koennte.
+      const schnappschuss = fcKalenderSchnappschuss(doc.camps[i]);
       doc.camps.splice(i, 1);
-      return { altesBild: bildId };
+      return { altesBild: bildId, schnappschuss };
     });
     // Erst nach dem Schreiben, und still: eine liegengebliebene Bilddatei ist
     // ohne den passenden Camp-Token nicht abrufbar.
     if (antwort.altesBild) await fcBildDateiLoeschen(antwort.altesBild, authHeader);
     delete antwort.altesBild;
+    antwort.kalender = await fcKalenderNachziehen(authHeader, antwort.schnappschuss, { geloescht: true });
+    delete antwort.schnappschuss;
     return json(antwort, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
@@ -20391,8 +20413,14 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
       // Beruft sich keine Anmeldung mehr auf eine archivierte Fassung der
       // Bedingungen, wird auch sie nicht mehr gebraucht.
       fcAgbArchivAufraeumen(doc);
-      return { geloescht: vorher };
+      return { geloescht: vorher, schnappschuss: fcKalenderSchnappschuss(camp) };
     });
+    // Ein aufgeraeumtes Camp gehoert nicht mehr in den Kalender. In aller Regel
+    // hat purgePastEvents() den Termin da schon weg -- aber darauf ist kein
+    // Verlass: das Aufraeumen kann jederzeit laufen, das Wegraeumen dort erst,
+    // wenn ein Bearbeiter den Kalender oeffnet.
+    antwort.kalender = await fcKalenderNachziehen(authHeader, antwort.schnappschuss);
+    delete antwort.schnappschuss;
     return json(antwort, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
@@ -20682,4 +20710,286 @@ async function fcNaechtlicherLauf(env, authHeader) {
   try {
     await fcErinnerungslauf(env, authHeader, "zahlung", "");
   } catch (_) { /* still */ }
+  // ⚠️ Eigener catch: ein klemmender Vereinskalender darf die Erinnerungen an
+  // die Eltern nicht mitreissen -- und umgekehrt.
+  try {
+    await fcKalenderLauf(authHeader);
+  } catch (_) { /* still */ }
+}
+
+// ============================================================
+//  Fussballcamp -> Vereinskalender (seit 2026-08-25)
+// ============================================================
+//
+// Ein Camp, das nicht mehr Entwurf ist, steht als Termin im Vereinskalender --
+// und damit zugleich im Abo-Feed, den die Trainer im Handy haben. Bis hierher
+// musste jemand denselben Termin von Hand ein zweites Mal eintragen.
+//
+// ⚠️ Das ist der EINZIGE Weg in der Flotte, auf dem eine App in die Datei einer
+// ANDEREN schreibt. Fuer app-uebergreifende Zugriffe galt bisher "lesen ja,
+// schreiben nein". Hier ist es mit Absicht anders, und der Rahmen ist eng:
+//
+//   * Der Inhalt ist NICHT frei. Titel, Tag, Ort, Zeit und Notiz kommen
+//     ausschliesslich aus dem Camp. Ein fussballcamp-Bearbeiter kann darueber
+//     keinen beliebigen Termin in den Vereinskalender stellen, sondern nur genau
+//     das Camp, das er ohnehin anlegen darf.
+//   * Der Termin ist eine KOPIE, kein Original. Wer sie im Kalender loescht,
+//     verliert nichts, was es nicht im Fussballcamp noch gibt.
+//
+// ⚠️ Damit umgeht dieser Weg WRITE_REQUIRES_EDIT_PERMISSION fuer den
+// Vereinskalender: Ausloeser ist ein fussballcamp-Bearbeiter, der dort selbst
+// kein Bearbeiten-Recht haben muss. Das ist der bewusst in Kauf genommene Preis
+// -- die Alternative waere, den Uebertrag an ein Kalender-Recht zu haengen, das
+// die Camp-Verwaltung regelmaessig nicht hat, und dann bliebe der Termin
+// ausgerechnet in dem Fall aus, fuer den das Ganze gebaut ist.
+
+const FC_KALENDER_QUELLE = "fussballcamp";
+// Feste Kategorie aus DEFAULT_KATEGORIEN des Vereinskalenders. Sie wird NUR beim
+// Anlegen gesetzt -- wer den Termin dort umsortiert, soll das behalten duerfen.
+const FC_KALENDER_KATEGORIE = "veranstaltung";
+
+// Gehoert dieses Camp gerade in den Kalender?
+//
+// ⚠️ Die Bedingung "letzter Tag nicht in der Vergangenheit" ist kein
+// Schoenheitsfehler, sondern noetig: purgePastEvents() im Vereinskalender
+// loescht abgelaufene Termine beim Laden. Ohne sie legte der naechste Abgleich
+// eines alten Camps genau das wieder an, was der Kalender eben weggeraeumt hat.
+function fcGehoertInKalender(camp) {
+  if (!camp || camp.aufgeraeumtAm) return false;
+  if (camp.status === "entwurf") return false;
+  if (!camp.vonDatum || !camp.bisDatum) return false;
+  return camp.bisDatum >= fcHeuteBerlin();
+}
+
+function fcKalenderNotiz(camp) {
+  const zeilen = [];
+  const mehrtaegig = camp.bisDatum > camp.vonDatum;
+  if (camp.taeglichVon && camp.taeglichBis) {
+    zeilen.push((mehrtaegig ? "Täglich " : "") + camp.taeglichVon + "–" + camp.taeglichBis + " Uhr");
+  }
+  if (camp.jahrgangVon && camp.jahrgangBis) {
+    zeilen.push("Jahrgänge " + camp.jahrgangVon + " bis " + camp.jahrgangBis);
+  }
+  if (camp.kurzbeschreibung) zeilen.push(camp.kurzbeschreibung);
+  // ⚠️ Der Anmeldelink darf hier stehen, obwohl er den Camp-Token enthaelt:
+  // sobald ein Camp offen ist, liegt genau derselbe Link im Fenster der
+  // oeffentlichen Vereinsseite. Ein Entwurf hat gar keinen Termin, und ein
+  // geschlossenes Camp bekommt den Link nicht mehr -- dort fuehrte er nur noch
+  // auf eine Seite, die die Anmeldung ablehnt.
+  if (camp.status === "offen" && camp.token) {
+    zeilen.push("Anmeldung: " + FC_APP_URL + "anmeldung.html?c=" + encodeURIComponent(camp.token));
+  }
+  return zeilen.join("\n");
+}
+
+// Schreibt genau die Felder, die aus dem Camp stammen. Kategorie, Anhaenge und
+// alles Uebrige am Termin bleiben unberuehrt.
+function fcKalenderFelderSetzen(t, camp) {
+  const mehrtaegig = camp.bisDatum > camp.vonDatum;
+  t.titel = camp.name;
+  t.datum = camp.vonDatum;
+  t.endDatum = mehrtaegig ? camp.bisDatum : undefined;
+  t.ort = camp.ort || undefined;
+  // ⚠️ Ein mehrtaegiges Camp bekommt mit Absicht KEINE Uhrzeit. Anfangs- und
+  // Endzeit ueber fuenf Tage werden im Kalenderprogramm zu EINEM durchgehenden
+  // Block von Montag frueh bis Freitag nachmittag -- sachlich falsch: das Camp
+  // laeuft taeglich von 9 bis 16 Uhr, nicht die Naechte durch. Die taegliche
+  // Zeit steht stattdessen in der Notiz.
+  const mitZeit = !mehrtaegig && !!camp.taeglichVon && !!camp.taeglichBis;
+  t.ganztags = !mitZeit;
+  t.startZeit = mitZeit ? camp.taeglichVon : undefined;
+  t.endZeit = mitZeit ? camp.taeglichBis : undefined;
+  t.notiz = fcKalenderNotiz(camp) || undefined;
+  // Ein Camp ist nie privat -- es steht ohnehin oeffentlich auf der Vereinsseite.
+  t.privat = undefined;
+  t.geteiltUsers = undefined;
+  t.geteiltGruppen = undefined;
+}
+
+// Vergleichsschluessel ueber genau die Felder, die dieser Weg schreibt. Ist er
+// unveraendert, wird die fremde Datei gar nicht erst angefasst.
+function fcKalenderAbdruck(t) {
+  return JSON.stringify([t.titel, t.datum, t.endDatum || "", t.ort || "",
+    t.startZeit || "", t.endZeit || "", !!t.ganztags, t.notiz || ""]);
+}
+
+// Read-modify-write auf vereinskalender.json, gleiches Muster wie fcMutiere und
+// handleVereinskalenderVote. Gibt fn { nichtsZuTun: true } zurueck, wird nicht
+// geschrieben.
+async function fcKalenderMutiere(authHeader, fn) {
+  const url = DAV_APPS["vereinskalender"];
+  for (let versuch = 0; versuch < 3; versuch++) {
+    // Vor UND nach dem Lesen aus dem Cache nehmen -- derselbe Grund wie bei
+    // handleVereinskalenderVote: readJsonWithRev gibt die gecachte Referenz
+    // zurueck, und die Mutation unten verfaelschte sonst parallele Requests im
+    // selben Isolate.
+    jsonCache.delete(url);
+    const { data: roh, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc = (roh && typeof roh === "object") ? roh : { meta: {}, kategorien: [], termine: [] };
+    if (!doc.meta || typeof doc.meta !== "object") doc.meta = {};
+    if (!Array.isArray(doc.termine)) doc.termine = [];
+    const ergebnis = fn(doc) || {};
+    if (ergebnis.nichtsZuTun) return ergebnis;
+    doc.meta.stand = new Date().toISOString();
+    try {
+      await writeJson(url, authHeader, doc, rev || undefined);
+      return ergebnis;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new FcFehler("Der Vereinskalender ließ sich nicht schreiben.", 502);
+}
+
+// Der Kern: arbeitet EIN Camp in ein bereits gelesenes Kalender-Dokument ein.
+// Bewusst ohne eigenes Lesen und Schreiben -- so benutzt der naechtliche Lauf
+// ueber alle Camps genau denselben Code wie der Einzelabgleich, statt eine
+// zweite Kopie der Regeln zu fuehren, die frueher oder spaeter auseinanderlaeuft.
+//
+// "geaendert" sagt, ob das Dokument angefasst wurde; "zustand" sagt, was
+// passiert ist.
+function fcKalenderEinarbeiten(doc, camp, opts) {
+  const geloescht = !!(opts && opts.geloescht);
+  const soll = !geloescht && fcGehoertInKalender(camp);
+  const alteId = String(camp.kalenderTerminId || "");
+  const i = alteId ? doc.termine.findIndex((t) => t && t.id === alteId) : -1;
+
+  if (!soll) {
+    if (i < 0) return { geaendert: false, zustand: "unveraendert", terminId: "" };
+    doc.termine.splice(i, 1);
+    return { geaendert: true, zustand: "entfernt", terminId: "" };
+  }
+
+  if (i < 0) {
+    // ⚠️ Stand schon einmal eine Id am Camp, ist der Termin dort geloescht
+    // worden -- von Hand oder durch purgePastEvents. Dann bleibt er geloescht.
+    // Ihn wieder anzulegen hiesse, eine Entscheidung zu ueberstimmen, die im
+    // Vereinskalender jemand bewusst getroffen hat.
+    if (alteId) return { geaendert: false, zustand: "fehlt", terminId: alteId };
+    const neu = {
+      id: crypto.randomUUID(),
+      kategorie: FC_KALENDER_KATEGORIE,
+      ersteller: camp.erstelltVon || "",
+      erstelltAm: new Date().toISOString(),
+      // Der Herkunftsnachweis. Der Abgleich findet den Termin ueber
+      // camp.kalenderTerminId -- diese Kennung ist fuer den Menschen, der im
+      // Kalender davorsteht und wissen soll, warum seine Aenderung
+      // zurueckspringt. ⚠️ Nie ueber den TITEL wiederfinden: zwei Camps
+      // duerfen gleich heissen.
+      quelle: { app: FC_KALENDER_QUELLE, campId: camp.id }
+    };
+    fcKalenderFelderSetzen(neu, camp);
+    doc.termine.push(neu);
+    return { geaendert: true, zustand: "angelegt", terminId: neu.id };
+  }
+
+  const t = doc.termine[i];
+  if (!t.quelle) t.quelle = { app: FC_KALENDER_QUELLE, campId: camp.id };
+  const vorher = fcKalenderAbdruck(t);
+  fcKalenderFelderSetzen(t, camp);
+  if (fcKalenderAbdruck(t) === vorher) return { geaendert: false, zustand: "unveraendert", terminId: t.id };
+  return { geaendert: true, zustand: "aktualisiert", terminId: t.id };
+}
+
+// Ein einzelnes Camp abgleichen.
+async function fcKalenderAbgleich(authHeader, camp, opts) {
+  const geloescht = !!(opts && opts.geloescht);
+  // Noch nie uebertragen und gehoert nicht hinein: die fremde Datei wird nicht
+  // einmal gelesen. Ein Entwurf, der nie geoeffnet wird, laesst den
+  // Vereinskalender vollstaendig unberuehrt.
+  if (!camp.kalenderTerminId && (geloescht || !fcGehoertInKalender(camp))) {
+    return { zustand: "unveraendert", terminId: "" };
+  }
+  return await fcKalenderMutiere(authHeader, (doc) => {
+    const erg = fcKalenderEinarbeiten(doc, camp, opts);
+    return erg.geaendert ? erg : Object.assign({ nichtsZuTun: true }, erg);
+  });
+}
+
+// Gleicht ALLE Camps in einem Durchgang ab -- ein Lesen, ein Schreiben.
+//
+// ⚠️ Das ist nicht nur Bequemlichkeit, sondern deckt drei Faelle ab, die der
+// Abgleich beim Speichern strukturell nicht sehen kann:
+//
+//   1. Den ALTBESTAND. Camps, die es vor dieser Aenderung schon gab, haben noch
+//      keine kalenderTerminId. Ohne diesen Lauf kaeme so ein Camp erst in den
+//      Kalender, wenn es zufaellig noch einmal jemand speichert.
+//   2. Den ZEITABLAUF. Ein Camp faellt nicht durch eine Aenderung aus dem
+//      Kalender, sondern weil sein letzter Tag vorbeigeht -- und dabei loest
+//      niemand irgendetwas aus.
+//   3. Einen FEHLGESCHLAGENEN Uebertrag. Klemmte Nextcloud im Moment des
+//      Speicherns, holt die Nacht es nach.
+async function fcKalenderLauf(authHeader) {
+  const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+  const schnappschuesse = doc.camps.map(fcKalenderSchnappschuss);
+  if (!schnappschuesse.length) return { geprueft: 0, geaendert: 0 };
+
+  const neueIds = await fcKalenderMutiere(authHeader, (kal) => {
+    const ids = Object.create(null);
+    let geaendert = 0;
+    for (const camp of schnappschuesse) {
+      const erg = fcKalenderEinarbeiten(kal, camp);
+      if (erg.geaendert) geaendert++;
+      const neu = String(erg.terminId || "");
+      if (neu !== String(camp.kalenderTerminId || "")) ids[camp.id] = neu;
+    }
+    // Kein Schreibvorgang, wenn nichts anders ist -- der naechtliche Lauf laeuft
+    // sonst jede Nacht ueber die Datei, ohne etwas daran zu aendern.
+    if (!geaendert) return { nichtsZuTun: true, ids, geaendert: 0 };
+    return { ids, geaendert };
+  });
+
+  // Die geaenderten Termin-Ids in EINEM Durchgang ans Fussballcamp zurueck.
+  const ids = neueIds.ids || {};
+  if (Object.keys(ids).length) {
+    await fcMutiere(authHeader, (d) => {
+      d.camps.forEach((c) => { if (c.id in ids) c.kalenderTerminId = ids[c.id]; });
+    });
+  }
+  return { geprueft: schnappschuesse.length, geaendert: neueIds.geaendert || 0 };
+}
+
+// Der Aufruf fuer die Handler: gleicht ab und schreibt eine geaenderte Termin-Id
+// ans Camp zurueck.
+//
+// ⚠️ Laeuft NACH dem erfolgreichen Schreiben am Camp und faengt jeden Fehler ab:
+// die Aenderung am Camp ist der wichtige Teil und darf nicht daran scheitern,
+// dass der Vereinskalender gerade klemmt. ⚠️ Aber NICHT still -- der Zustand
+// geht in die Antwort, damit die App ihn sagen kann. Ein Uebertrag, von dem
+// niemand erfaehrt, dass er ausgeblieben ist, ist schlimmer als gar keiner.
+async function fcKalenderNachziehen(authHeader, camp, opts) {
+  try {
+    const erg = await fcKalenderAbgleich(authHeader, camp, opts);
+    const neueId = String(erg.terminId || "");
+    if (neueId !== String(camp.kalenderTerminId || "")) {
+      // ⚠️ Zweiter Durchgang aufs Camp: ohne die zurueckgeschriebene Id legte
+      // der naechste Abgleich einen ZWEITEN Termin an, statt den vorhandenen
+      // nachzuziehen.
+      await fcMutiere(authHeader, (doc) => {
+        const c = doc.camps.find((x) => x.id === camp.id);
+        if (c) c.kalenderTerminId = neueId;
+      });
+    }
+    return erg.zustand;
+  } catch (e) {
+    return "fehler";
+  }
+}
+
+// Der Bausatz fuer den Abgleich: genau die Felder, die fcKalenderAbgleich liest.
+// Wird im Handler INNERHALB von fcMutiere abgenommen, also vom Stand, der gleich
+// geschrieben wird -- ein zweites Lesen waere ein weiterer Weg zum Server und
+// koennte einen anderen Stand sehen.
+function fcKalenderSchnappschuss(camp) {
+  return {
+    id: camp.id, name: camp.name, ort: camp.ort, token: camp.token,
+    vonDatum: camp.vonDatum, bisDatum: camp.bisDatum,
+    taeglichVon: camp.taeglichVon, taeglichBis: camp.taeglichBis,
+    jahrgangVon: camp.jahrgangVon, jahrgangBis: camp.jahrgangBis,
+    kurzbeschreibung: camp.kurzbeschreibung,
+    status: camp.status, aufgeraeumtAm: camp.aufgeraeumtAm,
+    erstelltVon: camp.erstelltVon, kalenderTerminId: camp.kalenderTerminId
+  };
 }
