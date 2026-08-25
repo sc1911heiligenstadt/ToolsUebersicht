@@ -1101,6 +1101,15 @@ export default {
       const icsTreffer = new URL(request.url).pathname.match(/^\/kalender\/([A-Za-z0-9_-]{32,100})\.ics$/);
       if (icsTreffer) return handleVkIcsFeed(request, icsTreffer[1], env, authHeader, corsHeaders);
 
+      // Das Werbeplakat eines Fussballcamps -- der DRITTE GET-Pfad dieses
+      // Workers. Er muss wie der Kalender-Feed VOR der Sichtbarkeits-Antwort
+      // stehen; sonst beantwortet der Worker Bildabrufe mit JSON und das Fenster
+      // auf der Vereinsseite zeigt ein kaputtes Bild.
+      const bildTreffer = new URL(request.url).pathname.match(/^\/camp-bild\/([a-f0-9]{16,100})\/([0-9a-fA-F-]{36})$/);
+      if (bildTreffer) {
+        return handleFcBildGet(request, bildTreffer[1], bildTreffer[2], env, authHeader, corsHeaders);
+      }
+
       // Der GET ist der öffentliche Kanal (Tool-Sichtbarkeit für jeden Besucher),
       // trägt seit 2026-07-25 aber einen OPTIONALEN Bearer-Token: die Neuigkeiten
       // sind Vereinsinterna und gehen nur an Angemeldete. Ohne Token (oder mit einem
@@ -1467,6 +1476,11 @@ export default {
         return handleFcCampStatus(request, body, env, authHeader, corsHeaders);
       case "fussballcamp-camp-loeschen":
         return handleFcCampLoeschen(request, body, env, authHeader, corsHeaders);
+      // Das Werbeplakat. Ausgeliefert wird es NICHT hier, sondern ueber den
+      // GET-Pfad /camp-bild/<campToken>/<bildId> -- der Verbraucher ist ein
+      // <img src> in der fremden Vereinsseite.
+      case "fussballcamp-bild-put":
+        return handleFcBildPut(request, body, env, authHeader, corsHeaders);
       case "fussballcamp-job-speichern":
         return handleFcJobSpeichern(request, body, env, authHeader, corsHeaders);
       case "fussballcamp-job-loeschen":
@@ -18322,6 +18336,16 @@ const FC_MAX_PREIS = 100000;         // 1.000,00 EUR in Cent
 const FC_MAX_VERLAUF = 400;          // je Camp
 const FC_STATUS = ["entwurf", "offen", "geschlossen", "abgeschlossen"];
 
+// ---------- Camp-Bild (Werbeplakat) ----------
+//
+// ⚠️ Der Ordner wird aus FUSSBALLCAMP_URL abgeleitet, NICHT ueber davFileDir().
+// Das braeuchte einen DAV_APPS-Eintrag -- und genau den darf diese App nicht
+// bekommen (siehe der Block ganz oben: dav-load wuerde sonst die Anmeldungen
+// samt Gesundheitsangaben an jeden ausliefern, der das Tool sehen darf).
+const FC_DATEI_DIR = FUSSBALLCAMP_URL.slice(0, FUSSBALLCAMP_URL.lastIndexOf("/")) + "/dateien";
+const FC_MAX_BILD_BYTES = 3 * 1024 * 1024;  // der Client rechnet vorher auf ~1400 px herunter
+const FC_BILD_TYPEN = ["image/jpeg", "image/png", "image/webp"];
+
 // ⚠️ Die WIRKSAME Feldliste. fussballcamp/config.js fuehrt dieselbe Liste fuer die
 // Anzeige; beide Fassungen sind gegeneinander geprueft. Was hier fehlt, wird beim
 // Speichern verworfen -- ein Feld nur im Client anzulegen bleibt wirkungslos.
@@ -18742,6 +18766,10 @@ function fcNormalisiere(doc) {
     if (!Array.isArray(c.verlauf)) c.verlauf = [];
     if (!c.felder || typeof c.felder !== "object") c.felder = {};
     if (!FC_STATUS.includes(c.status)) c.status = "entwurf";
+    // Bild: entweder ein vollstaendiges { id, contentType } oder gar keins. Ein
+    // halbes Objekt wuerde spaeter eine Bild-Adresse erzeugen, hinter der nichts
+    // liegt -- im Fenster der Vereinsseite ein kaputtes Bild ohne Erklaerung.
+    if (!c.bild || typeof c.bild !== "object" || !FILE_ID_RE.test(String(c.bild.id || ""))) c.bild = null;
     c.tage.forEach((t) => {
       if (!Array.isArray(t.jobs)) t.jobs = [];
       t.jobs.forEach((j) => { if (!Array.isArray(j.besetzung)) j.besetzung = []; });
@@ -19037,7 +19065,12 @@ function fcOeffentlicheSicht(camp) {
     frei: fcFrei(camp),
     voll: fcFrei(camp) <= 0,
     warteliste: fcWartende(camp).length,
-    anmeldungBis: camp.anmeldungBis || ""
+    anmeldungBis: camp.anmeldungBis || "",
+    // Nur die Kennung, nicht die Bytes: das Bild holt sich der Browser selbst
+    // ueber GET /camp-bild/<campToken>/<bildId> und legt es in seinen Cache.
+    // Die Kennung wechselt bei jedem neuen Bild -- deshalb darf die Antwort
+    // dort lange gecacht werden, ohne dass ein Austausch haengenbleibt.
+    bildId: camp.bild ? String(camp.bild.id) : ""
   };
 }
 
@@ -19057,6 +19090,60 @@ async function handleFcOeffentlich(env, authHeader, corsHeaders) {
     // dort waere ein roter Fehler in deren Konsole, ohne dass jemand versteht,
     // woher er kommt. Ein leeres Ergebnis heisst schlicht "kein Fenster".
     return json({ camps: [] }, 200, corsHeaders);
+  }
+}
+
+// ---------- GET /camp-bild/<campToken>/<bildId> (OHNE Login) ----------
+//
+// Das Werbeplakat eines Camps. ⚠️ Bewusst ein GET-PFAD und keine POST-Aktion:
+// der Verbraucher ist ein <img src> im Fenster auf der fremden Vereinsseite.
+// Ueber einen POST muesste popup.js die Bytes selbst holen und eine Blob-Adresse
+// bauen -- mehr Code in einer fremden Seite, und der Browser koennte das Bild
+// zwischen zwei Seitenaufrufen nicht behalten.
+//
+// ⚠️ Die Bild-Id allein reicht NICHT (Lehre aus kbo-extern-foto-get): sonst
+// liesse sich mit ihr jede Datei aus dem dateien/-Ordner ziehen. Deshalb muss
+// der Camp-Token dazu passen -- und das Camp darf kein Entwurf sein.
+async function handleFcBildGet(request, campToken, bildId, env, authHeader, corsHeaders) {
+  const offenFuerAlle = Object.assign({}, corsHeaders, { "Access-Control-Allow-Origin": "*" });
+  if (!kboBremse(FC_LESE_ZAEHLER, FC_LESE_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, offenFuerAlle);
+  }
+  if (!FILE_ID_RE.test(String(bildId || ""))) {
+    return json({ error: "Dieses Bild gibt es nicht." }, 404, offenFuerAlle);
+  }
+  try {
+    const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+    const camp = fcCampZuToken(doc, campToken);
+    // Ein Entwurf ist auch mit gueltigem Token unsichtbar -- gleiche Linie wie
+    // handleFcAnmeldeInfo. Ein Link kann aus einer frueheren Runde stammen.
+    if (!camp || camp.status === "entwurf" || !camp.bild || String(camp.bild.id) !== String(bildId)) {
+      return json({ error: "Dieses Bild gibt es nicht." }, 404, offenFuerAlle);
+    }
+
+    const resp = await fetch(FC_DATEI_DIR + "/" + camp.bild.id, { headers: { Authorization: authHeader } });
+    if (!resp.ok) return json({ error: "Dieses Bild gibt es nicht." }, 404, offenFuerAlle);
+
+    // Der von Nextcloud gemeldete Typ wird gefiltert, nicht uebernommen: die
+    // Datei koennte von Hand dort abgelegt worden sein.
+    const gemeldet = String(resp.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+    const ctype = FC_BILD_TYPEN.includes(gemeldet) ? gemeldet : "image/jpeg";
+    return new Response(resp.body, {
+      status: 200,
+      headers: {
+        ...offenFuerAlle,
+        "Content-Type": ctype,
+        "X-Content-Type-Options": "nosniff",
+        // Lange gueltig, weil die Bild-Id in der Adresse steht: ein neues Bild
+        // bekommt eine neue Adresse. Ein Austausch bleibt also nie im Cache
+        // haengen, obwohl ein Jahr dransteht.
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    });
+  } catch (_) {
+    // ⚠️ Nie ein Fehler nach aussen: das Bild haengt im Fenster auf der
+    // Vereinsseite. Ein 502 waere dort ein roter Fehler in fremder Konsole.
+    return json({ error: "Dieses Bild gibt es nicht." }, 404, offenFuerAlle);
   }
 }
 
@@ -19487,6 +19574,10 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       zusatzfrage: c.zusatzfrage || "", felder: c.felder || {},
       status: c.status, anmeldungVon: c.anmeldungVon || "", anmeldungBis: c.anmeldungBis || "",
       token: c.token || "", tage: c.tage || [],
+      // Das Werbeplakat, nur die Kennung. Es ist oeffentliches Werbematerial und
+      // geht deshalb auch ohne Bearbeiten-Recht mit -- anders als alles, was in
+      // `anmeldungen` steht.
+      bild: c.bild ? { id: c.bild.id, contentType: c.bild.contentType } : null,
       aufgeraeumtAm: c.aufgeraeumtAm || "",
       // Gerechnet, damit auch ohne Bearbeiten-Recht die Auslastung sichtbar ist.
       belegt: fcBelegt(c), warteliste: fcWartende(c).length, jobsFrei: fcJobsFrei(c),
@@ -19575,6 +19666,67 @@ async function handleFcTeilnehmer(request, body, env, authHeader, corsHeaders) {
 
 // ---------- Camps ----------
 
+// ---------- fussballcamp-bild-put (MIT Login, Bearbeiten-Recht) ----------
+//
+// Legt das Werbeplakat ab, BEVOR das Camp gespeichert wird -- der Client erzeugt
+// die Id selbst und reicht sie danach mit fussballcamp-camp-speichern nach
+// (Muster kbo-extern-foto-put). ⚠️ Reihenfolge bindend: erst die Datei, dann der
+// Eintrag. Bricht es dazwischen ab, liegt hoechstens eine Bilddatei ohne Camp
+// herum -- harmlos. Andersherum stuende im Camp eine Bild-Id, hinter der nichts
+// liegt, und das Fenster auf der Vereinsseite zeigte ein kaputtes Bild.
+async function handleFcBildPut(request, body, env, authHeader, corsHeaders) {
+  const ctx = await fcSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    fcVerlangeEdit(ctx);
+
+    const id = String(body.id || "");
+    if (!FILE_ID_RE.test(id)) throw new FcFehler("Ungültige Bild-Kennung.", 400);
+
+    let bytes;
+    try {
+      bytes = base64ToBytes(String(body.dataBase64 || ""));
+    } catch (_) {
+      throw new FcFehler("Das Bild konnte nicht gelesen werden.", 400);
+    }
+    if (bytes.length === 0) throw new FcFehler("Das Bild ist leer.", 400);
+    if (bytes.length > FC_MAX_BILD_BYTES) throw new FcFehler("Das Bild ist zu groß.", 413);
+
+    // Der Client rechnet ueber ein Canvas um und schickt immer image/jpeg -- aber
+    // der Typ kommt aus dem Netz und ist damit eine Behauptung. Deshalb
+    // zusaetzlich die ersten Bytes pruefen.
+    const ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "").toLowerCase();
+    if (!FC_BILD_TYPEN.includes(ctype)) throw new FcFehler("Es werden nur Bilder angenommen.", 400);
+    const istJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const istPng  = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+    const istWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+    if (!istJpeg && !istPng && !istWebp) throw new FcFehler("Diese Datei ist kein Bild.", 400);
+
+    const fileUrl = FC_DATEI_DIR + "/" + id;
+    const headers = { Authorization: authHeader, "Content-Type": ctype };
+    let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(FC_DATEI_DIR, authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    }
+    if (!resp.ok) throw new FcFehler(`Nextcloud PUT ${resp.status}`, 502);
+    return json({ ok: true, id, contentType: ctype }, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Eine Bilddatei wegraeumen. Fehler sind bewusst still: das Camp ist dann schon
+// gespeichert, und eine liegengebliebene Datei ist ohne den passenden Camp-Token
+// ohnehin nicht abrufbar. Ein geworfener Fehler wuerde dagegen eine erfolgreiche
+// Speicherung als gescheitert melden.
+async function fcBildDateiLoeschen(id, authHeader) {
+  if (!FILE_ID_RE.test(String(id || ""))) return;
+  try {
+    await fetch(FC_DATEI_DIR + "/" + id, { method: "DELETE", headers: { Authorization: authHeader } });
+  } catch (_) { /* still */ }
+}
+
 async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders) {
   const ctx = await fcSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
@@ -19651,6 +19803,22 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
       camp.anmeldungVon = anmVon;
       camp.anmeldungBis = anmBis;
 
+      // Werbeplakat. ⚠️ Drei Faelle, und der dritte ist der Grund fuer die
+      // Unterscheidung: FEHLT das Feld, bleibt das Bild stehen (ein aelterer
+      // Client kennt es nicht und darf es nicht wegwerfen); ist es `null`, wird
+      // es entfernt; sonst wird die Kennung uebernommen. Die BYTES liegen zu
+      // diesem Zeitpunkt schon in Nextcloud -- fussballcamp-bild-put lief vorher.
+      let altesBild = "";
+      if (roh.bild !== undefined) {
+        const vorher = camp.bild ? String(camp.bild.id) : "";
+        const neueId = roh.bild && FILE_ID_RE.test(String(roh.bild.id || "")) ? String(roh.bild.id) : "";
+        const neuerTyp = String((roh.bild && roh.bild.contentType) || "").toLowerCase();
+        camp.bild = neueId
+          ? { id: neueId, contentType: FC_BILD_TYPEN.includes(neuerTyp) ? neuerTyp : "image/jpeg" }
+          : null;
+        if (vorher && vorher !== neueId) altesBild = vorher;
+      }
+
       // Nur bekannte Feld-Ids, nur bekannte Stufen. Feste Felder stehen nicht in
       // der Konfiguration -- sie sind immer Pflicht.
       const felder = {};
@@ -19663,8 +19831,14 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
       camp.felder = felder;
 
       fcVerlaufNotiz(camp, { was: neu ? "camp-angelegt" : "camp-geaendert", von: ctx.session.username });
-      return { id: camp.id, tageGeaendert: tageInfo };
+      return { id: camp.id, tageGeaendert: tageInfo, altesBild };
     });
+
+    // ⚠️ Erst NACH dem erfolgreichen Schreiben. Andersherum waere das alte Bild
+    // weg, waehrend ein Konflikt-Retry es noch einmal einsetzt -- und im Camp
+    // stuende eine Kennung ohne Datei dahinter. Das Aufraeumen selbst ist still.
+    if (antwort.altesBild) await fcBildDateiLoeschen(antwort.altesBild, authHeader);
+    delete antwort.altesBild;
 
     return json(antwort, 200, corsHeaders);
   } catch (e) {
@@ -19714,9 +19888,14 @@ async function handleFcCampLoeschen(request, body, env, authHeader, corsHeaders)
       if (anzahl) {
         throw new FcFehler(`Zu diesem Camp liegen ${anzahl} Anmeldungen vor. Löschen geht nur über „Aufräumen“, damit die Zahlen erhalten bleiben.`, 409);
       }
+      const bildId = doc.camps[i].bild ? String(doc.camps[i].bild.id) : "";
       doc.camps.splice(i, 1);
-      return {};
+      return { altesBild: bildId };
     });
+    // Erst nach dem Schreiben, und still: eine liegengebliebene Bilddatei ist
+    // ohne den passenden Camp-Token nicht abrufbar.
+    if (antwort.altesBild) await fcBildDateiLoeschen(antwort.altesBild, authHeader);
+    delete antwort.altesBild;
     return json(antwort, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
