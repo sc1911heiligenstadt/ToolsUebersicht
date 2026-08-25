@@ -19081,7 +19081,13 @@ function fcOeffentlicheSicht(camp) {
     taeglichVon: camp.taeglichVon, taeglichBis: camp.taeglichBis,
     ort: camp.ort || "",
     jahrgangVon: camp.jahrgangVon || null, jahrgangBis: camp.jahrgangBis || null,
-    preis: camp.preis || 0,
+    // ⚠️ `preis` ist der heute gueltige Betrag, nicht der regulaere: er steht im
+    // Fenster der Vereinsseite und auf der Anmeldeseite, und dort soll stehen,
+    // was es JETZT kostet. Der regulaere geht als `preisRegulaer` mit, damit
+    // sich "statt 180,00 €" daneben schreiben laesst.
+    preis: fcPreisAmTag(camp),
+    preisRegulaer: camp.preis || 0,
+    preisFruehBis: (Number(camp.preisFrueh || 0) > 0 && camp.preisFruehBis) ? camp.preisFruehBis : "",
     frei: fcFrei(camp),
     voll: fcFrei(camp) <= 0,
     warteliste: fcWartende(camp).length,
@@ -19225,6 +19231,43 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
 //
 // ⚠️ Der Client entscheidet NICHT mit. Wer das Formular umbaut und ein
 // abgeschaltetes Feld mitschickt, bekommt es hier weggeworfen.
+// ============================================================
+//  Beitrag: Fruehbucher und was eine Anmeldung wirklich schuldet
+// ============================================================
+//
+// Ein Camp hat bis zu ZWEI Preise: den regulaeren (camp.preis) und einen
+// reduzierten (camp.preisFrueh), der bis EINSCHLIESSLICH camp.preisFruehBis
+// gilt. Fehlt eines von beiden, gibt es nur den regulaeren.
+
+// Was eine Anmeldung an diesem Tag kosten wuerde.
+function fcPreisAmTag(camp, tag) {
+  const frueh = Number(camp.preisFrueh || 0);
+  const bis = String(camp.preisFruehBis || "");
+  if (frueh > 0 && bis && String(tag || fcHeuteBerlin()) <= bis) return frueh;
+  return Number(camp.preis || 0);
+}
+
+// Was DIESE Anmeldung schuldet.
+//
+// ⚠️ Der Betrag wird beim Anmelden FESTGESCHRIEBEN. Wer im Fruehbucherfenster
+// angemeldet hat, zahlt den reduzierten Beitrag auch dann noch, wenn der Stichtag
+// laengst vorbei ist -- alles andere waere eine nachtraegliche Preiserhoehung fuer
+// jemanden, dem der Verein schon eine Zahlungsaufforderung geschickt hat.
+// Gleiches Muster wie die AGB-Fassung an der Anmeldung.
+//
+// ⚠️ Der Rueckfall auf camp.preis gilt NUR fuer Anmeldungen von vor dem
+// 2026-08-25, die noch gar keinen Betrag tragen. Er darf nicht zum Normalfall
+// werden: sonst wandert eine Anmeldung stillschweigend auf den jeweils aktuellen
+// Preis, und die Zahlungsaufforderung von gestern stimmt heute nicht mehr.
+//
+// ⚠️ 0 ist ein GUELTIGER Betrag (kostenloses Camp) -- deshalb ausdruecklich gegen
+// undefined/null pruefen und nicht auf Wahrheitswert.
+function fcBetrag(camp, a) {
+  const roh = a ? a.betrag : undefined;
+  if (roh === undefined || roh === null || !Number.isFinite(Number(roh))) return Number(camp.preis || 0);
+  return Number(roh);
+}
+
 // Vergleichsform eines Feldwerts. Nur fuer die Frage "hat sich etwas geaendert",
 // nie zum Speichern.
 //
@@ -19374,6 +19417,10 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
         bezahlt: false, bezahltAm: "", bezahltVon: "",
         notiz: "",
         zusatzantwort: camp.zusatzfrage ? capStr(body.daten && body.daten.zusatzantwort, 200) : "",
+        // ⚠️ Der Beitrag wird HIER festgeschrieben, nicht spaeter gerechnet.
+        // Steht das Fruehbucherfenster noch offen, gilt der reduzierte Betrag --
+        // und zwar dauerhaft, auch nach dem Stichtag.
+        betrag: fcPreisAmTag(camp),
         datenschutzAm: new Date().toISOString(),
         // Der Nachweis: WANN zugestimmt wurde und WELCHER Fassung. Ueber den Stand
         // laesst sich der damalige Wortlaut aus dem Archiv zurueckholen.
@@ -19440,7 +19487,7 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
       email: anmeldung.elternEmail || "",
       wartePlatz,
       zahlung: anmeldung.status === "angemeldet" ? {
-        betrag: camp.preis || 0,
+        betrag: fcBetrag(camp, anmeldung),
         iban: einst.iban || "", bic: einst.bic || "",
         kontoinhaber: einst.kontoinhaber || "",
         verwendungszweck: fcVerwendungszweck(camp, anmeldung),
@@ -19476,20 +19523,26 @@ async function handleFcMeineInfo(request, body, env, authHeader, corsHeaders) {
     // ⚠️ Nur die Felder der Anmeldung selbst, kein Durchreichen des Objekts:
     // notiz (interne Notiz der Verwaltung) und absageGrund gehen die Eltern
     // nichts an.
-    const sicht = { status: anmeldung.status, bezahlt: !!anmeldung.bezahlt, wartePlatz, zusatzantwort: anmeldung.zusatzantwort || "" };
+    // ⚠️ `betrag` gehoert ausdruecklich dazu: die Feldschleife darunter kennt
+    // nur FC_FELDER, und auf der Warteliste gibt es keinen Zahlungsblock, aus dem
+    // sich der festgeschriebene Beitrag sonst ablesen liesse.
+    const sicht = { status: anmeldung.status, bezahlt: !!anmeldung.bezahlt, wartePlatz,
+                    betrag: fcBetrag(camp, anmeldung), zusatzantwort: anmeldung.zusatzantwort || "" };
     Object.keys(FC_FELDER).forEach((id) => { if (anmeldung[id] !== undefined) sicht[id] = anmeldung[id]; });
 
     return json({
       camp: {
         name: camp.name, vonDatum: camp.vonDatum, bisDatum: camp.bisDatum,
         taeglichVon: camp.taeglichVon, taeglichBis: camp.taeglichBis,
-        ort: camp.ort || "", preis: camp.preis || 0,
+        ort: camp.ort || "", preis: fcPreisAmTag(camp),
+        preisRegulaer: camp.preis || 0,
+        preisFruehBis: (Number(camp.preisFrueh || 0) > 0 && camp.preisFruehBis) ? camp.preisFruehBis : "",
         zusatzfrage: camp.zusatzfrage || "", felder: camp.felder || {}
       },
       anmeldung: sicht,
       agb: fcAgbFuerAnmeldung(doc, anmeldung),
       zahlung: {
-        betrag: camp.preis || 0, iban: einst.iban || "", bic: einst.bic || "",
+        betrag: fcBetrag(camp, anmeldung), iban: einst.iban || "", bic: einst.bic || "",
         kontoinhaber: einst.kontoinhaber || "",
         verwendungszweck: fcVerwendungszweck(camp, anmeldung)
       }
@@ -19629,6 +19682,10 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       taeglichVon: c.taeglichVon, taeglichBis: c.taeglichBis,
       jahrgangVon: c.jahrgangVon || null, jahrgangBis: c.jahrgangBis || null,
       plaetze: c.plaetze || 0, preis: c.preis || 0, preisHinweis: c.preisHinweis || "",
+      // Der Verwaltung geht der REGULAERE Preis heraus (oben) plus das
+      // Fruehbucherpaar -- sie pflegt beide, also braucht sie beide roh.
+      preisFrueh: c.preisFrueh || 0, preisFruehBis: c.preisFruehBis || "",
+      preisJetzt: fcPreisAmTag(c),
       kurzbeschreibung: c.kurzbeschreibung || "", beschreibung: c.beschreibung || "",
       zusatzfrage: c.zusatzfrage || "", felder: c.felder || {},
       status: c.status, anmeldungVon: c.anmeldungVon || "", anmeldungBis: c.anmeldungBis || "",
@@ -19864,6 +19921,22 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
       camp.jahrgangBis = fcZahl(roh.jahrgangBis, 1990, 2050);
       camp.plaetze = plaetze;
       camp.preis = fcZahl(roh.preis, 0, FC_MAX_PREIS) || 0;
+      // ⚠️ Der Fruehbucherpreis gilt nur, wenn BEIDE Angaben dastehen. Ein Preis
+      // ohne Stichtag hiesse "guenstiger bis irgendwann", ein Stichtag ohne Preis
+      // wuerde gar nichts bewirken -- beides sieht in der Maske aus, als sei es
+      // eingerichtet. Deshalb faellt hier das halbe Paar zusammen weg.
+      const fruehPreis = fcZahl(roh.preisFrueh, 0, FC_MAX_PREIS) || 0;
+      const fruehBis = fcDatum(roh.preisFruehBis);
+      if (fruehPreis > 0 && fruehBis) {
+        if (fruehPreis >= camp.preis) {
+          throw new FcFehler("Der Frühbucherpreis muss unter dem regulären Beitrag liegen.", 400);
+        }
+        camp.preisFrueh = fruehPreis;
+        camp.preisFruehBis = fruehBis;
+      } else {
+        camp.preisFrueh = 0;
+        camp.preisFruehBis = "";
+      }
       camp.preisHinweis = capStr(roh.preisHinweis, 200).trim();
       camp.kurzbeschreibung = capStr(roh.kurzbeschreibung, 200).trim();
       camp.beschreibung = capStr(roh.beschreibung, 2000).trim();
@@ -20460,6 +20533,11 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
         nummer: a.nummer,
         status: a.status,
         bezahlt: !!a.bezahlt,
+        // ⚠️ Der Betrag bleibt. Er ist eine Zahl ohne Personenbezug und die
+        // einzige Antwort auf "was hat dieses Camp eingebracht" -- ohne ihn
+        // muesste man ihn aus dem Camp-Preis zurueckrechnen, und der ist bei
+        // einem Fruehbucherfenster nicht mehr derselbe fuer alle.
+        betrag: fcBetrag(camp, a),
         // Nur das Geburtsjahr, nicht das Datum: fuer "welche Jahrgaenge waren da"
         // reicht es, und allein ist es niemandem zuzuordnen.
         jahrgang: String(a.geburtsdatum || "").slice(0, 4),
@@ -20531,12 +20609,12 @@ async function fcMailSenden(env, empfaenger, betreff, text) {
 // gleich aussehen -- eine zweite Fassung liefe frueher oder spaeter auseinander.
 function fcZahlungsBlock(camp, a, einst) {
   if (!einst.iban) {
-    return `Der Beitrag beträgt ${fcEuro(camp.preis)}.
+    return `Der Beitrag beträgt ${fcEuro(fcBetrag(camp, a))}.
 Die Kontoverbindung schicken wir dir gesondert zu.`;
   }
   return `Bitte überweise den Beitrag${camp.vonDatum ? " bis zum " + fcDatumDe(camp.vonDatum) : ""} auf dieses Konto:
 
-  Betrag            ${fcEuro(camp.preis)}
+  Betrag            ${fcEuro(fcBetrag(camp, a))}
   Empfänger         ${einst.kontoinhaber || "1. SC 1911 Heiligenstadt e.V."}
   IBAN              ${fcIbanLesbar(einst.iban)}${einst.bic ? "\n  BIC               " + einst.bic : ""}
   Verwendungszweck  ${fcVerwendungszweck(camp, a)}
@@ -20707,7 +20785,10 @@ async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
       if (art === "zahlung") {
         if (!einst.zahlErinnerung) return;
         if (a.bezahlt || a.zahlErinnertAm) return;
-        if (!camp.preis) return;
+        // ⚠️ Der Betrag DIESER Anmeldung, nicht der des Camps: bei einem
+        // kostenlosen Fruehbucherplatz gaebe es sonst eine Zahlungserinnerung
+        // ueber einen Betrag, den diese Familie gar nicht schuldet.
+        if (!fcBetrag(camp, a)) return;
         // Erst erinnern, wenn seit der Anmeldung genug Zeit vergangen ist.
         const seit = a.erstelltAm ? String(a.erstelltAm).slice(0, 10) : "";
         if (!seit) return;
