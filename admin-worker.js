@@ -18864,7 +18864,15 @@ function fcIbanLesbar(iban) {
 // sonst steht auf dem Kontoauszug etwas anderes als in der Anmeldeliste, und der
 // Abgleich von Hand wird zur Sucharbeit.
 function fcVerwendungszweck(camp, a) {
-  return `${camp.name || "Camp"}, ${(a.kindVorname || "")} ${(a.kindNachname || "")}`.trim().slice(0, 140);
+  // ⚠️ Ueber fcKindName, nicht ueber die beiden Felder einzeln -- der Client baut
+  // ihn genauso (kindName in app.js), und beide muessen ZEICHENGENAU dasselbe
+  // liefern, sonst steht auf dem Kontoauszug etwas anderes als in der Liste.
+  //
+  // Der Unterschied war klein und trotzdem echt: fehlte der Vorname, liess die
+  // alte Fassung ein DOPPELTES Leerzeichen mitten im Text stehen (trim() raeumt
+  // nur aussen), und bei einer aufgeraeumten Anmeldung ohne Namen endete sie auf
+  // "Campname," waehrend die App "Campname, Ohne Namen" zeigte.
+  return `${camp.name || "Camp"}, ${fcKindName(a)}`.slice(0, 140);
 }
 
 function fcKindName(a) {
