@@ -12128,6 +12128,7 @@ async function handleVkTerminPush(request, body, env, authHeader, corsHeaders, e
 }
 
 // Alle Personalkonten, die eine App BEARBEITEN duerfen -- die Zustaendigen also.
+// Mit nurAdmin=true stattdessen nur die ADMINISTRIEREN-Gruppen (siehe unten).
 // Gebraucht dort, wo eine Meldung nicht an eine bestimmte Person geht, sondern
 // an "wer sich darum kuemmert": Materialbedarf, Fahrtenbuch, Fotoauftraege.
 //
@@ -12138,12 +12139,24 @@ async function handleVkTerminPush(request, body, env, authHeader, corsHeaders, e
 //
 // ⚠️ usersDoc wird uebergeben statt gelesen: der Fahrtenbuch-Weg hat KEINE
 // Sitzung (Einreichung per Code ohne Login) und muss es selbst beschaffen.
-async function pushEmpfaengerMitRecht(app, usersDoc, env, authHeader, ausser) {
+async function pushEmpfaengerMitRecht(app, usersDoc, env, authHeader, ausser, nurAdmin) {
   const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
   const entry = getOwn(config.tools || {}, app) || {};
   const editIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
   const adminIds = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
-  const gruppen = editIds.concat(adminIds);
+  // ⚠️ nurAdmin (seit 2026-08-25): Apps, in denen das ENTSCHEIDEN an der
+  // Administrieren-Stufe haengt, duerfen nicht an die Bearbeiter pushen. Michel-
+  // Meldung: eine Bedarfsmeldung weckte einen Trainer, der nur in "trainer" ist --
+  // der sieht den Verwaltung-Tab gar nicht, bekam aber "wartet auf deine
+  // Entscheidung". Bei materialbedarf und raumnutzung ist Bearbeiten = melden
+  // bzw. ausfuellen, Administrieren = entscheiden bzw. einreichen; ohne diese
+  // Trennung ist die Gruppe "trainer" im Verteiler, obwohl sie nichts tun kann.
+  //
+  // ⚠️ Leere adminGroupIds fallen auf edit+admin zurueck: ein ausbleibendes
+  // Push faellt niemandem auf, der stille Ausfall muss also die unwahr-
+  // scheinlichere Richtung sein -- gleiche Linie wie der Verteiler-Filter in
+  // handleVorgangPush und der Mannschafts-Fallback in handleFotoauftragPush.
+  const gruppen = (nurAdmin && adminIds.length) ? adminIds : editIds.concat(adminIds);
 
   const users = (usersDoc && usersDoc.users) || {};
   const weg = normalizeUsername(String(ausser || ""));
@@ -12177,6 +12190,10 @@ const PUSH_VORGANG_APPS = {
   },
   materialbedarf: {
     liste: "meldungen", anlass: "material",
+    // Entscheiden haengt in der App an canAdmin(), nicht an canEdit() -- der
+    // Verteiler muss dieselbe Stufe nehmen, sonst weckt jede Meldung die
+    // gesamte Trainerschaft (Michel-Meldung 2026-08-25).
+    entscheidetAdmin: true,
     neu: "Eine neue Bedarfsmeldung wartet auf deine Entscheidung. Im Materialbedarf kannst du sie freigeben oder ablehnen.",
     entschieden: "Deine Bedarfsmeldung wurde bearbeitet. Im Materialbedarf steht, wie entschieden wurde."
   },
@@ -12187,6 +12204,9 @@ const PUSH_VORGANG_APPS = {
   // kein Ergebnis; was passiert ist, steht in der App.
   raumnutzung: {
     liste: "antraege", anlass: "raumnutzung",
+    // Wie materialbedarf: einreichen darf nur die Administrieren-Stufe
+    // (geschaeftsstelle/fuehrung), ausfuellen auch trainer/foerderung.
+    entscheidetAdmin: true,
     neu: "Ein Antrag ist fertig ausgefüllt und wartet aufs Einreichen. In der Raumnutzung kannst du ihn prüfen und abschicken.",
     entschieden: "Bei deinem Antrag hat sich etwas getan. In der Raumnutzung siehst du den aktuellen Stand.",
     empfaengerFeld: "pushEmpfaenger"
@@ -12229,7 +12249,7 @@ async function handleVorgangPush(request, body, env, authHeader, corsHeaders, ex
   let empfaenger = [];
   if (art === "neu") {
     // An die Zustaendigen: wer den Vorgang entscheiden kann.
-    empfaenger = await pushEmpfaengerMitRecht(app, session.usersDoc, env, authHeader, session.username);
+    empfaenger = await pushEmpfaengerMitRecht(app, session.usersDoc, env, authHeader, session.username, !!cfg.entscheidetAdmin);
     // Die App darf den Kreis VERKLEINERN, nie erweitern -- deshalb ein Filter
     // ueber das Rechte-Ergebnis und keine eigene Empfaengerquelle. Sonst koennte
     // ein Bearbeiter beliebige Konten (auch Spieler) mit Nachrichten belegen,
