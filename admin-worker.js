@@ -19239,6 +19239,36 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
 // reduzierten (camp.preisFrueh), der bis EINSCHLIESSLICH camp.preisFruehBis
 // gilt. Fehlt eines von beiden, gibt es nur den regulaeren.
 
+// Zahlungsziel: so viele Tage VOR dem ersten Camp-Tag (Michel-Vorgabe
+// 2026-08-25). Vorher stand dort der erste Camp-Tag selbst -- Geld, das am
+// Anreisetag eingeht, ist fuer die Planung zu spaet.
+//
+// ⚠️ Die Teilnahmebedingungen decken das: Punkt 4 nennt "die in der
+// Anmeldebestaetigung genannte Zahlungsfrist" und faellt nur ersatzweise auf
+// 14 Tage nach der Bestaetigung zurueck. Wer die Zahl hier aendert, aendert
+// damit die verbindliche Frist -- kein Darstellungsdetail.
+const FC_ZAHLFRIST_TAGE = 7;
+
+function fcZahlfrist(camp) {
+  if (!camp || !camp.vonDatum) return "";
+  // ⚠️ Anker auf 12:00 UTC, nicht Mitternacht: sonst kippt die Rechnung ueber
+  // eine Sommerzeitgrenze um einen Tag.
+  const d = new Date(camp.vonDatum + "T12:00:00Z");
+  if (Number.isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() - FC_ZAHLFRIST_TAGE);
+  return d.toISOString().slice(0, 10);
+}
+
+// Die Frist, wenn sie noch laeuft -- sonst leer.
+//
+// ⚠️ Eine abgelaufene Frist darf NICHT dastehen: wer sich drei Tage vor dem Camp
+// anmeldet, bekaeme sonst die Aufforderung, bis zu einem Tag zu zahlen, der
+// laengst vorbei ist.
+function fcZahlfristOffen(camp) {
+  const f = fcZahlfrist(camp);
+  return (f && f >= fcHeuteBerlin()) ? f : "";
+}
+
 // Was eine Anmeldung an diesem Tag kosten wuerde.
 function fcPreisAmTag(camp, tag) {
   const frueh = Number(camp.preisFrueh || 0);
@@ -19491,7 +19521,7 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
         iban: einst.iban || "", bic: einst.bic || "",
         kontoinhaber: einst.kontoinhaber || "",
         verwendungszweck: fcVerwendungszweck(camp, anmeldung),
-        frist: camp.vonDatum || ""
+        frist: fcZahlfristOffen(camp)
       } : null,
       aendernLink: FC_APP_URL + "meine-anmeldung.html?a=" + encodeURIComponent(anmeldung.token)
     }, 200, corsHeaders);
@@ -20612,7 +20642,8 @@ function fcZahlungsBlock(camp, a, einst) {
     return `Der Beitrag beträgt ${fcEuro(fcBetrag(camp, a))}.
 Die Kontoverbindung schicken wir dir gesondert zu.`;
   }
-  return `Bitte überweise den Beitrag${camp.vonDatum ? " bis zum " + fcDatumDe(camp.vonDatum) : ""} auf dieses Konto:
+  const frist = fcZahlfristOffen(camp);
+  return `Bitte überweise den Beitrag${frist ? " bis zum " + fcDatumDe(frist) : " möglichst umgehend"} auf dieses Konto:
 
   Betrag            ${fcEuro(fcBetrag(camp, a))}
   Empfänger         ${einst.kontoinhaber || "1. SC 1911 Heiligenstadt e.V."}
