@@ -23,6 +23,11 @@
 //   PW_VEREINSBUDGET        = Vereinsbudget: Zugang zur ganzen Seite vereinsbudget.html
 //   PW_BUDGET_LEEREN        = Vereinsbudget: "Saison leeren"
 //   PW_BUDGET_EINGANG_ZUGANG = sc-heiligenstadt-beleg-upload-Worker (eigenes Cloudflare-Deploy!): Zugriffscode in beleg-eingang.html
+//   PW_AGELAN               = AgeLan: Zugang zur ganzen Seite (kennt jeder Teilnehmer)
+//   PW_AGELAN_VERANSTALTER  = AgeLan: Turniere anlegen. Bewusst ein ZWEITES, engeres
+//     Passwort: PW_AGELAN verteilt Michel an alle Teilnehmer, sonst könnte jeder mit
+//     dem Link Turniere anlegen. Fehlt das Secret, ist der Anlegen-Bereich für
+//     ALLE zu (auch für Michel) — deshalb erst setzen, dann den Client ausliefern.
 //
 // Die letzte wird nicht vom Browser-Client, sondern vom EIGENEN Cloudflare Worker
 // serverseitig abgefragt (Worker-zu-Worker-Fetch) - dieser Worker braucht dafür
@@ -7696,7 +7701,8 @@ const ACTION_PASSWORD_SECRETS = {
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
   "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG", // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
   "fahrtenbuch-extern": "PW_FAHRTENBUCH_EXTERN", // extern.html: Vorab-Check am Code-Gate (die drei fahrtenbuch-extern-*-Aktionen prüfen zusätzlich selbst)
-  "agelan-zugang": "PW_AGELAN" // AgeLan: Zugang zur ganzen Seite (Streamplan), Passwort verteilt Michel über Discord
+  "agelan-zugang": "PW_AGELAN", // AgeLan: Zugang zur ganzen Seite, Passwort verteilt Michel über Discord
+  "agelan-veranstalter": "PW_AGELAN_VERANSTALTER" // AgeLan: Turniere ANLEGEN (zweites, engeres Passwort — agelan-zugang hat jeder Teilnehmer)
 };
 
 async function handleVerifyActionPassword(request, body, env, corsHeaders) {
