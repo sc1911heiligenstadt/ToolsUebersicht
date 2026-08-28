@@ -279,11 +279,13 @@ function logout() {
   loadAufgaben(); // leert die Aufgabenkarte -- sie gehoert dem abgemeldeten Konto
 }
 
-async function loadAndRenderUsers() {
+// vorabP: ein bereits gestarteter list-users-Aufruf (siehe ladeAdminPanels).
+// Ohne ihn fragt die Funktion wie bisher selbst.
+async function loadAndRenderUsers(vorabP) {
   const errorEl = document.getElementById("users-error");
   errorEl.style.display = "none";
   try {
-    const data = await callWorker("list-users", {});
+    const data = await (vorabP || callWorker("list-users", {}));
     usersState = data.users.slice().sort((a, b) =>
       (a.displayName || a.username).localeCompare(b.displayName || b.username, "de")
     );
@@ -763,11 +765,12 @@ async function applyUserGroupMembership(oldUsername, newUsername, desiredGroupId
   }
 }
 
-async function loadAndRenderGroups() {
+// vorabP: ein bereits gestarteter list-groups-Aufruf (siehe ladeAdminPanels).
+async function loadAndRenderGroups(vorabP) {
   const errorEl = document.getElementById("groups-error");
   errorEl.style.display = "none";
   try {
-    const data = await callWorker("list-groups", {});
+    const data = await (vorabP || callWorker("list-groups", {}));
     groupsState = data.groups;
     renderGroupsList();
     renderGroupCheckboxes(document.getElementById("new-user-groups"), []);
@@ -3831,13 +3834,21 @@ async function aufgabeZuweisenSenden() {
 // nichts mehr. aufgabenState.assignGroupIds wird vom Worker weiterhin geliefert
 // und bleibt bewusst ungenutzt; siehe den Kommentar an speichereAufgabenGruppen().
 
-async function renderAufgabenAdminPanel() {
+// gruppen: die bereits geladene Gruppenliste. ⚠️ Hier stand bis 2026-08-28 ein
+// EIGENER list-groups-Aufruf -- exakt derselbe, den loadAndRenderGroups() wenige
+// Zeilen vorher schon gemacht hatte. Ein kompletter Roundtrip (~180 ms) fuer eine
+// Liste, die als groupsState bereits im Speicher lag. Ohne Parameter fragt die
+// Funktion weiterhin selbst, damit sie auch allein aufrufbar bleibt.
+async function renderAufgabenAdminPanel(gruppenVorab) {
   const dokListeEl = document.getElementById("aufgaben-dok-gruppen-liste");
   if (!dokListeEl) return;
   const gesetzt = aufgabenState.dokumentGroupIds || [];
   try {
-    const res = await callWorker("list-groups", {});
-    const gruppen = Array.isArray(res && res.groups) ? res.groups : [];
+    let gruppen = gruppenVorab;
+    if (!Array.isArray(gruppen)) {
+      const res = await callWorker("list-groups", {});
+      gruppen = Array.isArray(res && res.groups) ? res.groups : [];
+    }
     dokListeEl.innerHTML = gruppen.length
       ? gruppen.map((g) => `
           <label class="aufgaben-gruppen-zeile">
@@ -6788,11 +6799,12 @@ function renderRecentActivity(data) {
   }).join("");
 }
 
-async function loadAndRenderFeedback() {
+// vorabP: ein bereits gestarteter list-feedback-Aufruf (siehe ladeAdminPanels).
+async function loadAndRenderFeedback(vorabP) {
   const errorEl = document.getElementById("feedback-admin-error");
   errorEl.style.display = "none";
   try {
-    const data = await callWorker("list-feedback", {});
+    const data = await (vorabP || callWorker("list-feedback", {}));
     feedbackState = Array.isArray(data.entries) ? data.entries : [];
     renderFeedbackAdmin();
   } catch (e) {
@@ -7102,10 +7114,55 @@ function renderHeaderUser() {
 // während eine Testansicht bereits aktiv ist, siehe realIsAdmin), lädt die
 // Gruppenliste per list-directory nach (kein Admin-Gate im Worker, bleibt
 // also auch während der Testansicht selbst abrufbar).
-async function loadDirectoryGroupsIfNeeded() {
+// Alle Admin-Panels laden. Die sechs Worker-Aufrufe dahinter sind voneinander
+// unabhaengig und werden deshalb GEMEINSAM angestossen; nur das Auswerten bleibt
+// in Reihenfolge, weil renderUsersList sein Gruppen-Dropdown aus groupsState baut.
+//
+// ⚠️ Bis 2026-08-28 lief das hier streng nacheinander: list-groups -> list-users
+// -> list-feedback -> get-materialcontainer-code -> list-groups (nochmal!) ->
+// list-directory. Sechs serielle Roundtrips a ~180 ms, also gut eine Sekunde, in
+// der ein Admin die Startseite anschaut und nichts passiert. Der doppelte
+// list-groups ist ganz entfallen (renderAufgabenAdminPanel bekommt groupsState).
+//
+// Die .catch()-Platzhalter sind Pflicht: ein Promise, das erst spaeter (oder wegen
+// eines frueheren Fehlers gar nicht) awaited wird, wuerde sonst als unhandled
+// rejection in der Konsole landen. Wer es awaitet, bekommt den Fehler ganz normal
+// aus der Original-Promise -- gleiches Muster wie prefetchJson im admin-worker.
+async function ladeAdminPanels() {
+  if (!currentUser || !currentUser.isAdmin) {
+    // Die Testansicht (view-as) laesst isAdmin fallen, realIsAdmin bleibt --
+    // dann gibt es nur noch diesen einen Aufruf, und der prueft selbst.
+    await loadDirectoryGroupsIfNeeded();
+    return;
+  }
+  const anstossen = (aktion) => {
+    const p = callWorker(aktion, {});
+    p.catch(() => {});
+    return p;
+  };
+  const gruppenP   = anstossen("list-groups");
+  const nutzerP    = anstossen("list-users");
+  const feedbackP  = anstossen("list-feedback");
+  const materialP  = anstossen("get-materialcontainer-code");
+  const directoryP = currentUser.realIsAdmin ? anstossen("list-directory") : null;
+
+  await loadAndRenderGroups(gruppenP);
+  await loadAndRenderUsers(nutzerP);
+  renderVisibilityList();
+  renderNewsAdmin();
+  renderLinksAdmin();
+  await loadAndRenderFeedback(feedbackP);
+  await ladeMaterialcontainerInsAdminFeld(materialP);
+  // groupsState steht nach loadAndRenderGroups() -- kein zweiter list-groups mehr.
+  await renderAufgabenAdminPanel(groupsState);
+  await loadDirectoryGroupsIfNeeded(directoryP);
+}
+
+// vorabP: ein bereits gestarteter list-directory-Aufruf (siehe ladeAdminPanels).
+async function loadDirectoryGroupsIfNeeded(vorabP) {
   if (!currentUser || !currentUser.realIsAdmin) return;
   try {
-    const data = await callWorker("list-directory", {});
+    const data = await (vorabP || callWorker("list-directory", {}));
     directoryGroupsState = (data && data.groups) || [];
   } catch (e) {
     directoryGroupsState = [];
@@ -8604,9 +8661,10 @@ function zeigeMaterialcontainerAdminMeta(data) {
 
 // Den hinterlegten Code echt ins Feld schreiben, nicht nur als Platzhalter
 // andeuten: der Admin soll sehen, was gerade gilt, bevor er ihn ersetzt.
-async function ladeMaterialcontainerInsAdminFeld() {
+// vorabP: ein bereits gestarteter get-materialcontainer-code-Aufruf (siehe ladeAdminPanels).
+async function ladeMaterialcontainerInsAdminFeld(vorabP) {
   try {
-    const data = await callWorker("get-materialcontainer-code", {});
+    const data = await (vorabP || callWorker("get-materialcontainer-code", {}));
     document.getElementById("materialcontainer-code-input").value = data.code || "";
     document.getElementById("materialcontainer-hinweis-input").value = data.hinweis || "";
     zeigeMaterialcontainerAdminMeta(data);
@@ -9170,20 +9228,10 @@ async function afterAuthChange() {
   if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeUnterlagen();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
   await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
-  if (currentUser && currentUser.isAdmin) {
-    await loadAndRenderGroups();
-    // Frueher stand hier ein zweites renderKontoKarte(): die Gruppennamen liessen sich
-    // erst nach loadAndRenderGroups() aufloesen. Seit "me" sie als groupNames mitliefert,
-    // ist die Karte schon beim ersten Rendern vollstaendig.
-    await loadAndRenderUsers();
-    renderVisibilityList();
-    renderNewsAdmin();
-    renderLinksAdmin();
-    await loadAndRenderFeedback();
-    await ladeMaterialcontainerInsAdminFeld();
-    await renderAufgabenAdminPanel();
-  }
-  await loadDirectoryGroupsIfNeeded();
+  // Frueher stand hier vor loadAndRenderUsers() ein zweites renderKontoKarte(): die
+  // Gruppennamen liessen sich erst nach loadAndRenderGroups() aufloesen. Seit "me"
+  // sie als groupNames mitliefert, ist die Karte schon beim ersten Rendern vollstaendig.
+  await ladeAdminPanels();
 }
 
 // Passwort-Regeln (identisch im admin-worker.js dupliziert, da separates Deployment):
@@ -10316,21 +10364,10 @@ async function init() {
   renderToolGrid();
   renderFeedbackTab();
   await Promise.all([loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
-  if (currentUser && currentUser.isAdmin) {
-    // Seriell statt Promise.all: renderUsersList baut aus groupsState das
-    // Gruppen-Dropdown des Nutzer-Filters, das also schon geladen sein muss,
-    // bevor loadAndRenderUsers() rendert (sonst Race, je nachdem welcher der
-    // beiden Worker-Aufrufe zuerst zurückkommt).
-    await loadAndRenderGroups();
-    await loadAndRenderUsers();
-    renderVisibilityList();
-    renderNewsAdmin();
-    renderLinksAdmin();
-    await loadAndRenderFeedback();
-    await ladeMaterialcontainerInsAdminFeld();
-    await renderAufgabenAdminPanel();
-  }
-  await loadDirectoryGroupsIfNeeded();
+  // Die Aufrufe laufen gemeinsam los, ausgewertet wird in Reihenfolge:
+  // renderUsersList baut aus groupsState das Gruppen-Dropdown des Nutzer-Filters,
+  // das also schon geladen sein muss, bevor loadAndRenderUsers() rendert.
+  await ladeAdminPanels();
 
   // Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) direkt in den
   // Konto-Tab springen, wo das "Admin-Konto einrichten"-Formular wartet.

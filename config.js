@@ -494,6 +494,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.33",
+    groups: [
+      {
+        title: "Die Startseite ist für Verwalter deutlich schneller da",
+        items: [
+          "Wer die Übersicht mit Administrieren-Recht öffnet, wartete bisher rund eine Sekunde länger als nötig: Gruppen, Nutzer, Rückmeldungen, der Materialcontainer-Code und die Testansicht wurden streng nacheinander geholt — jede Abfrage erst, wenn die davor zurück war.",
+          "Jetzt laufen sie gemeinsam los. Gemessen an derselben Stelle: vorher 1263 Millisekunden, jetzt 266.",
+          "Eine der sechs Abfragen war außerdem doppelt — die Gruppenliste wurde für das Aufgaben-Panel ein zweites Mal geholt, obwohl sie schon vorlag. Sie ist entfallen.",
+          "Zu sehen ist das beim Öffnen der Seite und nach jedem Anmelden. An den Inhalten ändert sich nichts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.32",
     groups: [
       {
