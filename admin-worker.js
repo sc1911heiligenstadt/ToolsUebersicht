@@ -18836,6 +18836,20 @@ function fcTagPlus(tage) {
   return new Date(Date.now() + tage * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
 }
 
+// Ein ISO-Tag plus/minus n Tage, durchgehend in UTC gerechnet.
+//
+// ⚠️ Gleiche Regel wie in fcZahlfrist (die dieselbe Rechnung als Sonderfall
+// macht und bewusst unangetastet bleibt, weil pruef-zahlfrist.mjs sie
+// festnagelt): das "Z" ist tragend. Ohne das "Z" wird lokal geparst, und dann
+// rechnet es je nach Zone an JEDEM Datum einen Tag daneben -- nicht nur an der
+// Zeitumstellung. Entweder durchgehend UTC oder durchgehend lokal, nie gemischt.
+function fcTagPlusUtc(tag, tage) {
+  const d = new Date(String(tag || "") + "T12:00:00Z");
+  if (Number.isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() + tage);
+  return d.toISOString().slice(0, 10);
+}
+
 function fcDatum(roh) {
   const s = capStr(roh, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
@@ -19270,6 +19284,16 @@ async function handleFcAnmeldeInfo(request, body, env, authHeader, corsHeaders) 
 // darf in dem Fall "möglichst umgehend" stehen.
 const FC_ZAHLFRIST_TAGE = 7;
 
+// Wie viele Tage VOR der Zahlfrist die Erinnerung fruehestens rausdarf.
+//
+// ⚠️ Das ist die zweite Bedingung neben `zahlErinnerungTage` (Tage seit der
+// Anmeldung), und sie ist der eigentliche Punkt: die Schonfrist allein haengt am
+// Anmeldetag, die Faelligkeit aber am Camp. Wer sich drei Monate vorher
+// anmeldet, bekam sonst nach vierzehn Tagen eine Zahlungserinnerung, obwohl erst
+// eine Woche vor Campbeginn ueberhaupt etwas faellig ist. Beide Bedingungen
+// muessen erfuellt sein -- die spaetere bindet.
+const FC_ZAHL_ERINNERUNG_VORLAUF = 3;
+
 function fcZahlfrist(camp) {
   if (!camp || !camp.vonDatum) return "";
   // ⚠️ Tragend ist das "Z", nicht die 12. Mit dem "Z" laeuft die ganze
@@ -19298,6 +19322,41 @@ function fcZahlfrist(camp) {
 function fcZahlfristOffen(camp) {
   const f = fcZahlfrist(camp);
   return (f && f >= fcHeuteBerlin()) ? f : "";
+}
+
+// Tage von heute bis zum ersten Camptag. Negativ, wenn das Camp laeuft oder
+// vorbei ist; null, wenn kein brauchbares Datum dasteht.
+function fcTageBisCamp(camp) {
+  if (!camp || !camp.vonDatum) return null;
+  const start = new Date(String(camp.vonDatum) + "T12:00:00Z");
+  const heute = new Date(fcHeuteBerlin() + "T12:00:00Z");
+  if (Number.isNaN(start.getTime()) || Number.isNaN(heute.getTime())) return null;
+  return Math.round((start.getTime() - heute.getTime()) / 86400000);
+}
+
+// Welche Erstattungsstufe eine Absage HEUTE nach Punkt 4 der
+// Teilnahmebedingungen ausloest: 100, 50 oder 0 Prozent.
+//
+// ⚠️ Der Text ist die Quelle, nicht diese Funktion. Punkt 4 lautet:
+//   bis einschliesslich 28 Tage vor Campbeginn  -> 100 %
+//   27 bis einschliesslich 7 Tage vor Campbeginn -> 50 %
+//   ab 6 Tage vor Campbeginn                     -> keine Erstattung
+// Wer die Staffel im Rechtstext aendert, aendert sie HIER mit -- sonst nennt
+// die Absage-Mail eine Zahl, die der Verein nicht schuldet oder zu Unrecht
+// verspricht.
+//
+// ⚠️ `null` heisst "keine Aussage moeglich" (Camp ohne Datum) und ist NICHT
+// dasselbe wie 0. Die Mail sagt dann gar keine Quote, statt "keine Erstattung"
+// zu behaupten.
+const FC_ERSTATTUNG_VOLL_AB_TAGEN = 28;
+const FC_ERSTATTUNG_HALB_AB_TAGEN = 7;
+
+function fcErstattungsStufe(camp) {
+  const tage = fcTageBisCamp(camp);
+  if (tage === null) return null;
+  if (tage >= FC_ERSTATTUNG_VOLL_AB_TAGEN) return 100;
+  if (tage >= FC_ERSTATTUNG_HALB_AB_TAGEN) return 50;
+  return 0;
 }
 
 // Was eine Anmeldung an diesem Tag kosten wuerde.
@@ -19680,11 +19739,17 @@ async function handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders)
     return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, corsHeaders);
   }
   try {
+    let mailDaten = null;
     const antwort = await fcMutiere(authHeader, (doc) => {
+      // ⚠️ Im Closure zuruecksetzen: fcMutiere laeuft bei einem Konflikt bis zu
+      // dreimal, und ein Stand aus dem verworfenen Durchgang waere veraltet.
+      mailDaten = null;
       const treffer = fcAnmeldungZuToken(doc, body.token);
       if (!treffer) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
       const { camp, anmeldung } = treffer;
       if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist abgeschlossen.", 410);
+      // ⚠️ Hier steht KEINE Mail: sonst schickt ein zweiter Klick auf denselben
+      // Knopf eine zweite Absage-Bestaetigung fuer dieselbe Absage.
       if (anmeldung.status === "abgesagt") return { schonAbgesagt: true };
 
       anmeldung.status = "abgesagt";
@@ -19698,9 +19763,24 @@ async function handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders)
       // ⚠️ Der Platz wird frei, aber es rueckt NIEMAND automatisch nach
       // (Michel-Entscheidung): eine Zusage ist eine Zusage und soll ein bewusster
       // Klick der Verwaltung bleiben.
+      mailDaten = {
+        camp: JSON.parse(JSON.stringify(camp)),
+        anmeldung: JSON.parse(JSON.stringify(anmeldung)),
+        einstellungen: doc.einstellungen || fcEinstellungenLeer()
+      };
       return {};
     });
-    return json(antwort, 200, corsHeaders);
+
+    // ⚠️ Die Absage STEHT, auch wenn die Mail klemmt -- gleiche Abwaegung wie
+    // beim Nachruecken. Sie zurueckzudrehen, weil Brevo nicht antwortet, waere
+    // der schlechtere Tausch: die Eltern haben abgesagt, der Platz ist frei.
+    let sent = false;
+    if (mailDaten) {
+      try {
+        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen);
+      } catch (_) { sent = false; }
+    }
+    return json({ ...antwort, sent }, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
   }
@@ -20807,6 +20887,83 @@ uns noch offen steht.`;
   return fcMailSenden(env, a.elternEmail, `Beitrag noch offen: ${camp.name}`, text);
 }
 
+// Was mit dem Geld passiert, wenn die Eltern absagen.
+//
+// ⚠️ Diese vier Faelle sind der heikle Teil der Absage-Mail: sie darf weder
+// eine Rueckzahlung versprechen, die Punkt 4 der Teilnahmebedingungen nicht
+// hergibt, noch einen Verzicht aussprechen, den niemand erklaert hat. Deshalb
+// nennt sie immer die REGEL und den Weg zu uns -- nie einen konkreten
+// Rueckzahlbetrag. Punkt 4 laesst ausdruecklich zu, dass der Verein bei
+// kurzfristiger Neuvergabe ganz oder teilweise verzichtet; das entscheidet ein
+// Mensch, nicht diese Funktion.
+function fcAbsageGeldBlock(camp, a) {
+  const betrag = fcBetrag(camp, a);
+  // ⚠️ 0 ist ein gueltiger Betrag (Freiplatz) -- gegen undefined/null pruefen,
+  // nie auf Wahrheitswert.
+  if (betrag === undefined || betrag === null || Number(betrag) === 0) {
+    return `Für diesen Platz war kein Beitrag zu zahlen. Es ist also nichts weiter zu tun.`;
+  }
+  const stufe = fcErstattungsStufe(camp);
+  const quote = stufe === 100 ? "der volle Beitrag" : stufe === 50 ? "die Hälfte des Beitrages" : "";
+
+  if (a.bezahlt) {
+    if (stufe === null) {
+      return `Den Beitrag von ${fcEuro(betrag)} hast du bereits überwiesen. Wie viel davon
+zurückgeht, richtet sich nach Punkt 4 der Teilnahmebedingungen. Wir melden uns
+bei dir.`;
+    }
+    if (stufe === 0) {
+      return `Den Beitrag von ${fcEuro(betrag)} hast du bereits überwiesen. Weil das Camp in
+weniger als sieben Tagen beginnt, ist nach Punkt 4 der Teilnahmebedingungen
+keine Erstattung vorgesehen. Wenn es dafür einen besonderen Grund gibt, melde
+dich bitte bei uns — wir sehen uns das an.`;
+    }
+    return `Den Beitrag von ${fcEuro(betrag)} hast du bereits überwiesen. Nach Punkt 4 der
+Teilnahmebedingungen wird bei einer Absage zum heutigen Tag ${quote}
+erstattet. Wir melden uns bei dir und klären die Rückzahlung.`;
+  }
+
+  if (stufe === 100) {
+    return `Ein Beitrag ist bei uns nicht eingegangen. Du musst nichts mehr überweisen.`;
+  }
+  if (stufe === null) {
+    return `Ein Beitrag ist bei uns bisher nicht eingegangen. Ob davon noch etwas offen
+bleibt, richtet sich nach Punkt 4 der Teilnahmebedingungen. Wir melden uns bei
+dir.`;
+  }
+  return `Ein Beitrag ist bei uns bisher nicht eingegangen. Nach Punkt 4 der
+Teilnahmebedingungen bleibt bei einer Absage zu diesem Zeitpunkt ein Teil des
+Beitrages offen. Bitte überweise jetzt noch nichts — wir melden uns bei dir und
+sagen dir, was davon wirklich fällig wird.`;
+}
+
+// Die Bestaetigung, dass eine Absage angekommen ist.
+//
+// ⚠️ Sie traegt bewusst KEINEN Aenderungs-Link. Nach einer Absage weist der
+// Worker jede Aenderung ab (410), und ein Link, der nur noch "geht nicht"
+// sagt, ist schlechter als keiner. Stattdessen steht der Weg zurueck ueber
+// den Verein da.
+async function fcAbsageMail(env, camp, a, einst) {
+  const text = `Hallo ${a.elternName || ""},
+
+wir haben deine Absage für ${fcKindName(a)} erhalten. Der Platz beim Fußballcamp
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.
+
+${fcCampBlock(camp)}
+
+${fcAbsageGeldBlock(camp, a)}
+
+War die Absage ein Versehen? Über den Link aus der Anmeldebestätigung lässt sie
+sich nicht mehr zurücknehmen — melde dich in dem Fall bitte direkt bei uns.${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
+für dieses Camp abgeschickt wurde.`;
+
+  return fcMailSenden(env, a.elternEmail, `Absage bestätigt: ${camp.name}`, text);
+}
+
 // ============================================================
 //  Erinnerungen
 // ============================================================
@@ -20851,12 +21008,23 @@ async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
         // kostenlosen Fruehbucherplatz gaebe es sonst eine Zahlungserinnerung
         // ueber einen Betrag, den diese Familie gar nicht schuldet.
         if (!fcBetrag(camp, a)) return;
-        // Erst erinnern, wenn seit der Anmeldung genug Zeit vergangen ist.
+        // Bedingung 1: seit der Anmeldung ist genug Zeit vergangen.
         const seit = a.erstelltAm ? String(a.erstelltAm).slice(0, 10) : "";
         if (!seit) return;
-        const grenze = new Date(seit + "T12:00:00");
-        grenze.setDate(grenze.getDate() + (einst.zahlErinnerungTage || 14));
-        if (grenze.toLocaleDateString("sv-SE") > heute) return;
+        const grenze = fcTagPlusUtc(seit, einst.zahlErinnerungTage || 14);
+        if (!grenze || grenze > heute) return;
+        // Bedingung 2: die Zahlfrist ist in Sichtweite oder schon vorbei.
+        //
+        // ⚠️ Ohne diese Zeile erinnerte die App bei einer frueh eingegangenen
+        // Anmeldung Monate vor der Faelligkeit. Eine ABGELAUFENE Frist erfuellt
+        // die Bedingung natuerlich auch -- da ist die Erinnerung gerade richtig.
+        //
+        // ⚠️ Fehlt die Frist (Camp ohne Datum), bleibt es bei Bedingung 1. Der
+        // Rueckfall ist bewusst das alte Verhalten: lieber einmal zu frueh
+        // erinnern als gar nicht -- eine ausbleibende Zahlungserinnerung faellt
+        // niemandem auf.
+        const frist = fcZahlfrist(camp);
+        if (frist && fcTagPlusUtc(frist, -FC_ZAHL_ERINNERUNG_VORLAUF) > heute) return;
         faellig.push({ camp, a, feld: "zahlErinnertAm" });
       }
     });

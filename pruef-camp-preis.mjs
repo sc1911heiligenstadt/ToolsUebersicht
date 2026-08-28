@@ -294,14 +294,22 @@ zusage(8.4, "Ein Freiplatz loest KEINE Zahlungserinnerung aus, obwohl das Camp G
   MAILS.length === 0);
 
 // Gegenprobe: mit Betrag geht sie sehr wohl raus.
-frisch({ preisFrueh: 0, preisFruehBis: "" });
+//
+// ⚠️ Das Camp muss dafuer NAH liegen. Seit 2026-08-28 haengt die Erinnerung an
+// ZWEI Bedingungen -- Tage seit der Anmeldung UND die Zahlfrist in Sichtweite.
+// Mit dem Standard-Camp aus frisch() (Start in 60 Tagen) ist die Frist noch 53
+// Tage hin, und die Erinnerung bleibt zu Recht aus. Die feste Verdrahtung auf
+// das alte Verhalten stand genau hier; wer sie zurueckdreht, holt die
+// Zahlungserinnerung Monate vor der Faelligkeit zurueck. Festgenagelt wird die
+// neue Regel in pruef-camp-zahlerinnerung.mjs.
+frisch({ preisFrueh: 0, preisFruehBis: "", vonDatum: inTagen(9), bisDatum: inTagen(13) });
 DOC.einstellungen.zahlErinnerung = true;
 DOC.einstellungen.zahlErinnerungTage = 1;
 await bau.handleFcAnmelden(anfrage(), anmKoerper(), ENV, AUTH, {}, null);
 camp().anmeldungen[0].erstelltAm = inTagen(-30) + "T10:00:00Z";
 MAILS = [];
 await bau.fcErinnerungslauf(ENV, AUTH, "zahlung", "");
-zusage(8.5, "Gegenprobe: mit Betrag geht die Erinnerung raus", MAILS.length === 1);
+zusage(8.5, "Gegenprobe: mit Betrag und naher Zahlfrist geht die Erinnerung raus", MAILS.length === 1);
 
 // =========================================================================
 console.log("\n" + "=".repeat(60));
