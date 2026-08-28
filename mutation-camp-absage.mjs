@@ -16,9 +16,57 @@ const ORIGINAL = readFileSync(QUELL, "utf8");
 
 const MUTATIONEN = [
   // ---- Die Verdrahtung -------------------------------------------------
-  ["Die Absage verschickt gar keine Mail",
-    `        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen);`,
+  // ⚠️ Beide Aufrufe sehen bis auf die Quelle gleich aus -- der Suchtext MUSS
+  // sie auseinanderhalten, sonst trifft er 2x und die Mutation laeuft ins Leere.
+  ["Die Eltern-Absage verschickt gar keine Mail",
+    `        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen, "eltern");`,
     `        sent = false;`],
+
+  ["Die Verwaltungs-Absage verschickt gar keine Mail",
+    `        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen, "verwaltung");`,
+    `        sent = false;`],
+
+  // ⚠️ Der gefaehrlichste Fall: die Verwaltungs-Mail behauptet den Eltern
+  // gegenueber, sie haetten selbst abgesagt -- und nennt dann auch noch die
+  // Storno-Staffel, die nur fuer eine Eltern-Stornierung gilt.
+  ["Die Verwaltungs-Absage nimmt den Eltern-Text",
+    `mailDaten.einstellungen, "verwaltung");`,
+    `mailDaten.einstellungen, "eltern");`],
+
+  ["Das Haekchen wird ignoriert: es geht IMMER eine Mail raus",
+    `    const willMail = body.mail === true;`,
+    `    const willMail = true;`],
+
+  ["Ein truthy Wert reicht schon fuer den Versand",
+    `    const willMail = body.mail === true;`,
+    `    const willMail = !!body.mail;`],
+
+  ["Die Antwort verschweigt, ob eine Mail gewuenscht war",
+    `    return json({ ...antwort, mailGewuenscht: willMail, sent }, 200, corsHeaders);`,
+    `    return json({ ...antwort, sent }, 200, corsHeaders);`],
+
+  // ---- Der eigene Text der Verwaltungs-Absage --------------------------
+  ["Die Verwaltungs-Mail traegt den internen Absagegrund nach aussen",
+    `\${rueckweg}\${fcKontaktBlock(einst)}`,
+    `\${a.absageGrund ? "Grund: " + a.absageGrund + "\\n\\n" : ""}\${rueckweg}\${fcKontaktBlock(einst)}`],
+
+  ["Die Verwaltungs-Mail bekommt die Fusszeile der Eltern-Absage",
+    `  const fuss = vonVerwaltung
+    ? \`Diese E-Mail wurde verschickt, weil die Anmeldung deines Kindes zu diesem Camp
+abgesagt wurde.\``,
+    `  const fuss = vonVerwaltung
+    ? \`Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
+für dieses Camp abgeschickt wurde.\``],
+
+  // ⚠️ Punkt 4 gilt nur bei einer Stornierung DURCH DIE TEILNEHMENDEN. Bei einer
+  // Verwaltungs-Absage weiss die App nicht, welcher Fall vorliegt.
+  ["Die Verwaltungs-Absage nennt doch die Erstattungsstaffel",
+    `  if (quelle === "verwaltung") {`,
+    `  if (false) {`],
+
+  ["Der Quellen-Vergleich wird aufgeweicht (jede Quelle gilt als Verwaltung)",
+    `  if (quelle === "verwaltung") {`,
+    `  if (quelle !== "eltern") {`],
 
   ["Die Antwort verschweigt, ob die Mail rausging",
     `    return json({ ...antwort, sent }, 200, corsHeaders);`,
@@ -41,22 +89,24 @@ const MUTATIONEN = [
   // Die Zusagen 7.1–7.3 sind trotzdem nicht blind: sie belegen, dass ein
   // Mailfehler die Absage nicht kippt. Nur eben ueber die innere Schranke.
 
-  ["Die Fusszeile sagt nicht mehr, warum die Mail kam",
-    `--
-Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
+  ["Die Fusszeile der Eltern-Absage sagt nicht mehr, warum die Mail kam",
+    `    : \`Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
 für dieses Camp abgeschickt wurde.\`;`,
-    `--
-Diese E-Mail wurde automatisch verschickt.\`;`],
+    `    : \`Diese E-Mail wurde automatisch verschickt.\`;`],
 
-  ["Die Mail nennt das Kind nicht mehr beim Namen",
-    `wir haben deine Absage für \${fcKindName(a)} erhalten. Der Platz beim Fußballcamp`,
-    `wir haben deine Absage erhalten. Der Platz beim Fußballcamp`],
+  ["Die Eltern-Mail nennt das Kind nicht mehr beim Namen",
+    `    : \`wir haben deine Absage für \${fcKindName(a)} erhalten. Der Platz beim Fußballcamp`,
+    `    : \`wir haben deine Absage erhalten. Der Platz beim Fußballcamp`],
+
+  ["Die Verwaltungs-Mail nennt das Kind nicht mehr beim Namen",
+    `    ? \`die Anmeldung von \${fcKindName(a)} zum Fußballcamp ist abgesagt. Der Platz`,
+    `    ? \`die Anmeldung ist abgesagt. Der Platz`],
 
   ["Die Camp-Angaben fehlen in der Absage-Mail",
     `\${fcCampBlock(camp)}
 
-\${fcAbsageGeldBlock(camp, a)}`,
-    `\${fcAbsageGeldBlock(camp, a)}`],
+\${fcAbsageGeldBlock(camp, a, quelle)}`,
+    `\${fcAbsageGeldBlock(camp, a, quelle)}`],
 
   ["Der Betreff verraet nicht mehr, worum es geht",
     "  return fcMailSenden(env, a.elternEmail, `Absage bestätigt: ${camp.name}`, text);",
@@ -65,14 +115,14 @@ Diese E-Mail wurde automatisch verschickt.\`;`],
   // ⚠️ Der Aendern-Link waere hier eine Sackgasse: nach der Absage antwortet
   // handleFcMeineSpeichern mit 410. Und er traegt den Eltern-Token.
   ["Die Absage-Mail traegt wieder den Aendern-Link samt Eltern-Token",
-    `\${fcAbsageGeldBlock(camp, a)}
+    `\${fcAbsageGeldBlock(camp, a, quelle)}
 
-War die Absage ein Versehen?`,
-    `\${fcAbsageGeldBlock(camp, a)}
+\${rueckweg}`,
+    `\${fcAbsageGeldBlock(camp, a, quelle)}
 
 \${fcAendernBlock(a)}
 
-War die Absage ein Versehen?`],
+\${rueckweg}`],
 
   // ---- Die Erstattungsstaffel -----------------------------------------
   ["Der 28. Tag zaehlt schon zur halben Erstattung",

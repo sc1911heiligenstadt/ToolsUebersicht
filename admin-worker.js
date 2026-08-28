@@ -19777,7 +19777,7 @@ async function handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders)
     let sent = false;
     if (mailDaten) {
       try {
-        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen);
+        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen, "eltern");
       } catch (_) { sent = false; }
     }
     return json({ ...antwort, sent }, 200, corsHeaders);
@@ -20504,11 +20504,22 @@ async function handleFcAbsagen(request, body, env, authHeader, corsHeaders) {
   if (ctx.fehler) return ctx.fehler;
   try {
     fcVerlangeEdit(ctx);
+    // ⚠️ Nur ein ausdrückliches `mail: true` verschickt. Ein fehlendes oder
+    // `false`-Feld verhält sich exakt wie vorher -- ein älterer Client löst also
+    // keine Mail aus, von der die Bedienende nichts weiß. Gleiche Linie wie
+    // `dokument-anlegen`.
+    const willMail = body.mail === true;
+    let mailDaten = null;
     const antwort = await fcMutiere(authHeader, (doc) => {
+      // ⚠️ Im Closure zurücksetzen: fcMutiere läuft bei einem Konflikt bis zu
+      // dreimal, und ein Stand aus dem verworfenen Durchgang wäre veraltet.
+      mailDaten = null;
       const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
       if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
       const a = (camp.anmeldungen || []).find((x) => x.id === capStr(body.anmeldungId, 80));
       if (!a) throw new FcFehler("Diese Anmeldung gibt es nicht.", 404);
+      // ⚠️ Hier steht KEINE Mail: sonst schickt ein zweiter Klick auf denselben
+      // Knopf eine zweite Absage-Bestätigung für dieselbe Absage.
       if (a.status === "abgesagt") return { schonAbgesagt: true };
 
       a.status = "abgesagt";
@@ -20517,9 +20528,26 @@ async function handleFcAbsagen(request, body, env, authHeader, corsHeaders) {
       a.elternAenderung = "";
       a.elternAenderungFelder = [];
       fcVerlaufNotiz(camp, { was: "abgesagt", von: ctx.session.username, nr: a.nummer || 0, quelle: "verwaltung" });
+      if (willMail) {
+        mailDaten = {
+          camp: JSON.parse(JSON.stringify(camp)),
+          anmeldung: JSON.parse(JSON.stringify(a)),
+          einstellungen: doc.einstellungen || fcEinstellungenLeer()
+        };
+      }
       return {};
     });
-    return json(antwort, 200, corsHeaders);
+
+    // ⚠️ Die Absage STEHT, auch wenn die Mail klemmt -- gleiche Abwägung wie beim
+    // Nachrücken und bei der Eltern-Absage. Der Client sagt `sent: false` an,
+    // damit niemand auf eine Zustellung baut, die es nie gab.
+    let sent = false;
+    if (mailDaten) {
+      try {
+        sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen, "verwaltung");
+      } catch (_) { sent = false; }
+    }
+    return json({ ...antwort, mailGewuenscht: willMail, sent }, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
   }
@@ -20896,13 +20924,32 @@ uns noch offen steht.`;
 // Rueckzahlbetrag. Punkt 4 laesst ausdruecklich zu, dass der Verein bei
 // kurzfristiger Neuvergabe ganz oder teilweise verzichtet; das entscheidet ein
 // Mensch, nicht diese Funktion.
-function fcAbsageGeldBlock(camp, a) {
+function fcAbsageGeldBlock(camp, a, quelle) {
   const betrag = fcBetrag(camp, a);
   // ⚠️ 0 ist ein gueltiger Betrag (Freiplatz) -- gegen undefined/null pruefen,
   // nie auf Wahrheitswert.
   if (betrag === undefined || betrag === null || Number(betrag) === 0) {
     return `Für diesen Platz war kein Beitrag zu zahlen. Es ist also nichts weiter zu tun.`;
   }
+
+  // ⚠️⚠️ Sagt die VERWALTUNG ab, nennt dieser Absatz KEINE Quote -- und das ist
+  // kein Weglassen aus Bequemlichkeit. Punkt 4 der Teilnahmebedingungen heisst
+  // "Rücktritt und Stornierung durch TEILNEHMENDE" und gilt nur, wenn die
+  // Familie storniert. Sagt der Verein ab, greift Punkt 11 (Erstattung
+  // grundsaetzlich in voller Hoehe). Der Knopf in der Verwaltung deckt BEIDE
+  // Faelle ab: meistens ruft eine Familie an und die Verwaltung trägt es nur
+  // ein, manchmal sagt aber wirklich der Verein ab. Welcher Fall vorliegt, weiss
+  // die App nicht -- also darf sie keine der beiden Regeln behaupten.
+  // Stattdessen: der Beitrag wird benannt, die Klärung angekündigt.
+  if (quelle === "verwaltung") {
+    if (a.bezahlt) {
+      return `Den Beitrag von ${fcEuro(betrag)} hast du bereits überwiesen. Wir melden uns bei
+dir und klären, was davon zurückgeht.`;
+    }
+    return `Ein Beitrag ist bei uns nicht eingegangen. Bitte überweise jetzt nichts mehr —
+falls dazu noch etwas zu klären ist, melden wir uns bei dir.`;
+  }
+
   const stufe = fcErstattungsStufe(camp);
   const quote = stufe === 100 ? "der volle Beitrag" : stufe === 50 ? "die Hälfte des Beitrages" : "";
 
@@ -20943,23 +20990,47 @@ sagen dir, was davon wirklich fällig wird.`;
 // Worker jede Aenderung ab (410), und ein Link, der nur noch "geht nicht"
 // sagt, ist schlechter als keiner. Stattdessen steht der Weg zurueck ueber
 // den Verein da.
-async function fcAbsageMail(env, camp, a, einst) {
+// ⚠️ `quelle` hat bewusst KEINEN Default: nur das ausdrückliche "verwaltung"
+// schaltet um, alles andere bleibt der Eltern-Text. Ein Default in die andere
+// Richtung wäre gefährlich — ein vergessener Parameter behauptete den Eltern
+// gegenüber, sie hätten selbst abgesagt.
+async function fcAbsageMail(env, camp, a, einst, quelle) {
+  const vonVerwaltung = quelle === "verwaltung";
+
+  const einstieg = vonVerwaltung
+    ? `die Anmeldung von ${fcKindName(a)} zum Fußballcamp ist abgesagt. Der Platz
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.`
+    : `wir haben deine Absage für ${fcKindName(a)} erhalten. Der Platz beim Fußballcamp
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.`;
+
+  // ⚠️ Der Absage-GRUND aus der Verwaltung steht hier NICHT. Die Maske sagt beim
+  // Eintragen ausdrücklich zu, er bleibe intern — wer ihn hier mitschickt, bricht
+  // diese Zusage rückwirkend für jeden Grund, der je eingetragen wurde.
+  const rueckweg = vonVerwaltung
+    ? `Stimmt das so nicht, oder hast du Fragen dazu? Dann melde dich bitte kurz bei
+uns — wir klären das.`
+    : `War die Absage ein Versehen? Über den Link aus der Anmeldebestätigung lässt sie
+sich nicht mehr zurücknehmen — melde dich in dem Fall bitte direkt bei uns.`;
+
+  const fuss = vonVerwaltung
+    ? `Diese E-Mail wurde verschickt, weil die Anmeldung deines Kindes zu diesem Camp
+abgesagt wurde.`
+    : `Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
+für dieses Camp abgeschickt wurde.`;
+
   const text = `Hallo ${a.elternName || ""},
 
-wir haben deine Absage für ${fcKindName(a)} erhalten. Der Platz beim Fußballcamp
-ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.
+${einstieg}
 
 ${fcCampBlock(camp)}
 
-${fcAbsageGeldBlock(camp, a)}
+${fcAbsageGeldBlock(camp, a, quelle)}
 
-War die Absage ein Versehen? Über den Link aus der Anmeldebestätigung lässt sie
-sich nicht mehr zurücknehmen — melde dich in dem Fall bitte direkt bei uns.${fcKontaktBlock(einst)}
+${rueckweg}${fcKontaktBlock(einst)}
 ${FC_MAIL_FUSS}
 
 --
-Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
-für dieses Camp abgeschickt wurde.`;
+${fuss}`;
 
   return fcMailSenden(env, a.elternEmail, `Absage bestätigt: ${camp.name}`, text);
 }

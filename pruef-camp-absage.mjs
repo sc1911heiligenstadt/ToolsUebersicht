@@ -34,9 +34,19 @@ const fcQ     = schneide("const FUSSBALLCAMP_URL =", null, "Fussballcamp-Abschni
 for (const marke of [
   "function fcErstattungsStufe(camp) {",
   "function fcTageBisCamp(camp) {",
-  "function fcAbsageGeldBlock(camp, a) {",
-  "async function fcAbsageMail(env, camp, a, einst) {",
-  "sent = await fcAbsageMail(env, mailDaten.camp, mailDaten.anmeldung, mailDaten.einstellungen);"
+  "function fcAbsageGeldBlock(camp, a, quelle) {",
+  "async function fcAbsageMail(env, camp, a, einst, quelle) {",
+  // ⚠️⚠️ Diese drei sind BEWUSST locker. Sie sollen nur belegen, DASS der Aufruf
+  // und die beiden Weichen im Code stehen -- nicht, wie sie formuliert sind.
+  // Beim ersten Anlauf standen hier die vollen Zeilen (`…, "verwaltung")` und
+  // `const willMail = body.mail === true;`). Ergebnis: fuenf Mutationen an genau
+  // diesen Zeilen sprengten die Extraktion und wurden als "gefangen" gezaehlt,
+  // ohne dass eine einzige Verhaltenszusage lief. Derselbe Fehler wie in
+  // pruef-camp-zahlerinnerung.mjs -- er sieht in der Bilanz gut aus und ist
+  // genau deshalb gefaehrlich.
+  "fcAbsageMail(env, mailDaten.camp",
+  "const vonVerwaltung",
+  "const willMail ="
 ]) {
   if (!fcQ.includes(marke)) throw new Error("ABBRUCH: " + marke + " fehlt im gezogenen Code.");
 }
@@ -316,15 +326,15 @@ MAILS = [];
 r = await absagen(tok);
 zusage(9.2, "aufgeraeumtes Camp: 410 und keine Mail", r.status === 410 && MAILS.length === 0);
 
-// ⚠️ Die Absage durch die VERWALTUNG verschickt bewusst nichts -- das war nicht
-// bestellt. Wer das aendert, aendert es hier mit, damit die Luecke nicht
-// stillschweigend zur Absicht wird.
+// ⚠️ Die Absage durch die VERWALTUNG verschickt nur auf ausdrueckliches
+// `mail: true`. Ein aelterer Client, der das Feld gar nicht kennt, loest damit
+// keine Mail aus, von der die Bedienende nichts weiss.
 frisch();
 tok = await anmelden();
 MAILS = [];
 r = await bau.handleFcAbsagen(anfrage(), { campId: "c1", anmeldungId: anm().id, grund: "doppelt" }, ENV, AUTH, {});
-zusage(9.3, "Absage durch die Verwaltung: gelingt", r.status === 200);
-zusage(9.4, "verschickt aber (noch) KEINE Mail an die Eltern", MAILS.length === 0);
+zusage(9.3, "Absage durch die Verwaltung ohne mail-Feld: gelingt", r.status === 200);
+zusage(9.4, "und verschickt KEINE Mail (alter Client verhaelt sich wie vorher)", MAILS.length === 0);
 
 // ⚠️ Nach einer Absage laesst sich die Anmeldung nicht mehr aendern -- genau
 // deshalb traegt die Mail keinen Aenderungs-Link.
@@ -333,6 +343,126 @@ tok = await anmelden();
 await absagen(tok);
 r = await bau.handleFcMeineSpeichern(anfrage(), { token: tok, daten: { allergien: "doch" } }, ENV, AUTH, {});
 zusage(9.5, "Aendern nach der Absage: 410", r.status === 410);
+
+// =========================================================================
+abschnitt("10. Absage durch die Verwaltung, auf Haekchen");
+// =========================================================================
+const sagAb = (mail, extra) => bau.handleFcAbsagen(
+  anfrage(),
+  Object.assign({ campId: "c1", anmeldungId: anm().id, grund: "Eltern haben angerufen" }, extra || {}, mail === undefined ? {} : { mail }),
+  ENV, AUTH, {});
+
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+MAILS = [];
+r = await sagAb(true);
+zusage("10.1", "mit mail:true gelingt die Absage", r.status === 200);
+zusage("10.2", "der Status steht auf abgesagt", anm().status === "abgesagt");
+zusage("10.3", "GENAU eine Mail geht raus", MAILS.length === 1);
+zusage("10.4", "die Antwort meldet den Versand", r.__json && r.__json.sent === true);
+zusage("10.5", "und dass er gewuenscht war", r.__json && r.__json.mailGewuenscht === true);
+
+m = MAILS[0] || {};
+text = flach(m.textContent);
+zusage("10.6", "gleicher Betreff wie bei der Eltern-Absage", m.subject === "Absage bestätigt: Herbstcamp 2026");
+zusage("10.7", "geht an die Eltern-Adresse", (m.to || [])[0] && m.to[0].email === "eltern@example.org");
+zusage("10.8", "der Kindname steht drin", text.includes("Lena Muster"));
+// ⚠️ Der Kern des eigenen Textes: sie darf den Eltern NICHT unterstellen, sie
+// haetten selbst abgesagt.
+zusage("10.9", "sagt NICHT 'wir haben deine Absage erhalten'", !text.includes("deine Absage"));
+zusage("10.10", "sondern nennt die Anmeldung als abgesagt", text.includes("ist abgesagt"));
+// ⚠️⚠️ Der Absagegrund ist der Verwaltung als INTERN zugesagt -- die Maske sagt
+// das beim Eintragen ausdruecklich. Er darf nirgends in der Mail auftauchen.
+zusage("10.11", "der interne Absagegrund steht NICHT in der Mail", !text.includes("Eltern haben angerufen"));
+zusage("10.12", "kein Aendern-Link", !text.includes("meine-anmeldung.html"));
+zusage("10.13", "kein Eltern-Token", !text.includes(anm().token || "xxx"));
+zusage("10.14", "eigene Fusszeile", text.includes("weil die Anmeldung deines Kindes zu diesem Camp"));
+
+// ⚠️⚠️ Punkt 4 heisst "Rücktritt und Stornierung durch TEILNEHMENDE". Sagt der
+// Verein ab, greift er nicht -- und welcher der beiden Faelle vorliegt, weiss
+// die App nicht. Also darf sie keine der beiden Regeln behaupten.
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+anm().bezahlt = true;
+MAILS = [];
+await sagAb(true);
+text = flach((MAILS[0] || {}).textContent);
+zusage("10.15", "bezahlt: nennt den Betrag", text.includes("180,00 €"));
+zusage("10.16", "kuendigt die Klaerung an", text.includes("klären, was davon zurückgeht"));
+zusage("10.17", "nennt KEINE Erstattungsquote", !text.includes("Punkt 4") && !text.includes("volle Beitrag") && !text.includes("Hälfte"));
+
+frisch({ vonDatum: inTagen(3), bisDatum: inTagen(7) });
+tok = await anmelden();
+anm().bezahlt = true;
+MAILS = [];
+await sagAb(true);
+text = flach((MAILS[0] || {}).textContent);
+zusage("10.18", "auch drei Tage vorher keine Quote und kein 'keine Erstattung'",
+  !text.includes("Punkt 4") && !text.includes("keine Erstattung"));
+
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+MAILS = [];
+await sagAb(true);
+text = flach((MAILS[0] || {}).textContent);
+zusage("10.19", "unbezahlt: bittet, nichts mehr zu ueberweisen", text.includes("überweise jetzt nichts mehr"));
+zusage("10.20", "spricht aber keinen Verzicht aus", !text.includes("musst nichts mehr überweisen"));
+
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44), preis: 0 });
+tok = await anmelden();
+MAILS = [];
+await sagAb(true);
+zusage("10.21", "Freiplatz: gar keine Rede von Geld",
+  flach((MAILS[0] || {}).textContent).includes("kein Beitrag zu zahlen"));
+
+// ---- Das Haekchen ist eine echte Weiche -------------------------------
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+MAILS = [];
+r = await sagAb(false);
+zusage("10.22", "mit mail:false: keine Mail", MAILS.length === 0);
+zusage("10.23", "die Absage steht trotzdem", anm().status === "abgesagt");
+zusage("10.24", "und die Antwort sagt mailGewuenscht:false", r.__json && r.__json.mailGewuenscht === false);
+
+// ⚠️ Nur ein echtes `true` zaehlt -- ein truthy Wert aus einem umgebauten Client
+// darf keine Mail ausloesen.
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+MAILS = [];
+await sagAb("ja");
+zusage("10.25", "mail:'ja' ist kein true: keine Mail", MAILS.length === 0);
+
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+MAILS = [];
+await sagAb(1);
+zusage("10.26", "mail:1 ebenso wenig", MAILS.length === 0);
+
+// ---- Wachen ------------------------------------------------------------
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+await sagAb(true);
+MAILS = [];
+r = await sagAb(true);
+zusage("10.27", "zweimal absagen schickt keine zweite Mail", MAILS.length === 0);
+zusage("10.28", "und meldet schonAbgesagt", r.__json && r.__json.schonAbgesagt === true);
+
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+MAIL_KAPUTT = true;
+r = await sagAb(true);
+zusage("10.29", "Mailfehler kippt die Absage nicht", r.status === 200 && anm().status === "abgesagt");
+zusage("10.30", "und wird ehrlich als sent:false gemeldet", r.__json && r.__json.sent === false);
+
+// ⚠️ Ohne Bearbeiten-Recht gar nichts -- weder Absage noch Mail.
+frisch({ vonDatum: inTagen(40), bisDatum: inTagen(44) });
+tok = await anmelden();
+RECHT = { canEdit: false, canAdmin: false };
+MAILS = [];
+r = await sagAb(true);
+zusage("10.31", "ohne Bearbeiten-Recht: 403", r.status === 403);
+zusage("10.32", "und keine Mail", MAILS.length === 0);
+zusage("10.33", "und die Anmeldung steht unveraendert", anm().status === "angemeldet");
 
 // =========================================================================
 console.log("\n" + "=".repeat(60));
