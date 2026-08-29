@@ -164,14 +164,23 @@ function quelltext() {
     // ⚠️ Diese drei haengen am KINDERSCHUTZ-Repo, nicht am Worker. Fehlt die Datei,
     // bricht der Lauf oben beim Einlesen ab -- eine gruene Zeile ohne Datei waere
     // schlimmer als gar keine.
+    // ⚠️ Jeder Teil EINZELN geprueft. Die erste Fassung suchte
+    // "Leineberg 2, 37308 Heilbad Heiligenstadt" am Stueck und wurde rot, sobald der
+    // String im Quelltext ueber zwei Zeilen umbrach -- ein Prueffehler, kein Fund.
     ["F14 Der Art.-13-Block am Meldeformular nennt Verantwortlichen, Frist und Aufsicht",
-      APP.includes("Leineberg 2, 37308 Heilbad Heiligenstadt")
+      APP.includes("1. SC 1911 Heiligenstadt e.V., Leineberg 2")
+      && APP.includes("37308 Heilbad Heiligenstadt")
       && APP.includes("Landesbeauftragten")
       && APP.includes("(e.loeschfristWochen || 8)")],
     ["F15 ...und traegt den vollen Text im Aufklapper statt eines toten Verweises",
       APP.includes('<details class=\\"ds-block\\"')
       && APP.includes("e.datenschutzHtml || VORGABE_DATENSCHUTZ")
       && !APP.includes("Alles Weitere steht im Tab ")],
+    // ⚠️ Die erste Fassung setzte die Pflichtangaben OFFEN ueber den Absende-Knopf:
+    // am Handy gemessen 616 px Rechtstext davor. Ein "open" am details holt genau
+    // das zurueck.
+    ["F15b Der Aufklapper startet ZU, nicht offen",
+      !/melde-ds-hinweis[\s\S]{0,3000}<details class=\\"ds-block\\"[^>]*\sopen/.test(APP)],
     ["F16 Der Datenschutztext sagt, was anonym NICHT leisten kann (IP-Adresse)",
       VORGABE.includes("IP-Adresse") && /anonym melden[\s\S]{0,900}IP-Adresse/.test(VORGABE)]
   ];
