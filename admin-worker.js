@@ -21755,6 +21755,75 @@ function ksAnzeigeNamen(doc, usersDoc) {
   }).filter(Boolean);
 }
 
+// ---------- Der Reiniger für freien Text ----------
+
+// ⚠️ Sicherheits-Fix 2026-08-29. Der Wortlaut des Konzepts und der
+// Datenschutztext werden vom Client mit innerHTML gezeichnet -- in DIESER App
+// (app.js: konzept-wortlaut, info-datenschutz) UND in Trainerdaten, dort direkt
+// neben dem Unterschriftenfeld.
+//
+// ⚠️ Schreiben darf sie, wer BEARBEITEN auf kinderschutz hat. Lesen tut sie
+// jeder Besucher ohne Anmeldung und jede Trainerin beim Unterschreiben. Ohne
+// diese Funktion wird das Bearbeiten-Recht der einen App zum Skript-Recht in
+// der anderen. Wer hier etwas lockert, lockert es fuer beide.
+//
+// ⚠️ Die Tags werden NEU GEBAUT, nicht gefiltert. Eine schwarze Liste
+// ("onerror entfernen") vergisst immer einen Fall. Hier ueberlebt nur, was
+// ausdruecklich in KS_HTML_ERLAUBT steht, und ALLE Attribute fallen weg --
+// ausser class und href, und href nur mit http/https/mailto/tel.
+//
+// Warum nicht escapen-dann-formatieren wie fcAgbHtml beim Fussballcamp: dort
+// ist der Bestand einfacher Text. Hier stehen bereits echte Absaetze, Listen
+// und Zwischenueberschriften in der Datei (Vorgabe: 112 p, 88 li, 34 h3).
+// Escapen wuerde den vorhandenen Text als Quelltext anzeigen.
+const KS_HTML_ERLAUBT = new Set([
+  "p", "br", "hr", "strong", "b", "em", "i", "u", "small",
+  "ul", "ol", "li", "h2", "h3", "h4", "blockquote", "a", "span", "div"
+]);
+
+function ksHtmlSicher(roh) {
+  let t = String(roh == null ? "" : roh);
+
+  // Kommentare koennen Markup verstecken.
+  t = t.replace(/<!--[\s\S]*?-->/g, "");
+  // Elemente, bei denen auch der INHALT weg muss.
+  t = t.replace(/<\s*(script|style|iframe|object|embed|svg|math|template|noscript)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, "");
+  // Dieselben ohne schliessendes Tag, dazu alles, was Eingaben sammelt oder laedt.
+  t = t.replace(/<\s*\/?\s*(script|style|iframe|object|embed|svg|math|template|noscript|form|input|button|textarea|select|option|link|meta|base|img|picture|video|audio|source|track|canvas|dialog)\b[^>]*>/gi, "");
+
+  return t.replace(/<\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (_ganz, schraeg, name, rest) => {
+    const tag = name.toLowerCase();
+    if (!KS_HTML_ERLAUBT.has(tag)) return "";
+    if (schraeg) return "</" + tag + ">";
+
+    let attr = "";
+    const klasse = /(^|\s)class\s*=\s*("([^"]*)"|'([^']*)')/i.exec(rest);
+    if (klasse) {
+      const wert = String(klasse[3] !== undefined ? klasse[3] : (klasse[4] || ""))
+        .replace(/[^A-Za-z0-9_ -]/g, "").trim().slice(0, 100);
+      if (wert) attr += ' class="' + wert + '"';
+    }
+    if (tag === "a") {
+      const href = /(^|\s)href\s*=\s*("([^"]*)"|'([^']*)')/i.exec(rest);
+      // ⚠️ Steuerzeichen raus, BEVOR das Schema geprueft wird -- sonst
+      // kommt "java\tscript:" durch.
+      const ziel = String(href ? (href[3] !== undefined ? href[3] : (href[4] || "")) : "")
+        .replace(/[\s\u0000-\u001f\u007f]/g, "");
+      if (/^(https?:\/\/|mailto:|tel:)/i.test(ziel)) {
+        attr += ' href="' + ziel.replace(/"/g, "&quot;").slice(0, 400) + '" rel="noopener noreferrer" target="_blank"';
+      }
+    }
+    return "<" + tag + attr + ">";
+  });
+}
+
+// Der Konzept-Block als Ganzes. Nur `html` wird gereinigt; Fassung und Stand
+// sind Zahlen und Datumsangaben.
+function ksKonzeptSicher(k) {
+  if (!k || typeof k !== "object") return k || null;
+  return Object.assign({}, k, { html: ksHtmlSicher(k.html) });
+}
+
 // ---------- Aktion: Info (offen für jeden) ----------
 
 // ⚠️ Die Antwort wird FELDWEISE zusammengebaut, nicht durch Filtern eines
@@ -21792,7 +21861,11 @@ async function handleKsInfo(request, env, authHeader, corsHeaders) {
       // Klarnamen, nicht Kontennamen — siehe ksAnzeigeNamen.
       beauftragteNamen: ksAnzeigeNamen(doc, usersDoc),
       beauftragteVerlauf: (doc.beauftragteVerlauf || []).slice(-50),
-      konzept: doc.konzept || null,
+      // ⚠️ Gereinigt beim AUSLIEFERN, nicht nur beim Speichern: so ist auch
+      // gedeckt, was vor dem 2026-08-29 gespeichert wurde oder von Hand in die
+      // Nextcloud-Datei geschrieben wird. Trainerdaten holt denselben Text hier
+      // und zeichnet ihn ebenfalls roh -- diese Zeile schuetzt beide Apps.
+      konzept: ksKonzeptSicher(doc.konzept),
       zusammenfassung: doc.zusammenfassung || null,
       meldeweg: doc.meldeweg || null,
       rolle: doc.rolle || null,
@@ -21807,7 +21880,7 @@ async function handleKsInfo(request, env, authHeader, corsHeaders) {
         meldungenOffen: e.meldungenOffen !== false,
         rueckmeldeTage: Number(e.rueckmeldeTage) || 3,
         loeschfristWochen: Number(e.loeschfristWochen) || 8,
-        datenschutzHtml: String(e.datenschutzHtml || "")
+        datenschutzHtml: ksHtmlSicher(e.datenschutzHtml)
       },
       me: null,
       meinStand: null
@@ -22462,7 +22535,7 @@ async function handleKsInhaltSpeichern(request, body, env, authHeader, corsHeade
           meldungenOffen: n.meldungenOffen !== false,
           rueckmeldeTage: Math.min(30, Math.max(1, parseInt(n.rueckmeldeTage, 10) || 3)),
           loeschfristWochen: Math.min(520, Math.max(1, parseInt(n.loeschfristWochen, 10) || 8)),
-          datenschutzHtml: capStr(n.datenschutzHtml, 60000),
+          datenschutzHtml: ksHtmlSicher(capStr(n.datenschutzHtml, 60000)),
           // Nicht überschreibbare Altbestände erhalten (Spread statt Ersetzen) —
           // sonst kippt ein Speichern hier ein Feld, das eine spätere Fassung
           // dazugelegt hat.
@@ -22471,6 +22544,11 @@ async function handleKsInhaltSpeichern(request, body, env, authHeader, corsHeade
             "rueckmeldeTage", "loeschfristWochen", "datenschutzHtml"
           ].indexOf(k) === -1).reduce((acc, k) => { acc[k] = e[k]; return acc; }, {})
         };
+      } else if (teil === "konzept") {
+        // ⚠️ Auch hier reinigen und nicht nur beim Ausliefern: sonst steht
+        // das Skript weiter in der Datei und wirkt, sobald irgendwo ein zweiter
+        // Leseweg entsteht, der ksHtmlSicher nicht kennt.
+        doc.konzept = ksKonzeptSicher(daten && typeof daten === "object" ? daten : {});
       } else {
         doc[teil] = daten;
       }
@@ -22581,11 +22659,20 @@ async function handleKsBildGet(request, bildId, env, authHeader, corsHeaders) {
 
     const resp = await fetch(KS_DATEI_DIR + "/" + bildId, { headers: { Authorization: authHeader } });
     if (!resp.ok) return new Response("Not Found", { status: 404, headers: corsHeaders });
+    // ⚠️ Der von Nextcloud gemeldete Typ ist eine Behauptung ueber eine Datei,
+    // die dort auch von Hand liegen koennte. Gefiltert wird gegen eine feste
+    // Liste; passt er nicht, gibt es das Bild gar nicht. Dazu nosniff, damit der
+    // Browser nicht selbst raet -- gleiche Linie wie der Camp-Bild-Pfad.
+    const roh = String(resp.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+    if (["image/jpeg", "image/png", "image/webp"].indexOf(roh) === -1) {
+      return new Response("Not Found", { status: 404, headers: corsHeaders });
+    }
     const bytes = await resp.arrayBuffer();
     return new Response(bytes, {
       status: 200,
       headers: Object.assign({}, corsHeaders, {
-        "Content-Type": resp.headers.get("Content-Type") || "image/jpeg",
+        "Content-Type": roh,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "public, max-age=600"
       })
     });
@@ -22724,7 +22811,64 @@ async function ksTaeglicherLauf(env, authHeader, execCtx) {
         });
       }
     }
+    // ⚠️ Verwaiste Anhaenge. kinderschutz-anhang-put nimmt eine Datei OHNE
+    // Anmeldung und OHNE zugehoerige Meldung an -- das muss so sein, sonst
+    // koennte ein Kind nichts anhaengen. Bricht der Absender danach ab, liegt
+    // die Datei fuer immer da und niemand weiss davon.
+    await ksVerwaisteDateienRaeumen(authHeader, doc, mdoc).catch(() => {});
   } catch (_) {
     // Ein Fehler im nächtlichen Lauf darf die anderen Läufe nicht mitreißen.
+  }
+}
+
+// Wie lange eine hochgeladene Datei ohne Meldung liegen darf.
+//
+// ⚠️ NICHT kuerzer setzen. Zwischen dem Hochladen und dem Absenden liegt das
+// Ausfuellen des Formulars, und wer eine Meldung ueber einen Vorfall schreibt,
+// braucht dafuer Zeit -- unter Umstaenden mit einer Pause dazwischen. Eine zu
+// scharfe Frist loescht das Beweisstueck unter der Meldung weg.
+const KS_VERWAIST_STUNDEN = 48;
+const KS_VERWAIST_MAX_JE_LAUF = 200;
+
+async function ksVerwaisteDateienRaeumen(authHeader, doc, mdoc) {
+  // Alles, worauf irgendetwas zeigt: Anhaenge an Meldungen und Portraitfotos.
+  const gebraucht = new Set();
+  for (const m of (mdoc.meldungen || [])) {
+    for (const a of (m.anhaenge || [])) if (a && a.id) gebraucht.add(String(a.id));
+  }
+  for (const p of (doc.ansprechpartner || [])) if (p && p.bildId) gebraucht.add(String(p.bildId));
+
+  const resp = await fetch(KS_DATEI_DIR, {
+    method: "PROPFIND",
+    headers: { Authorization: authHeader, Depth: "1", "Content-Type": "application/xml" },
+    body: '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/></d:prop></d:propfind>'
+  });
+  if (resp.status === 404) return;             // Ordner gibt es noch nicht
+  if (resp.status !== 207) return;             // stumm aufgeben, nie den Lauf kippen
+  const xml = await resp.text();
+
+  // Kein XML-Parser in Workers, und dieses Projekt bleibt abhaengigkeitsfrei --
+  // also je <response>-Block href und Datum herausziehen. Gleiches Muster wie
+  // handleFahrtenbuchBelegeList.
+  const grenze = Date.now() - KS_VERWAIST_STUNDEN * 3600000;
+  let weg = 0;
+  for (const block of xml.split(/<\/[a-zA-Z0-9]*:?response>/i)) {
+    if (weg >= KS_VERWAIST_MAX_JE_LAUF) break;
+    const href = /<[a-zA-Z0-9]*:?href>([^<]+)<\/[a-zA-Z0-9]*:?href>/i.exec(block);
+    if (!href) continue;
+    const teil = decodeURIComponent(href[1]).split("/").filter(Boolean).pop() || "";
+    // ⚠️ Nur echte Datei-Kennungen. Der Ordner selbst steht auch in der
+    // Antwort, und alles, was nicht wie eine UUID aussieht, fassen wir nicht an.
+    if (!FILE_ID_RE.test(teil)) continue;
+    if (gebraucht.has(teil)) continue;
+    const datum = /<[a-zA-Z0-9]*:?getlastmodified>([^<]+)<\/[a-zA-Z0-9]*:?getlastmodified>/i.exec(block);
+    const alter = datum ? Date.parse(datum[1]) : NaN;
+    // ⚠️ Ohne lesbares Datum wird NICHT geloescht. Lieber eine Datei zuviel
+    // behalten als eine, an der gerade noch geschrieben wird.
+    if (!Number.isFinite(alter) || alter > grenze) continue;
+    try {
+      await fetch(KS_DATEI_DIR + "/" + teil, { method: "DELETE", headers: { Authorization: authHeader } });
+      weg++;
+    } catch (_) { /* eine Datei mehr schadet nicht, ein Abbruch schon */ }
   }
 }
