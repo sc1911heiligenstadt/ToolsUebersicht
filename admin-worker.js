@@ -21755,6 +21755,66 @@ function ksAnzeigeNamen(doc, usersDoc) {
   }).filter(Boolean);
 }
 
+// Ein einzelner Kontoname zu seinem Klarnamen.
+//
+// ⚠️ Der Rückfall ist "(unbekannt)", NICHT der Kontoname. Ein gelöschtes Konto
+// darf seinen Login-Namen nicht auf die offene Seite bringen -- der Verlauf soll
+// belegen, DASS sich die Liste geändert hat, nicht wie jemand sich anmeldet.
+function ksKlarname(users, konto) {
+  const key = normalizeUsername(String(konto || ""));
+  if (!key) return "(unbekannt)";
+  const u = getOwn(users || {}, key);
+  return (u && (u.name || u.displayName)) || "(unbekannt)";
+}
+
+// ⚠️ Datenschutz-Fix 2026-08-29. Der Änderungsverlauf der Beauftragten-Liste geht
+// über handleKsInfo an JEDEN Besucher ohne Anmeldung -- und trug bis hierher
+// KONTONAMEN: in "von" den des ändernden Administrators, in "was" die der
+// hinzugefügten und entfernten Personen. Drei Zeilen über ksAnzeigeNamen steht
+// der Grund, warum das falsch ist: dort werden dieselben Personen bewusst auf
+// Klarnamen abgebildet, "nicht wie ihr Login heißt".
+//
+// Der Zweck des Verlaufs (der Administrator kann sich eintragen, aber nicht
+// heimlich) ist mit Klarnamen vollständig erfüllt. Die Login-Namen tragen nichts
+// bei und erleichtern nur das Durchprobieren von Passwörtern am Gateway.
+//
+// ⚠️ Gereinigt wird beim AUSLIEFERN und beim SPEICHERN -- dieselbe Linie wie
+// ksHtmlSicher. Das Ausliefern deckt ab, was vor dem 2026-08-29 gespeichert
+// wurde oder von Hand in die Nextcloud-Datei kommt.
+//
+// ⚠️ Ersetzt wird nur ein Kontoname, der als GANZES dasteht -- davor und danach
+// darf kein Zeichen stehen, das selbst Teil eines Kontonamens sein kann. Ein
+// blanker Teilstring-Ersatz träfe sonst mitten in einem Klarnamen.
+//
+// ⚠️ Längere Kontonamen zuerst: sonst zerschnitte ein Konto "max" den Namen
+// "max.mueller", bevor der lange Treffer überhaupt geprüft wird.
+function ksVerlaufOeffentlich(verlauf, usersDoc) {
+  const users = (usersDoc && usersDoc.users) || {};
+  const konten = Object.keys(users).filter(Boolean).sort((a, b) => b.length - a.length);
+  const ersetze = (text) => {
+    let s = String(text || "");
+    if (!s) return s;
+    for (const k of konten) {
+      if (s.indexOf(k) === -1) continue;
+      const u = getOwn(users, k);
+      const klar = (u && (u.name || u.displayName)) || "";
+      if (!klar || klar === k) continue;
+      const re = new RegExp("(^|[^A-Za-z0-9._-])" + ksRegexEscape(k) + "(?![A-Za-z0-9._-])", "g");
+      s = s.replace(re, (_treffer, davor) => davor + klar);
+    }
+    return s;
+  };
+  return (Array.isArray(verlauf) ? verlauf : []).map((v) => ({
+    am: String((v && v.am) || ""),
+    von: ersetze((v && v.von) || ""),
+    was: ersetze((v && v.was) || "")
+  }));
+}
+
+function ksRegexEscape(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // ---------- Der Reiniger für freien Text ----------
 
 // ⚠️ Sicherheits-Fix 2026-08-29. Der Wortlaut des Konzepts und der
@@ -21860,7 +21920,10 @@ async function handleKsInfo(request, env, authHeader, corsHeaders) {
       ansprechpartner: partner,
       // Klarnamen, nicht Kontennamen — siehe ksAnzeigeNamen.
       beauftragteNamen: ksAnzeigeNamen(doc, usersDoc),
-      beauftragteVerlauf: (doc.beauftragteVerlauf || []).slice(-50),
+      // ⚠️ Gereinigt beim AUSLIEFERN: der Verlauf geht an JEDEN Besucher ohne
+      // Anmeldung, und Kontonamen haben dort nichts verloren. Siehe
+      // ksVerlaufOeffentlich -- das deckt auch Altbestand und Handarbeit ab.
+      beauftragteVerlauf: ksVerlaufOeffentlich(doc.beauftragteVerlauf, usersDoc).slice(-50),
       // ⚠️ Gereinigt beim AUSLIEFERN, nicht nur beim Speichern: so ist auch
       // gedeckt, was vor dem 2026-08-29 gespeichert wurde oder von Hand in die
       // Nextcloud-Datei geschrieben wird. Trainerdaten holt denselben Text hier
@@ -22455,8 +22518,18 @@ async function handleKsSchulungStand(request, env, authHeader, corsHeaders) {
     const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
     const users = usersDoc.users || {};
 
+    // ⚠️ Datenschutz-Fix 2026-08-29: SPIELERKONTEN bleiben draußen. Die Kachel ist
+    // hier bewusst für alle Angemeldeten sichtbar, Jugendliche eingeschlossen --
+    // damit lagen rund 200 Namen Minderjähriger samt Kontoname in einer Liste, die
+    // Übungsleiter-Schulungen nachweist und sie nie betrifft. Datenminimierung.
+    //
+    // ⚠️ Wer bereits einen Schulungsstand hat, bleibt IMMER drin, egal welcher Art.
+    // Ohne diese Ausnahme verschwände ein Jugendlicher, der als Betreuer geführt
+    // wird, samt seinem bereits erteilten Nachweis lautlos aus der Liste --
+    // schlimmer als ein Name zuviel. Gleiche Linie wie f-fallback-leer.
     const personen = Object.keys(users)
       .filter((k) => !users[k].archiviert)
+      .filter((k) => users[k].art !== USER_ART_SPIELER || !!getOwn(sdoc.stand || {}, k))
       .map((k) => {
         const s = getOwn(sdoc.stand || {}, k) || {};
         const haken = s.kapitel || {};
@@ -22708,12 +22781,16 @@ async function handleKsBeauftragteSetzen(request, body, env, authHeader, corsHea
 
       doc.beauftragteUsernames = gueltig;
       if (!Array.isArray(doc.beauftragteVerlauf)) doc.beauftragteVerlauf = [];
+      // ⚠️ KLARNAMEN, nicht Kontonamen -- der Verlauf ist für jeden Besucher ohne
+      // Anmeldung sichtbar. Gereinigt wird zusätzlich beim Ausliefern; hier gar
+      // nicht erst hineinzuschreiben ist die erste der beiden Schichten.
+      const alleUsers = (usersDoc && usersDoc.users) || {};
       const teile = [];
-      if (dazu.length) teile.push("hinzugefügt: " + dazu.join(", "));
-      if (weg.length) teile.push("entfernt: " + weg.join(", "));
+      if (dazu.length) teile.push("hinzugefügt: " + dazu.map((n) => ksKlarname(alleUsers, n)).join(", "));
+      if (weg.length) teile.push("entfernt: " + weg.map((n) => ksKlarname(alleUsers, n)).join(", "));
       doc.beauftragteVerlauf.push({
         am: new Date().toISOString(),
-        von: String(ctx.session.username || ""),
+        von: ksKlarname(alleUsers, ctx.session.username),
         was: teile.join(" · ")
       });
       if (doc.beauftragteVerlauf.length > KS_MAX_VERLAUF) doc.beauftragteVerlauf.shift();
@@ -22727,7 +22804,9 @@ async function handleKsBeauftragteSetzen(request, body, env, authHeader, corsHea
       daten: {
         beauftragteUsernames: neueListe,
         beauftragteNamen: ksAnzeigeNamen(frisch, usersDoc),
-        beauftragteVerlauf: (frisch.beauftragteVerlauf || []).slice(-50)
+        // Derselbe Weg wie in handleKsInfo -- zwei Sichten auf denselben Verlauf
+        // liefen sonst auseinander.
+        beauftragteVerlauf: ksVerlaufOeffentlich(frisch.beauftragteVerlauf, usersDoc).slice(-50)
       }
     }, 200, corsHeaders);
   } catch (e) {

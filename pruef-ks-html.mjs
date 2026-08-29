@@ -40,6 +40,7 @@ function lade(quelle) {
 
 // Der echte Konzepttext aus der App — die Gegenprobe, dass nichts kaputtgeht.
 const VORGABE = readFileSync("E:/kinderschutz/inhalte-vorgabe.js", "utf8");
+const APP = readFileSync("E:/kinderschutz/app.js", "utf8");
 const zaehle = (t, tag) => (t.match(new RegExp("<" + tag + "[ >]", "gi")) || []).length;
 
 // ---------------------------------------------------------------------------
@@ -142,8 +143,94 @@ function quelltext() {
       && /ksVerwaisteDateienRaeumen[\s\S]*?if \(!Number\.isFinite\(alter\) \|\| alter > grenze\) continue;/.test(W)],
     ["F8 Das Kern-Gate ist unveraendert: nur die Beauftragten lesen Meldungen",
       !/function ksDarfMeldungenLesen[\s\S]*?isAdmin[\s\S]*?\n\}/.test(
-        schneide("function ksDarfMeldungenLesen", "function ksVerlangeEdit", "Gate"))]
+        schneide("function ksDarfMeldungenLesen", "function ksVerlangeEdit", "Gate"))],
+
+    // --- Datenschutz-Durchsicht 2026-08-29. Vier Funde, hier festgenagelt.
+    ["F9 Der offene Beauftragten-Verlauf wird beim AUSLIEFERN gereinigt",
+      W.includes("beauftragteVerlauf: ksVerlaufOeffentlich(doc.beauftragteVerlauf, usersDoc).slice(-50)")
+      && W.includes("beauftragteVerlauf: ksVerlaufOeffentlich(frisch.beauftragteVerlauf, usersDoc).slice(-50)")],
+    ["F10 Die alte ungereinigte Auslieferung ist weg",
+      !W.includes("beauftragteVerlauf: (doc.beauftragteVerlauf || []).slice(-50)")
+      && !W.includes("beauftragteVerlauf: (frisch.beauftragteVerlauf || []).slice(-50)")],
+    ["F11 Beim SPEICHERN kommen Klarnamen in den Verlauf, keine Kontonamen",
+      /handleKsBeauftragteSetzen[\s\S]*?von: ksKlarname\(alleUsers, ctx\.session\.username\)/.test(W)
+      && /handleKsBeauftragteSetzen[\s\S]*?dazu\.map\(\(n\) => ksKlarname\(alleUsers, n\)\)/.test(W)
+      && /handleKsBeauftragteSetzen[\s\S]*?weg\.map\(\(n\) => ksKlarname\(alleUsers, n\)\)/.test(W)],
+    ["F12 ...und die alte Kontonamen-Fassung ist weg",
+      !W.includes('von: String(ctx.session.username || ""),')
+      && !W.includes('teile.push("hinzugefügt: " + dazu.join(", "))')],
+    ["F13 Spielerkonten stehen nicht in der Schulungs-Nachweisliste",
+      /handleKsSchulungStand[\s\S]*?users\[k\]\.art !== USER_ART_SPIELER \|\| !!getOwn\(sdoc\.stand \|\| \{\}, k\)/.test(W)],
+    // ⚠️ Diese drei haengen am KINDERSCHUTZ-Repo, nicht am Worker. Fehlt die Datei,
+    // bricht der Lauf oben beim Einlesen ab -- eine gruene Zeile ohne Datei waere
+    // schlimmer als gar keine.
+    ["F14 Der Art.-13-Block am Meldeformular nennt Verantwortlichen, Frist und Aufsicht",
+      APP.includes("Leineberg 2, 37308 Heilbad Heiligenstadt")
+      && APP.includes("Landesbeauftragten")
+      && APP.includes("(e.loeschfristWochen || 8)")],
+    ["F15 ...und traegt den vollen Text im Aufklapper statt eines toten Verweises",
+      APP.includes('<details class=\\"ds-block\\"')
+      && APP.includes("e.datenschutzHtml || VORGABE_DATENSCHUTZ")
+      && !APP.includes("Alles Weitere steht im Tab ")],
+    ["F16 Der Datenschutztext sagt, was anonym NICHT leisten kann (IP-Adresse)",
+      VORGABE.includes("IP-Adresse") && /anonym melden[\s\S]{0,900}IP-Adresse/.test(VORGABE)]
   ];
+}
+
+// ---------------------------------------------------------------------------
+// G — der Reiniger des offenen Beauftragten-Verlaufs, WIRKLICH ausgefuehrt.
+//
+// ⚠️ Quelltext-Suche allein belegt nur, dass die Zeile dasteht. Hier laeuft der
+// echte, aus admin-worker.js gezogene Code.
+//
+// `normalizeUsername` und `getOwn` kommen als Stub dazu: getOwn ist wortgleich
+// zum Original (drei Zeilen, keine Abhaengigkeit), normalizeUsername haengt ueber
+// transliterate an einer langen Kette und wird hier nur mit bereits kleinen,
+// umlautfreien Kontonamen aufgerufen -- der Fall, in dem beide dasselbe tun.
+function verlauf() {
+  const quelle = schneide("function ksKlarname(users, konto) {",
+    "// ---------- Der Reiniger", "Verlaufs-Reiniger");
+  const stubs = 'function getOwn(o,k){return o&&typeof k==="string"&&Object.prototype.hasOwnProperty.call(o,k)?o[k]:undefined;}\n'
+    + 'function normalizeUsername(r){return String(r||"").trim().toLowerCase().replace(/\\s+/g,".");}\n';
+  const m = new Function(stubs + quelle + "\nreturn { ksKlarname, ksVerlaufOeffentlich };")();
+
+  const users = {
+    "max.mueller": { name: "Max Müller" },
+    "max": { name: "Max Klein" },
+    "a.beispiel": { name: "Anna Beispiel" }
+  };
+  const doc = { users };
+  const z = [];
+  const ok = (name, b) => z.push([name, b]);
+  const eins = (v) => m.ksVerlaufOeffentlich(v, doc)[0];
+
+  ok("G1 Der Kontoname des Aendernden wird zum Klarnamen",
+    eins([{ am: "x", von: "max.mueller", was: "" }]).von === "Max Müller");
+  ok("G2 Kontonamen im Text ebenfalls",
+    eins([{ am: "x", von: "", was: "hinzugefügt: a.beispiel" }]).was === "hinzugefügt: Anna Beispiel");
+  ok("G3 Mehrere in einer Zeile",
+    eins([{ am: "x", von: "", was: "hinzugefügt: max.mueller, a.beispiel" }]).was
+      === "hinzugefügt: Max Müller, Anna Beispiel");
+  // ⚠️ Der eigentliche Fallstrick: das kurze Konto "max" darf "max.mueller" nicht zerschneiden.
+  ok("G4 Ein KURZES Konto zerschneidet kein langes",
+    eins([{ am: "x", von: "max.mueller", was: "" }]).von === "Max Müller");
+  ok("G5 ...und das kurze wird trotzdem ersetzt, wenn es allein dasteht",
+    eins([{ am: "x", von: "max", was: "" }]).von === "Max Klein");
+  ok("G6 Ein Kontoname mitten in einem Wort bleibt unberuehrt",
+    eins([{ am: "x", von: "", was: "maximal viel" }]).was === "maximal viel");
+  ok("G7 Ein unbekanntes Konto bleibt stehen statt zu verschwinden",
+    eins([{ am: "x", von: "fremd.person", was: "" }]).von === "fremd.person");
+  ok("G8 Fremde Felder werden nicht mitgeliefert",
+    Object.keys(eins([{ am: "x", von: "max", was: "", geheim: "1" }])).join(",") === "am,von,was");
+  ok("G9 Kaputte Eingaben werfen nicht",
+    m.ksVerlaufOeffentlich(null, doc).length === 0
+      && m.ksVerlaufOeffentlich([null], doc)[0].von === "");
+  // ksKlarname selbst
+  ok("G10 ksKlarname faellt auf (unbekannt) zurueck, NICHT auf den Kontonamen",
+    m.ksKlarname(users, "gibtsnicht") === "(unbekannt)" && m.ksKlarname(users, "") === "(unbekannt)");
+  ok("G11 ...und liefert sonst den Klarnamen",
+    m.ksKlarname(users, "a.beispiel") === "Anna Beispiel");
+  return z;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +281,8 @@ console.log("A–E — was der Reiniger tut");
 const rot1 = melde(verhalten(m));
 console.log("\nF — was im Quelltext stehen muss");
 const rot2 = melde(quelltext());
-const n = verhalten(m).length + quelltext().length;
-console.log(`\n${n - rot1 - rot2}/${n} Zusagen gruen, ${rot1 + rot2} rot.`);
-process.exit(rot1 + rot2 ? 1 : 0);
+console.log("\nG — der Reiniger des offenen Beauftragten-Verlaufs, ausgefuehrt");
+const rot3 = melde(verlauf());
+const n = verhalten(m).length + quelltext().length + verlauf().length;
+console.log(`\n${n - rot1 - rot2 - rot3}/${n} Zusagen gruen, ${rot1 + rot2 + rot3} rot.`);
+process.exit(rot1 + rot2 + rot3 ? 1 : 0);
