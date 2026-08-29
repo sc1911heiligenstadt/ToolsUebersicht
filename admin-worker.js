@@ -502,6 +502,7 @@ const ALLOWED_ORIGINS = [
   // direkt hierher -- der Dev-Server braucht die Freigabe also doch.
   "http://localhost:8810", // Vereinsverwaltung (Dev-Server)
   "http://localhost:8819", // Fußballcamp (Dev-Server)
+  "http://localhost:8821", // Kinderschutz (Dev-Server)
   "https://sc1911heiligenstadt.github.io",
   "https://tecko1985.github.io", // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
   // Die oeffentliche VEREINSSEITE. Steht hier wegen fussballcamp: popup.js laeuft
@@ -1049,6 +1050,18 @@ export default {
     // Eigener waitUntil, damit ein Fehler hier weder die Spieltagscrew noch den
     // Busplan mitreisst.
     ctx.waitUntil(fcNaechtlicherLauf(env, authHeader).catch(() => {}));
+    // Kinderschutz haengt sich aus demselben Grund an denselben Lauf: die
+    // Mahnung bei ueberfaelliger Rueckmeldung, der Hinweis auf abgelaufene
+    // Aufbewahrungsfristen und die Schulungs-Erinnerung.
+    //
+    // ⚠️ Dieser Lauf LOESCHT NICHTS (Michel-Entscheidung 2026-08-29). Er
+    // erinnert nur; geloescht wird von Hand durch die Beauftragte. Wer hier je
+    // eine automatische Loeschung ergaenzt, muss zuerst den Datenschutztext der
+    // App nachziehen -- der verspricht ausdruecklich keine Automatik.
+    //
+    // ⚠️ Alle Nachrichten aus diesem Lauf sind INHALTSLEER: sie nennen Anzahlen,
+    // nie Namen, Orte oder Beschreibungen.
+    ctx.waitUntil(ksTaeglicherLauf(env, authHeader, ctx).catch(() => {}));
   },
 
   // ctx (seit 2026-08-03): nur fuer ctx.waitUntil beim Push-Versand. Ohne den
@@ -1113,6 +1126,18 @@ export default {
       const bildTreffer = new URL(request.url).pathname.match(/^\/camp-bild\/([a-f0-9]{16,100})\/([0-9a-fA-F-]{36})$/);
       if (bildTreffer) {
         return handleFcBildGet(request, bildTreffer[1], bildTreffer[2], env, authHeader, corsHeaders);
+      }
+
+      // Das Portraitfoto eines Ansprechpartners im Kinderschutz -- der VIERTE
+      // GET-Pfad dieses Workers. Muss wie die anderen VOR der Sichtbarkeits-
+      // Antwort stehen, sonst beantwortet der Worker Bildabrufe mit JSON und die
+      // wichtigste Kachel der App zeigt ein kaputtes Bild. Ausgeliefert werden
+      // NUR Kennungen, die in kinderschutz.json als bildId eines Ansprech-
+      // partners stehen -- die Meldungs-Anhaenge derselben Ablage sind darueber
+      // ausdruecklich NICHT erreichbar.
+      const ksBildTreffer = new URL(request.url).pathname.match(/^\/ks-bild\/([0-9a-fA-F-]{36})$/);
+      if (ksBildTreffer) {
+        return handleKsBildGet(request, ksBildTreffer[1], env, authHeader, corsHeaders);
       }
 
       // Der GET ist der öffentliche Kanal (Tool-Sichtbarkeit für jeden Besucher),
@@ -1512,6 +1537,54 @@ export default {
         return handleFcErinnern(request, body, env, authHeader, corsHeaders, ctx);
       case "fussballcamp-aufraeumen":
         return handleFcAufraeumen(request, body, env, authHeader, corsHeaders);
+
+      // ---------- Kinderschutz ----------
+      //
+      // ⚠️ Die ersten drei Aktionen laufen OHNE Sitzung. Das ist hier kein
+      // Versehen und keine Bequemlichkeit: Kinder, Jugendliche und Eltern haben
+      // kein Vereinskonto. Ein Meldeweg, den nur Angemeldete erreichen, wäre für
+      // die wichtigste Zielgruppe gar keiner.
+      //
+      // ⚠️ "kinderschutz" steht NICHT in DAV_APPS. Es gibt keinen generischen
+      // Lese- oder Schreibweg auf diese Dateien -- jede Aktion prüft selbst.
+      case "kinderschutz-info":
+        return handleKsInfo(request, env, authHeader, corsHeaders);
+      case "kinderschutz-melden":
+        return handleKsMelden(request, body, env, authHeader, corsHeaders, ctx);
+      case "kinderschutz-anhang-put":
+        return handleKsAnhangPut(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-stand":
+        return handleKsStand(request, body, env, authHeader, corsHeaders);
+
+      // Ab hier mit Sitzung. ⚠️ Die Meldungs-Aktionen prüfen NICHT canEdit und
+      // NICHT isAdmin, sondern ausschließlich die Beauftragten-Liste --
+      // siehe ksDarfMeldungenLesen.
+      case "kinderschutz-meldungen":
+        return handleKsMeldungen(request, env, authHeader, corsHeaders);
+      case "kinderschutz-meldung-status":
+        return handleKsMeldungStatus(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-meldung-antwort":
+        return handleKsMeldungAntwort(request, body, env, authHeader, corsHeaders, ctx);
+      case "kinderschutz-meldung-notiz":
+        return handleKsMeldungNotiz(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-meldung-erfassen":
+        return handleKsMeldungErfassen(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-meldung-loeschen":
+        return handleKsMeldungLoeschen(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-anhang-get":
+        return handleKsAnhangGet(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-schulung-schritt":
+        return handleKsSchulungSchritt(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-schulung-stand":
+        return handleKsSchulungStand(request, env, authHeader, corsHeaders);
+      case "kinderschutz-schulung-noetig":
+        return handleKsSchulungNoetig(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-inhalt-speichern":
+        return handleKsInhaltSpeichern(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-portrait-put":
+        return handleKsPortraitPut(request, body, env, authHeader, corsHeaders);
+      case "kinderschutz-beauftragte-setzen":
+        return handleKsBeauftragteSetzen(request, body, env, authHeader, corsHeaders);
       // Nachlese zum naechtlichen Busplan-Lauf. ⚠️ NUR LESEN -- es gibt bewusst
       // keine Aktion, die den Lauf von Hand ausloest: jede Fahrt kostet eine
       // Mail, und ein zweiter Ausloeser koennte den Merker umgehen.
@@ -11817,6 +11890,10 @@ const PUSH_ANLAESSE = [
   // Ziel ist die Uebersicht selbst (wie "unterschriften") -- die Antwort steht
   // im Tab "Feedback & Hilfe", nicht in einer der verlinkten Apps. Deshalb traegt
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
+  // ⚠️ Der Push zu diesem Anlass traegt NIE einen Inhalt -- weder Name noch Ort
+  // noch Beschreibung. Auf einem Sperrbildschirm steht nur, DASS etwas vorliegt.
+  { id: "kinderschutz", titel: "Kinderschutz", ziel: "/kinderschutz/",
+    label: "Kinder- und Jugendschutz — neue Meldungen (nur für die Beauftragten)" },
   { id: "feedback", titel: "Feedback & Wünsche", ziel: "/ToolsUebersicht/",
     label: "Feedback & Wünsche — Antworten auf meine Einreichungen" },
   // Ausgeloest vom Bereitstellen in den Dokumentenvorlagen. Ziel ist die
@@ -21435,4 +21512,1219 @@ function fcKalenderSchnappschuss(camp) {
     status: camp.status, aufgeraeumtAm: camp.aufgeraeumtAm,
     erstelltVon: camp.erstelltVon, kalenderTerminId: camp.kalenderTerminId
   };
+}
+
+// ============================================================================
+// Kinderschutz (E:\kinderschutz, Gateway-Id "kinderschutz")
+// ============================================================================
+//
+// ⚠️ "kinderschutz" steht bewusst NICHT in DAV_APPS. Es gibt also keinen
+// generischen dav-load/dav-save-Weg auf diese Dateien. Gründe:
+//
+//   1. Melden geht OHNE Login — ein Kind oder ein Elternteil hat keinen Token.
+//   2. Eine Meldung kann Angaben nach Art. 9 (Gesundheit, Sexualleben) und
+//      Art. 10 DSGVO (strafbare Handlungen) enthalten. dav-load würde sie an
+//      jeden ausliefern, der das Tool sehen darf — und sehen darf es jeder.
+//   3. Meldungen lesen dürfen NUR die eingetragenen Beauftragten. Das ist eine
+//      eigene Prüfung, KEIN canEdit und KEIN isAdmin.
+//
+// ⚠️ ZWEI getrennte Dateien, und das ist tragend:
+//      kinderschutz.json           — Inhalte. Wird von JEDEM gelesen.
+//      kinderschutz-meldungen.json — Meldungen. Verlässt den Worker nur für
+//                                    die Beauftragten.
+//   Läge beides in einer Datei, müsste jeder öffentliche Lesevorgang die
+//   Meldungen mitlesen und danach herausfiltern. Filtern kann man vergessen;
+//   eine getrennte Datei nicht.
+//
+// ⚠️ Der globale Administrator (session.isAdmin) greift bei den Meldungen
+//   AUSDRÜCKLICH NICHT durch. Das ist keine Nachlässigkeit, sondern die Zusage
+//   an jeden Melder. Wer hier ein "|| session.isAdmin" ergänzt, hebt sie auf.
+//   Technisch kommt er über Nextcloud an die Datei — das steht so im
+//   Datenschutztext der App und wird dort nicht schöngeredet.
+
+const KINDERSCHUTZ_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kinderschutz/kinderschutz.json";
+const KS_MELDUNGEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kinderschutz/kinderschutz-meldungen.json";
+const KS_SCHULUNG_URL  = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kinderschutz/kinderschutz-schulung.json";
+const KS_DATEI_DIR     = KINDERSCHUTZ_URL.slice(0, KINDERSCHUTZ_URL.lastIndexOf("/")) + "/dateien";
+
+const KS_MAX_MELDUNGEN = 2000;
+const KS_MAX_TEXT = 6000;
+const KS_MAX_ANHAENGE = 3;
+const KS_MAX_ANHANG_BYTES = 8 * 1024 * 1024;
+const KS_ANHANG_TYPEN = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+const KS_MAX_PORTRAIT_BYTES = 2 * 1024 * 1024;
+const KS_STAENDE = ["neu", "bearbeitung", "extern", "abgeschlossen"];
+const KS_MAX_VERLAUF = 200;
+const KS_MAX_NOTIZEN = 50;
+
+// Bremsen je Anschluss. Melden darf jeder — deshalb braucht es sie.
+//
+// ⚠️ Die Bremse fürs Nachschauen ist die wichtigere: sie verhindert, dass jemand
+// Quittungsnummern durchprobiert. Der Code hat 8 Zeichen aus 32 (rund 10^12
+// Möglichkeiten), 20 Versuche je Stunde machen das Raten aussichtslos.
+const KS_MELDE_ZAEHLER = new Map();
+const KS_MELDE_MAX_PRO_STUNDE = 10;
+const KS_STAND_ZAEHLER = new Map();
+const KS_STAND_MAX_PRO_STUNDE = 20;
+
+// Das Alphabet der Quittungsnummer. Ohne I, O, 0 und 1 — die verwechselt jeder,
+// der die Nummer von einem Zettel abtippt.
+const KS_CODE_ZEICHEN = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+class KsFehler extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "KsFehler";
+    this.status = status || 400;
+  }
+}
+
+function ksAntwortFehler(e, corsHeaders) {
+  if (e instanceof KsFehler) return json({ error: e.message }, e.status, corsHeaders);
+  if (e instanceof ConflictError) return json({ error: "Gleichzeitige Änderung — bitte erneut versuchen" }, 409, corsHeaders);
+  return json({ error: "Speicherfehler: " + (e && e.message ? e.message : "unbekannt") }, 502, corsHeaders);
+}
+
+// ---------- Leergerüste und Normierung ----------
+
+function ksLeer() {
+  return {
+    version: 1,
+    ansprechpartner: [],
+    beauftragteUsernames: [],
+    beauftragteVerlauf: [],
+    konzept: null,
+    zusammenfassung: null,
+    meldeweg: null,
+    rolle: null,
+    schulung: null,
+    faq: null,
+    externe: null,
+    kindertext: null,
+    einstellungen: {}
+  };
+}
+
+function ksMeldungenLeer() {
+  return { version: 1, meldungen: [], naechsteNummer: 1 };
+}
+
+function ksSchulungLeer() {
+  return { version: 1, stand: {} };
+}
+
+function ksNormalisiere(doc) {
+  if (!doc || typeof doc !== "object") return ksLeer();
+  if (!Array.isArray(doc.ansprechpartner)) doc.ansprechpartner = [];
+  if (!Array.isArray(doc.beauftragteUsernames)) doc.beauftragteUsernames = [];
+  if (!Array.isArray(doc.beauftragteVerlauf)) doc.beauftragteVerlauf = [];
+  if (!doc.einstellungen || typeof doc.einstellungen !== "object") doc.einstellungen = {};
+  return doc;
+}
+
+async function ksMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(KINDERSCHUTZ_URL, authHeader, ksLeer());
+    ksNormalisiere(doc);
+    const ergebnis = await fn(doc) || {};
+    try {
+      await writeJson(KINDERSCHUTZ_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new KsFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+async function ksMeldungenMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(KS_MELDUNGEN_URL, authHeader, ksMeldungenLeer());
+    if (!Array.isArray(doc.meldungen)) doc.meldungen = [];
+    if (typeof doc.naechsteNummer !== "number") doc.naechsteNummer = doc.meldungen.length + 1;
+    const ergebnis = await fn(doc) || {};
+    try {
+      await writeJson(KS_MELDUNGEN_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new KsFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+async function ksSchulungMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(KS_SCHULUNG_URL, authHeader, ksSchulungLeer());
+    if (!doc.stand || typeof doc.stand !== "object") doc.stand = {};
+    const ergebnis = await fn(doc) || {};
+    try {
+      await writeJson(KS_SCHULUNG_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new KsFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+// ---------- Quittungsnummer ----------
+
+// Form KS-XXXX-XXXX. Erzeugt wird sie hier, ausgeliefert genau einmal, und
+// gespeichert wird NUR ihr Hash. Eine Meldung lässt sich damit nicht rückwärts
+// einer Nummer zuordnen — auch nicht von jemandem, der die Datei liest.
+function ksCodeErzeugen() {
+  const roh = new Uint8Array(8);
+  crypto.getRandomValues(roh);
+  let s = "";
+  for (let i = 0; i < 8; i++) s += KS_CODE_ZEICHEN[roh[i] % KS_CODE_ZEICHEN.length];
+  return "KS-" + s.slice(0, 4) + "-" + s.slice(4);
+}
+
+async function ksCodeHash(code) {
+  const roh = new TextEncoder().encode("ks-quittung-v1:" + String(code || "").trim().toUpperCase());
+  const digest = await crypto.subtle.digest("SHA-256", roh);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---------- Sitzung und Rechte ----------
+
+// ⚠️ OPTIONALE Sitzung. Gibt null zurück, wenn niemand angemeldet ist — und das
+// ist hier der Normalfall, kein Fehler. Ein 401 an dieser Stelle würde Kinder,
+// Eltern und Zuschauer aussperren.
+async function ksSessionOptional(request, env, authHeader) {
+  try {
+    return await getVerifiedSession(request, env, authHeader);
+  } catch (_) {
+    return null;
+  }
+}
+
+// Sitzung MIT Anmeldezwang, plus die drei Rechte-Stufen.
+//
+// ⚠️ Spielerkonten werden hier NICHT ausgeschlossen (anders als beim
+// Fußballcamp). Michel-Entscheidung 2026-08-29: Jugendliche sind die wichtigste
+// Zielgruppe dieser App. Sie sehen dieselben offenen Bereiche wie jeder Besucher
+// plus die Schulung — Meldungen und Verwaltung bleiben ihnen über die eigenen
+// Gates verschlossen.
+async function ksSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const canEdit = await resolveEditPermission("kinderschutz", session, env, authHeader, Promise.resolve(config));
+  const canAdmin = await resolveAdminPermission("kinderschutz", session, env, authHeader, Promise.resolve(config));
+  return { session, config, canEdit, canAdmin, fehler: null };
+}
+
+// Die Kernprüfung dieser App.
+//
+// ⚠️ AUSSCHLIESSLICH die Beauftragten-Liste. Kein isAdmin, kein canEdit, kein
+// canAdmin. Wer den Tab Meldungen sehen soll, muss in kinderschutz.json unter
+// beauftragteUsernames stehen — und diese Liste ist in der App für JEDEN offen
+// sichtbar, samt Änderungsverlauf. Das ist der einzige Schutz, der auch gegen
+// den technischen Administrator wirkt: er kann sich eintragen, aber nicht
+// heimlich.
+function ksDarfMeldungenLesen(doc, session) {
+  if (!session) return false;
+  const mich = normalizeUsername(String(session.username || ""));
+  if (!mich) return false;
+  return (doc.beauftragteUsernames || [])
+    .map((n) => normalizeUsername(String(n || "")))
+    .indexOf(mich) !== -1;
+}
+
+function ksVerlangeEdit(ctx) {
+  if (!ctx.canEdit && !ctx.session.isAdmin) throw new KsFehler("Keine Berechtigung zum Bearbeiten.", 403);
+}
+function ksVerlangeAdmin(ctx) {
+  if (!ctx.canAdmin && !ctx.session.isAdmin) throw new KsFehler("Keine Berechtigung zum Verwalten.", 403);
+}
+
+// Anzeigenamen zu Benutzernamen. Für die offene Liste "wer liest mit" — dort
+// stehen KLARNAMEN, nicht Kontennamen: ein Melder soll wissen, wer die Person
+// ist, nicht wie ihr Login heißt.
+function ksAnzeigeNamen(doc, usersDoc) {
+  const users = (usersDoc && usersDoc.users) || {};
+  return (doc.beauftragteUsernames || []).map((n) => {
+    const key = normalizeUsername(String(n || ""));
+    const u = getOwn(users, key);
+    return (u && (u.name || u.displayName)) || key;
+  }).filter(Boolean);
+}
+
+// ---------- Aktion: Info (offen für jeden) ----------
+
+// ⚠️ Die Antwort wird FELDWEISE zusammengebaut, nicht durch Filtern eines
+// Objekts. Ein neu hinzugefügtes Feld in kinderschutz.json ist damit
+// standardmäßig NICHT öffentlich — man muss es hier ausdrücklich freigeben.
+// Andersherum wäre jedes vergessene Feld ein Leck.
+async function handleKsInfo(request, env, authHeader, corsHeaders) {
+  try {
+    const session = await ksSessionOptional(request, env, authHeader);
+    const [doc, usersDoc] = await Promise.all([
+      readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()).then(ksNormalisiere),
+      readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
+    ]);
+    const e = doc.einstellungen || {};
+
+    // ⚠️ Beim Ansprechpartner geht NUR mit, was auf einer öffentlichen Seite
+    // stehen soll. Es gibt hier keine weiteren Felder, aber die Liste ist
+    // trotzdem ausgeschrieben — damit ein später ergänztes internes Feld
+    // (Privatnummer, Notiz) nicht mitrutscht.
+    const partner = (doc.ansprechpartner || []).map((p) => ({
+      id: String(p.id || ""),
+      rolle: p.rolle === "beauftragte" ? "beauftragte" : "weiterer",
+      name: String(p.name || ""),
+      funktion: String(p.funktion || ""),
+      telefon: String(p.telefon || ""),
+      email: String(p.email || ""),
+      erreichbarkeit: String(p.erreichbarkeit || ""),
+      aufgabenText: String(p.aufgabenText || ""),
+      bildUrl: p.bildId ? ksBildUrl(p.bildId) : ""
+    }));
+
+    const antwort = {
+      istVorgabe: !doc.konzept && !(doc.ansprechpartner || []).length,
+      ansprechpartner: partner,
+      // Klarnamen, nicht Kontennamen — siehe ksAnzeigeNamen.
+      beauftragteNamen: ksAnzeigeNamen(doc, usersDoc),
+      beauftragteVerlauf: (doc.beauftragteVerlauf || []).slice(-50),
+      konzept: doc.konzept || null,
+      zusammenfassung: doc.zusammenfassung || null,
+      meldeweg: doc.meldeweg || null,
+      rolle: doc.rolle || null,
+      schulung: doc.schulung || null,
+      faq: doc.faq || null,
+      externe: doc.externe || null,
+      kindertext: doc.kindertext || null,
+      // ⚠️ NUR diese fünf Einstellungen. Alles andere bleibt im Worker.
+      einstellungen: {
+        anonymErlaubt: e.anonymErlaubt !== false,
+        anhaengeErlaubt: e.anhaengeErlaubt !== false,
+        meldungenOffen: e.meldungenOffen !== false,
+        rueckmeldeTage: Number(e.rueckmeldeTage) || 3,
+        loeschfristWochen: Number(e.loeschfristWochen) || 8,
+        datenschutzHtml: String(e.datenschutzHtml || "")
+      },
+      me: null,
+      meinStand: null
+    };
+
+    if (session) {
+      const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+      antwort.me = {
+        username: session.username,
+        name: session.name || session.username,
+        isAdmin: !!session.isAdmin,
+        canEdit: await resolveEditPermission("kinderschutz", session, env, authHeader, Promise.resolve(config)),
+        canAdmin: await resolveAdminPermission("kinderschutz", session, env, authHeader, Promise.resolve(config)),
+        // ⚠️ Der Client blendet den Tab danach ein — aber verlassen tut sich
+        // darauf niemand: handleKsMeldungen prüft es noch einmal selbst.
+        darfMeldungen: ksDarfMeldungenLesen(doc, session)
+      };
+      const sch = await readJson(KS_SCHULUNG_URL, authHeader, ksSchulungLeer());
+      const mein = getOwn(sch.stand || {}, normalizeUsername(session.username));
+      antwort.meinStand = mein ? { kapitel: mein.kapitel || {}, bestandenAm: mein.bestandenAm || "" } : { kapitel: {}, bestandenAm: "" };
+    }
+
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+function ksBildUrl(bildId) {
+  return "https://landingpage.michel-brunner.workers.dev/ks-bild/" + encodeURIComponent(bildId);
+}
+
+// ---------- Aktion: Melden (offen für jeden) ----------
+
+async function handleKsMelden(request, body, env, authHeader, corsHeaders, execCtx) {
+  if (!kboBremse(KS_MELDE_ZAEHLER, KS_MELDE_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Meldungen von diesem Anschluss. Bitte später erneut versuchen — oder ruf bei akuter Gefahr die 110 an." }, 429, corsHeaders);
+  }
+  try {
+    const m = (body && body.meldung) || {};
+    const beschreibung = capStr(m.beschreibung, KS_MAX_TEXT).trim();
+    if (beschreibung.length < 20) {
+      throw new KsFehler("Bitte beschreibe kurz, was passiert ist.", 400);
+    }
+
+    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    const e = doc.einstellungen || {};
+    if (e.meldungenOffen === false) {
+      throw new KsFehler("Das Meldeformular ist zurzeit geschlossen. Bitte wende dich direkt an die Beauftragte oder ruf bei Gefahr die 110 an.", 403);
+    }
+
+    // ⚠️ Ist NIEMAND als Beauftragte eingetragen, kann diese Meldung niemand
+    // lesen -- ksDarfMeldungenLesen gaebe fuer jeden false zurueck, auch fuer den
+    // Administrator. Sie zu speichern und dafuer eine Quittungsnummer
+    // herauszugeben waere die schlimmste Antwort: der Melder glaubt, es kuemmert
+    // sich jemand, und in Wahrheit liegt sie in einer Datei, die keiner oeffnet.
+    // Lieber ehrlich ablehnen und auf die externen Nummern zeigen.
+    if (!(doc.beauftragteUsernames || []).length) {
+      throw new KsFehler(
+        "Zurzeit ist im Verein niemand als Kinder- und Jugendschutzbeauftragte eingetragen — deine Meldung koennte hier niemand lesen. " +
+        "Bitte wende dich direkt an eine der Stellen im Bereich Hilfe: bei Gefahr an die 110, sonst an die Nummer gegen Kummer 116 111 " +
+        "oder das Hilfetelefon 0800 22 55 530. Beide sind kostenlos und anonym.", 503);
+    }
+
+    // ⚠️ Anonym wird SERVERSEITIG durchgesetzt. Der Client schickt die
+    // Kontaktfelder bei anonym gar nicht erst mit — aber "der Client macht das
+    // schon" ist keine Zusage. Hier werden sie verworfen, egal was ankommt.
+    const anonymGewuenscht = m.anonym === true;
+    const anonymErlaubt = e.anonymErlaubt !== false;
+    const anonym = anonymGewuenscht && anonymErlaubt;
+    if (anonymGewuenscht && !anonymErlaubt) {
+      throw new KsFehler("Anonyme Meldungen sind derzeit nicht möglich. Bitte gib deinen Namen an oder wende dich an eine der externen Stellen.", 400);
+    }
+
+    // ⚠️ Auch der Benutzername einer BESTEHENDEN Sitzung wird bei anonym nicht
+    // mitgeschrieben. Genau das unterscheidet diese App vom Ideen-Tab der
+    // Tools-Übersicht, wo der Admin den Namen trotzdem sieht. Hier wäre das ein
+    // gebrochenes Versprechen.
+    const session = anonym ? null : await ksSessionOptional(request, env, authHeader);
+
+    const anhaenge = ksAnhaengePruefen(m.anhaenge, e);
+    const code = ksCodeErzeugen();
+    const hash = await ksCodeHash(code);
+
+    let nummer = 0;
+    await ksMeldungenMutiere(authHeader, (mdoc) => {
+      if (mdoc.meldungen.length >= KS_MAX_MELDUNGEN) {
+        throw new KsFehler("Es liegen sehr viele Meldungen vor. Bitte wende dich direkt an die Beauftragte.", 507);
+      }
+      nummer = mdoc.naechsteNummer++;
+      mdoc.meldungen.push({
+        id: crypto.randomUUID(),
+        nummer,
+        codeHash: hash,
+        eingangAm: new Date().toISOString(),
+        quelle: "formular",
+        erfasstVon: "",
+        anonym,
+        melderName: anonym ? "" : capStr(m.name, 120),
+        melderRolle: anonym ? "" : capStr(m.rolle, 120),
+        melderTelefon: anonym ? "" : capStr(m.telefon, 60),
+        melderEmail: anonym ? "" : capStr(m.email, 160),
+        // Der Benutzername nur, wenn NICHT anonym und angemeldet — er hilft der
+        // Beauftragten beim Rückfragen und steht nirgends sonst.
+        melderKonto: anonym ? "" : (session ? String(session.username || "") : ""),
+        vorfallDatum: ksDatum(m.vorfallDatum),
+        vorfallOrt: capStr(m.vorfallOrt, 200),
+        betroffene: capStr(m.betroffene, 200),
+        beteiligte: capStr(m.beteiligte, 300),
+        beschreibung,
+        anhaenge,
+        status: "neu",
+        statusAm: new Date().toISOString(),
+        statusVon: "",
+        antwort: "", antwortAm: "",
+        notizen: [],
+        abgeschlossenAm: "",
+        verlauf: [{ am: new Date().toISOString(), von: anonym ? "anonym" : (session ? String(session.username) : "extern"), was: "Meldung eingegangen" }]
+      });
+      return {};
+    });
+
+    // ⚠️ Benachrichtigung OHNE Inhalt. Kein Name, kein Ort, keine Beschreibung —
+    // auch nicht im Betreff. Der Brevo-Transactional-Log enthält den Mailtext;
+    // was hier drinsteht, liest also jeder mit Brevo-Zugang mit. Deshalb steht
+    // hier nichts drin.
+    if (execCtx && typeof execCtx.waitUntil === "function") {
+      execCtx.waitUntil(ksBenachrichtigen(env, authHeader, doc, execCtx));
+    } else {
+      await ksBenachrichtigen(env, authHeader, doc, null);
+    }
+
+    return json({ ok: true, code, nummer }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+function ksDatum(roh) {
+  const s = capStr(roh, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+// Anhänge: nur Kennungen, die zu einer eben hochgeladenen Datei passen. Der
+// Inhalt liegt schon in Nextcloud, hier wird nur die Zuordnung gemacht.
+function ksAnhaengePruefen(roh, einstellungen) {
+  if (einstellungen && einstellungen.anhaengeErlaubt === false) return [];
+  if (!Array.isArray(roh)) return [];
+  return roh.slice(0, KS_MAX_ANHAENGE)
+    .map((x) => String(x || ""))
+    .filter((x) => FILE_ID_RE.test(x))
+    .map((id) => ({ id, name: "", typ: "" }));
+}
+
+// Mail und Push an die Beauftragten. Beide sagen nur, DASS etwas vorliegt.
+async function ksBenachrichtigen(env, authHeader, doc, execCtx) {
+  try {
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const namen = (doc.beauftragteUsernames || []).map((n) => normalizeUsername(String(n || ""))).filter(Boolean);
+    if (!namen.length) return;
+
+    const betreff = "Kinderschutz: neue Meldung";
+    const text = "Im Kinder- und Jugendschutz-Modul liegt eine neue Meldung vor.\n\n" +
+      "Zum Ansehen bitte anmelden:\n" +
+      "https://sc1911heiligenstadt.github.io/kinderschutz/\n\n" +
+      "Diese Nachricht enthaelt bewusst keine Angaben zum Inhalt.\n\n" +
+      "1. SC 1911 Heiligenstadt e.V.";
+
+    for (const n of namen) {
+      const u = getOwn(usersDoc.users || {}, n);
+      const mail = u && (u.email || u.mail);
+      if (mail) await ksMailSenden(env, mail, betreff, text);
+    }
+
+    // Push trägt denselben leeren Inhalt.
+    pushSenden(env, authHeader, execCtx, namen, "kinderschutz", {
+      titel: "Kinderschutz",
+      text: "Es liegt eine neue Meldung vor. Bitte in der App ansehen."
+    });
+  } catch (_) {
+    // Ein Fehlschlag beim Benachrichtigen darf die Meldung nicht verlieren —
+    // sie ist zu diesem Zeitpunkt bereits gespeichert.
+  }
+}
+
+async function ksMailSenden(env, empfaenger, betreff, text) {
+  if (!env.BREVO_API_KEY) return false;
+  const to = String(empfaenger || "").trim();
+  if (!to || !to.includes("@")) return false;
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": env.BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: to }],
+        subject: betreff,
+        textContent: text
+      })
+    });
+    return resp.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+// ---------- Aktion: Anhang hochladen (offen für jeden) ----------
+
+async function handleKsAnhangPut(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(KS_MELDE_ZAEHLER, KS_MELDE_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Übertragungen von diesem Anschluss." }, 429, corsHeaders);
+  }
+  try {
+    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    if ((doc.einstellungen || {}).anhaengeErlaubt === false) {
+      throw new KsFehler("Anhänge sind derzeit nicht möglich.", 403);
+    }
+
+    let bytes;
+    try {
+      bytes = base64ToBytes(String((body && body.dataBase64) || ""));
+    } catch (_) {
+      throw new KsFehler("Die Datei konnte nicht gelesen werden.", 400);
+    }
+    if (bytes.length === 0) throw new KsFehler("Die Datei ist leer.", 400);
+    if (bytes.length > KS_MAX_ANHANG_BYTES) throw new KsFehler("Die Datei ist größer als 8 MB.", 413);
+
+    // ⚠️ Der Typ aus dem Körper ist eine Behauptung des Absenders. Was zählt,
+    // sind die ersten Bytes. Eine .jpg, die in Wahrheit ein Skript ist, kommt
+    // hier nicht durch.
+    const ctype = String((body && body.contentType) || "").replace(/[^\x20-\x7e]/g, "").toLowerCase();
+    if (!KS_ANHANG_TYPEN.includes(ctype)) throw new KsFehler("Es werden nur Bilder und PDF angenommen.", 400);
+    const istJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const istPng  = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+    const istWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+    const istPdf  = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+    if (!istJpeg && !istPng && !istWebp && !istPdf) throw new KsFehler("Diese Datei ist weder Bild noch PDF.", 400);
+    if (ctype === "application/pdf" && !istPdf) throw new KsFehler("Diese Datei ist kein PDF.", 400);
+    if (ctype !== "application/pdf" && istPdf) throw new KsFehler("Dateityp und Inhalt passen nicht zusammen.", 400);
+
+    // ⚠️ Die Kennung vergibt der SERVER. Käme sie vom Client, könnte jemand eine
+    // fremde Anhangs-Kennung überschreiben und damit ein Beweisstück austauschen.
+    const id = crypto.randomUUID();
+    const fileUrl = KS_DATEI_DIR + "/" + id;
+    const headers = { Authorization: authHeader, "Content-Type": ctype };
+    let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(KS_DATEI_DIR, authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    }
+    if (!resp.ok) throw new KsFehler(`Nextcloud PUT ${resp.status}`, 502);
+    return json({ ok: true, id, contentType: ctype }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Aktion: Stand nachschauen (offen, mit Quittungsnummer) ----------
+
+// ⚠️ Die Antwort enthält AUSDRÜCKLICH NICHT den Meldetext, nicht den Namen und
+// keine Anhänge. Wer einen Code errät, soll nichts über den Inhalt erfahren; der
+// echte Melder kennt ihn ohnehin. Herausgegeben werden nur: Eingangsdatum,
+// Stand und die ausdrücklich für ihn geschriebene Antwort.
+async function handleKsStand(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(KS_STAND_ZAEHLER, KS_STAND_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Abfragen von diesem Anschluss. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    const code = String((body && body.code) || "").trim().toUpperCase();
+    if (!/^KS-[0-9A-HJ-NP-Z]{4}-[0-9A-HJ-NP-Z]{4}$/.test(code)) {
+      throw new KsFehler("Die Nummer sieht nicht richtig aus.", 400);
+    }
+    const hash = await ksCodeHash(code);
+    const mdoc = await readJson(KS_MELDUNGEN_URL, authHeader, ksMeldungenLeer());
+    const m = (mdoc.meldungen || []).find((x) => x.codeHash === hash);
+    if (!m) {
+      // Bewusst dieselbe Nachricht wie für eine gelöschte Meldung — sonst wäre
+      // die Fehlermeldung selbst eine Auskunft ("diesen Code gab es mal").
+      throw new KsFehler("Zu dieser Nummer finden wir nichts. Vielleicht ist die Meldung inzwischen gelöscht, oder die Nummer ist vertippt.", 404);
+    }
+    return json({
+      ok: true,
+      eingangAm: m.eingangAm,
+      status: m.status,
+      antwort: String(m.antwort || ""),
+      antwortAm: m.antwortAm || ""
+    }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Aktion: Meldungen lesen (nur Beauftragte) ----------
+
+async function handleKsMeldungen(request, env, authHeader, corsHeaders) {
+  try {
+    const session = await getVerifiedSession(request, env, authHeader);
+    if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    if (!ksDarfMeldungenLesen(doc, session)) {
+      return json({ error: "Nur die eingetragenen Kinder- und Jugendschutzbeauftragten können Meldungen einsehen." }, 403, corsHeaders);
+    }
+    const mdoc = await readJson(KS_MELDUNGEN_URL, authHeader, ksMeldungenLeer());
+    // ⚠️ codeHash geht NICHT mit. Er ist der Schlüssel zum Nachschauen; er hat
+    // in einer Antwort nichts verloren, auch nicht bei einer Berechtigten.
+    const liste = (mdoc.meldungen || []).map((m) => {
+      const kopie = Object.assign({}, m);
+      delete kopie.codeHash;
+      return kopie;
+    });
+    return json({ ok: true, meldungen: liste }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Gemeinsames Vorspiel aller schreibenden Meldungs-Aktionen.
+async function ksMeldungsRecht(request, env, authHeader) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) throw new KsFehler("Nicht angemeldet", 401);
+  const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+  if (!ksDarfMeldungenLesen(doc, session)) {
+    throw new KsFehler("Nur die eingetragenen Kinder- und Jugendschutzbeauftragten können Meldungen bearbeiten.", 403);
+  }
+  return { session, doc };
+}
+
+function ksVerlaufNotiz(m, wer, was) {
+  if (!Array.isArray(m.verlauf)) m.verlauf = [];
+  m.verlauf.push({ am: new Date().toISOString(), von: String(wer || ""), was: String(was || "") });
+  if (m.verlauf.length > KS_MAX_VERLAUF) m.verlauf.splice(0, m.verlauf.length - KS_MAX_VERLAUF);
+}
+
+async function handleKsMeldungStatus(request, body, env, authHeader, corsHeaders) {
+  try {
+    const { session } = await ksMeldungsRecht(request, env, authHeader);
+    const id = String((body && body.id) || "");
+    const status = String((body && body.status) || "");
+    if (KS_STAENDE.indexOf(status) === -1) throw new KsFehler("Unbekannter Stand.", 400);
+
+    await ksMeldungenMutiere(authHeader, (mdoc) => {
+      const m = (mdoc.meldungen || []).find((x) => x.id === id);
+      if (!m) throw new KsFehler("Diese Meldung gibt es nicht mehr.", 404);
+      const vorher = m.status;
+      m.status = status;
+      m.statusAm = new Date().toISOString();
+      m.statusVon = String(session.username || "");
+      // ⚠️ Der Abschluss-Zeitpunkt ist der Fristbeginn. Er wird beim Zurückgehen
+      // auf einen offenen Stand GELÖSCHT — sonst liefe die Löschfrist weiter,
+      // während der Fall wieder bearbeitet wird.
+      if (status === "abgeschlossen") m.abgeschlossenAm = new Date().toISOString();
+      else m.abgeschlossenAm = "";
+      ksVerlaufNotiz(m, session.username, "Stand: " + vorher + " → " + status);
+      return {};
+    });
+    return json({ ok: true }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleKsMeldungAntwort(request, body, env, authHeader, corsHeaders, execCtx) {
+  try {
+    const { session } = await ksMeldungsRecht(request, env, authHeader);
+    const id = String((body && body.id) || "");
+    const text = capStr((body && body.text) || "", 2000).trim();
+    if (!text) throw new KsFehler("Die Antwort ist leer.", 400);
+
+    let empfaenger = "";
+    await ksMeldungenMutiere(authHeader, (mdoc) => {
+      const m = (mdoc.meldungen || []).find((x) => x.id === id);
+      if (!m) throw new KsFehler("Diese Meldung gibt es nicht mehr.", 404);
+      m.antwort = text;
+      m.antwortAm = new Date().toISOString();
+      if (body && body.perMail && m.melderEmail) empfaenger = m.melderEmail;
+      ksVerlaufNotiz(m, session.username, "Antwort hinterlegt");
+      return {};
+    });
+
+    // ⚠️ Diese Mail trägt den Antworttext — anders als die Eingangs-
+    // benachrichtigung. Das ist eine bewusste Abwägung: der Melder soll die
+    // Antwort lesen können, ohne sich anzumelden. Die Beauftragte hakt das
+    // ausdrücklich an; voreingestellt ist es nur, wenn eine Adresse vorliegt.
+    // Sie weiß dabei, dass der Text durch den Mailversand läuft.
+    if (empfaenger) {
+      const senden = ksMailSenden(env, empfaenger,
+        "Ihre Meldung an den Kinder- und Jugendschutz",
+        "Guten Tag,\n\nzu Ihrer Meldung gibt es eine Rueckmeldung:\n\n" + text +
+        "\n\nMit freundlichen Gruessen\nKinder- und Jugendschutz\n1. SC 1911 Heiligenstadt e.V.");
+      if (execCtx && typeof execCtx.waitUntil === "function") execCtx.waitUntil(senden); else await senden;
+    }
+    return json({ ok: true, perMail: !!empfaenger }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleKsMeldungNotiz(request, body, env, authHeader, corsHeaders) {
+  try {
+    const { session } = await ksMeldungsRecht(request, env, authHeader);
+    const id = String((body && body.id) || "");
+    const text = capStr((body && body.text) || "", 2000).trim();
+    if (!text) throw new KsFehler("Die Notiz ist leer.", 400);
+
+    await ksMeldungenMutiere(authHeader, (mdoc) => {
+      const m = (mdoc.meldungen || []).find((x) => x.id === id);
+      if (!m) throw new KsFehler("Diese Meldung gibt es nicht mehr.", 404);
+      if (!Array.isArray(m.notizen)) m.notizen = [];
+      m.notizen.push({ am: new Date().toISOString(), von: String(session.username || ""), text });
+      if (m.notizen.length > KS_MAX_NOTIZEN) m.notizen.shift();
+      ksVerlaufNotiz(m, session.username, "Interne Notiz");
+      return {};
+    });
+    return json({ ok: true }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleKsMeldungErfassen(request, body, env, authHeader, corsHeaders) {
+  try {
+    const { session } = await ksMeldungsRecht(request, env, authHeader);
+    const m = (body && body.meldung) || {};
+    const beschreibung = capStr(m.beschreibung, KS_MAX_TEXT).trim();
+    if (beschreibung.length < 20) throw new KsFehler("Bitte beschreibe kurz, was berichtet wurde.", 400);
+
+    const name = capStr(m.name, 120).trim();
+    const code = ksCodeErzeugen();
+    const hash = await ksCodeHash(code);
+    let nummer = 0;
+
+    await ksMeldungenMutiere(authHeader, (mdoc) => {
+      nummer = mdoc.naechsteNummer++;
+      mdoc.meldungen.push({
+        id: crypto.randomUUID(),
+        nummer,
+        codeHash: hash,
+        eingangAm: new Date().toISOString(),
+        quelle: "nacherfasst",
+        // ⚠️ Wer nacherfasst hat, wird festgehalten. Eine nacherfasste Meldung
+        // ist eine Wiedergabe aus zweiter Hand — es muss erkennbar bleiben, wer
+        // sie aufgeschrieben hat und woher sie kam.
+        erfasstVon: String(session.username || ""),
+        quelleText: capStr(m.quelleText, 200),
+        anonym: !name,
+        melderName: name,
+        melderRolle: "", melderTelefon: "", melderEmail: "", melderKonto: "",
+        vorfallDatum: ksDatum(m.vorfallDatum),
+        vorfallOrt: capStr(m.vorfallOrt, 200),
+        betroffene: capStr(m.betroffene, 200),
+        beteiligte: capStr(m.beteiligte, 300),
+        beschreibung,
+        anhaenge: [],
+        status: "bearbeitung",
+        statusAm: new Date().toISOString(),
+        statusVon: String(session.username || ""),
+        antwort: "", antwortAm: "",
+        notizen: [],
+        abgeschlossenAm: "",
+        verlauf: [{ am: new Date().toISOString(), von: String(session.username || ""), was: "Nacherfasst" }]
+      });
+      return {};
+    });
+    return json({ ok: true, nummer, code }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleKsMeldungLoeschen(request, body, env, authHeader, corsHeaders) {
+  try {
+    const { session } = await ksMeldungsRecht(request, env, authHeader);
+    const id = String((body && body.id) || "");
+    let dateien = [];
+
+    await ksMeldungenMutiere(authHeader, (mdoc) => {
+      const i = (mdoc.meldungen || []).findIndex((x) => x.id === id);
+      if (i === -1) throw new KsFehler("Diese Meldung gibt es nicht mehr.", 404);
+      dateien = (mdoc.meldungen[i].anhaenge || []).map((a) => a.id).filter(Boolean);
+      mdoc.meldungen.splice(i, 1);
+      return {};
+    });
+
+    // ⚠️ Die Anhänge gehen mit. Eine Meldung zu löschen und die Bilddateien
+    // liegenzulassen wäre keine Löschung, sondern eine Umbenennung des Problems.
+    for (const d of dateien) {
+      try {
+        await fetch(KS_DATEI_DIR + "/" + d, { method: "DELETE", headers: { Authorization: authHeader } });
+      } catch (_) { /* eine verwaiste Datei ist ohne die Meldung nicht abrufbar */ }
+    }
+    return json({ ok: true, dateienGeloescht: dateien.length }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleKsAnhangGet(request, body, env, authHeader, corsHeaders) {
+  try {
+    await ksMeldungsRecht(request, env, authHeader);
+    const meldungId = String((body && body.meldungId) || "");
+    const anhangId = String((body && body.anhangId) || "");
+    if (!FILE_ID_RE.test(anhangId)) throw new KsFehler("Ungültige Kennung.", 400);
+
+    // ⚠️ Der Anhang muss zu DIESER Meldung gehören. Ohne diese Prüfung wäre
+    // jede Datei im Ordner über eine geratene Kennung abrufbar.
+    const mdoc = await readJson(KS_MELDUNGEN_URL, authHeader, ksMeldungenLeer());
+    const m = (mdoc.meldungen || []).find((x) => x.id === meldungId);
+    if (!m) throw new KsFehler("Diese Meldung gibt es nicht mehr.", 404);
+    if (!(m.anhaenge || []).some((a) => a.id === anhangId)) throw new KsFehler("Dieser Anhang gehört nicht zu dieser Meldung.", 404);
+
+    const resp = await fetch(KS_DATEI_DIR + "/" + anhangId, { headers: { Authorization: authHeader } });
+    if (!resp.ok) throw new KsFehler("Die Datei ist nicht mehr da.", 404);
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
+    return json({ ok: true, contentType: ctype, dataUrl: "data:" + ctype + ";base64," + bytesToBase64(bytes) }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Aktion: Schulung ----------
+
+async function handleKsSchulungSchritt(request, body, env, authHeader, corsHeaders) {
+  try {
+    const session = await getVerifiedSession(request, env, authHeader);
+    if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+    const kapitelId = capStr((body && body.kapitelId) || "", 60);
+    if (!kapitelId) throw new KsFehler("Fehlendes Kapitel.", 400);
+
+    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
+    const mich = normalizeUsername(String(session.username || ""));
+    let fertig = false;
+    let mein = null;
+
+    await ksSchulungMutiere(authHeader, (sdoc) => {
+      const alt = getOwn(sdoc.stand, mich) || { kapitel: {}, bestandenAm: "", noetig: false, erinnertAm: "" };
+      if (!alt.kapitel || typeof alt.kapitel !== "object") alt.kapitel = {};
+      alt.kapitel[kapitelId] = body.bestanden !== false;
+
+      // ⚠️ Der Abschluss wird gegen die AKTUELLE Kapitelliste geprüft. Kommt
+      // später ein Kapitel dazu, ist ein früher erteilter Abschluss nicht mehr
+      // vollständig — dann verschwindet er wieder. Das ist gewollt: ein
+      // Nachweis soll den geltenden Stand belegen, nicht einen alten.
+      const alleDa = kapitel.length > 0 && kapitel.every((k) => alt.kapitel[k.id]);
+      if (alleDa && !alt.bestandenAm) { alt.bestandenAm = new Date().toISOString(); fertig = true; }
+      if (!alleDa) alt.bestandenAm = "";
+
+      sdoc.stand[mich] = alt;
+      mein = { kapitel: alt.kapitel, bestandenAm: alt.bestandenAm };
+      return {};
+    });
+    return json({ ok: true, fertig, meinStand: mein }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Die Nachweisliste. Gate ist das BEARBEITEN-Recht, nicht das Meldungs-Recht:
+// wer ist geschult, ist kein Meldegeheimnis, sondern ein Organisationsnachweis.
+async function handleKsSchulungStand(request, env, authHeader, corsHeaders) {
+  try {
+    const ctx = await ksSession(request, env, authHeader, corsHeaders);
+    if (ctx.fehler) return ctx.fehler;
+    ksVerlangeEdit(ctx);
+
+    const [doc, sdoc, usersDoc] = await Promise.all([
+      readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()).then(ksNormalisiere),
+      readJson(KS_SCHULUNG_URL, authHeader, ksSchulungLeer()),
+      readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
+    ]);
+    const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
+    const users = usersDoc.users || {};
+
+    const personen = Object.keys(users)
+      .filter((k) => !users[k].archiviert)
+      .map((k) => {
+        const s = getOwn(sdoc.stand || {}, k) || {};
+        const haken = s.kapitel || {};
+        return {
+          username: k,
+          name: users[k].name || users[k].displayName || k,
+          noetig: !!s.noetig,
+          bestandenAm: s.bestandenAm || "",
+          erinnertAm: s.erinnertAm || "",
+          kapitelFertig: kapitel.filter((x) => haken[x.id]).length,
+          kapitelGesamt: kapitel.length
+        };
+      });
+    return json({ ok: true, personen }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleKsSchulungNoetig(request, body, env, authHeader, corsHeaders) {
+  try {
+    const ctx = await ksSession(request, env, authHeader, corsHeaders);
+    if (ctx.fehler) return ctx.fehler;
+    ksVerlangeEdit(ctx);
+    const wen = normalizeUsername(String((body && body.username) || ""));
+    if (!wen) throw new KsFehler("Fehlender Benutzer.", 400);
+
+    await ksSchulungMutiere(authHeader, (sdoc) => {
+      const alt = getOwn(sdoc.stand, wen) || { kapitel: {}, bestandenAm: "", noetig: false, erinnertAm: "" };
+      alt.noetig = body.noetig !== false;
+      sdoc.stand[wen] = alt;
+      return {};
+    });
+    return json({ ok: true }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Aktion: Inhalte pflegen ----------
+
+// Welche Teile geschrieben werden dürfen — als Weißliste. Ein Teilname, der hier
+// nicht steht, kommt nicht durch. So kann ein Bearbeiter nicht über diesen Weg
+// beauftragteUsernames setzen; das hat eine eigene Aktion mit eigenem Gate.
+const KS_INHALT_TEILE = new Set([
+  "ansprechpartner", "konzept", "zusammenfassung", "meldeweg", "rolle",
+  "schulung", "faq", "externe", "kindertext", "einstellungen"
+]);
+
+async function handleKsInhaltSpeichern(request, body, env, authHeader, corsHeaders) {
+  try {
+    const ctx = await ksSession(request, env, authHeader, corsHeaders);
+    if (ctx.fehler) return ctx.fehler;
+    ksVerlangeEdit(ctx);
+
+    const teil = String((body && body.teil) || "");
+    if (!KS_INHALT_TEILE.has(teil)) throw new KsFehler("Unbekannter Bereich.", 400);
+    const daten = body && body.daten;
+    if (daten === undefined || daten === null) throw new KsFehler("Keine Daten.", 400);
+
+    // Grobe Größenbremse. Der Konzepttext darf lang sein, aber nicht beliebig —
+    // die Datei wird bei JEDEM Seitenaufruf gelesen.
+    const roh = JSON.stringify(daten);
+    if (roh.length > 400000) throw new KsFehler("Der Inhalt ist zu groß.", 413);
+
+    let ergebnis = null;
+    await ksMutiere(authHeader, (doc) => {
+      if (teil === "ansprechpartner") {
+        doc.ansprechpartner = ksPartnerNormieren(daten, doc.ansprechpartner || []);
+      } else if (teil === "einstellungen") {
+        const e = doc.einstellungen || {};
+        const n = daten || {};
+        doc.einstellungen = {
+          anonymErlaubt: n.anonymErlaubt !== false,
+          anhaengeErlaubt: n.anhaengeErlaubt !== false,
+          meldungenOffen: n.meldungenOffen !== false,
+          rueckmeldeTage: Math.min(30, Math.max(1, parseInt(n.rueckmeldeTage, 10) || 3)),
+          loeschfristWochen: Math.min(520, Math.max(1, parseInt(n.loeschfristWochen, 10) || 8)),
+          datenschutzHtml: capStr(n.datenschutzHtml, 60000),
+          // Nicht überschreibbare Altbestände erhalten (Spread statt Ersetzen) —
+          // sonst kippt ein Speichern hier ein Feld, das eine spätere Fassung
+          // dazugelegt hat.
+          ...Object.keys(e).filter((k) => [
+            "anonymErlaubt", "anhaengeErlaubt", "meldungenOffen",
+            "rueckmeldeTage", "loeschfristWochen", "datenschutzHtml"
+          ].indexOf(k) === -1).reduce((acc, k) => { acc[k] = e[k]; return acc; }, {})
+        };
+      } else {
+        doc[teil] = daten;
+      }
+      ergebnis = { daten: { [teil]: doc[teil] } };
+      return {};
+    });
+
+    // Der Client soll die gespeicherte Fassung zurückbekommen und nicht seine
+    // eigene weiterverwenden — sonst zeigt er nach einer Normierung etwas
+    // anderes an, als tatsächlich gespeichert ist.
+    const frisch = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    const antwortDaten = { [teil]: frisch[teil] };
+    if (teil === "ansprechpartner") {
+      antwortDaten.ansprechpartner = (frisch.ansprechpartner || []).map((p) =>
+        Object.assign({}, p, { bildUrl: p.bildId ? ksBildUrl(p.bildId) : "" }));
+    }
+    return json({ ok: true, daten: antwortDaten }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Ansprechpartner feldweise übernehmen. bildId kommt NICHT vom Client — sie
+// wird beim Hochladen gesetzt und hier aus dem Bestand übernommen.
+function ksPartnerNormieren(roh, bestand) {
+  if (!Array.isArray(roh)) return bestand;
+  const alt = new Map(bestand.map((p) => [String(p.id || ""), p]));
+  let hatBeauftragte = false;
+  const neu = roh.slice(0, 20).map((p) => {
+    const id = capStr(p.id, 60) || crypto.randomUUID();
+    const vorher = alt.get(id) || {};
+    const istB = p.rolle === "beauftragte" && !hatBeauftragte;
+    if (istB) hatBeauftragte = true;
+    return {
+      id,
+      rolle: istB ? "beauftragte" : "weiterer",
+      name: capStr(p.name, 120),
+      funktion: capStr(p.funktion, 160),
+      telefon: capStr(p.telefon, 60),
+      email: capStr(p.email, 160),
+      erreichbarkeit: capStr(p.erreichbarkeit, 200),
+      aufgabenText: capStr(p.aufgabenText, 1200),
+      bildId: String(vorher.bildId || (FILE_ID_RE.test(String(p.bildId || "")) ? p.bildId : ""))
+    };
+  });
+  // Ist niemand als Beauftragte gekennzeichnet, wird es die erste Person — die
+  // Startseite hat sonst eine leere Hauptkachel.
+  if (!hatBeauftragte && neu.length) neu[0].rolle = "beauftragte";
+  return neu;
+}
+
+async function handleKsPortraitPut(request, body, env, authHeader, corsHeaders) {
+  try {
+    const ctx = await ksSession(request, env, authHeader, corsHeaders);
+    if (ctx.fehler) return ctx.fehler;
+    ksVerlangeEdit(ctx);
+
+    const partnerId = capStr((body && body.id) || "", 60);
+    if (!partnerId) throw new KsFehler("Fehlende Kennung.", 400);
+
+    let bytes;
+    try { bytes = base64ToBytes(String((body && body.dataBase64) || "")); }
+    catch (_) { throw new KsFehler("Das Bild konnte nicht gelesen werden.", 400); }
+    if (bytes.length === 0) throw new KsFehler("Das Bild ist leer.", 400);
+    if (bytes.length > KS_MAX_PORTRAIT_BYTES) throw new KsFehler("Das Bild ist zu groß.", 413);
+    const istJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const istPng  = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+    if (!istJpeg && !istPng) throw new KsFehler("Diese Datei ist kein Bild.", 400);
+
+    const bildId = crypto.randomUUID();
+    const ctype = istPng ? "image/png" : "image/jpeg";
+    const fileUrl = KS_DATEI_DIR + "/" + bildId;
+    const headers = { Authorization: authHeader, "Content-Type": ctype };
+    let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(KS_DATEI_DIR, authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    }
+    if (!resp.ok) throw new KsFehler(`Nextcloud PUT ${resp.status}`, 502);
+
+    let altesBild = "";
+    await ksMutiere(authHeader, (doc) => {
+      const p = (doc.ansprechpartner || []).find((x) => String(x.id) === partnerId);
+      if (!p) throw new KsFehler("Diese Person gibt es nicht.", 404);
+      altesBild = String(p.bildId || "");
+      p.bildId = bildId;
+      return {};
+    });
+    if (altesBild && altesBild !== bildId) {
+      try { await fetch(KS_DATEI_DIR + "/" + altesBild, { method: "DELETE", headers: { Authorization: authHeader } }); } catch (_) { /* egal */ }
+    }
+    return json({ ok: true, bildId, url: ksBildUrl(bildId) }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Das Portraitfoto wird über einen GET-Pfad ausgeliefert — ein <img src> kann
+// keinen Bearer-Token schicken. Ausgeliefert werden NUR Kennungen, die in
+// kinderschutz.json als bildId eines Ansprechpartners stehen; die Anhänge
+// derselben Ablage sind darüber ausdrücklich NICHT erreichbar.
+async function handleKsBildGet(request, bildId, env, authHeader, corsHeaders) {
+  try {
+    if (!FILE_ID_RE.test(bildId)) return new Response("Not Found", { status: 404, headers: corsHeaders });
+    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    const treffer = (doc.ansprechpartner || []).some((p) => String(p.bildId || "") === bildId);
+    if (!treffer) return new Response("Not Found", { status: 404, headers: corsHeaders });
+
+    const resp = await fetch(KS_DATEI_DIR + "/" + bildId, { headers: { Authorization: authHeader } });
+    if (!resp.ok) return new Response("Not Found", { status: 404, headers: corsHeaders });
+    const bytes = await resp.arrayBuffer();
+    return new Response(bytes, {
+      status: 200,
+      headers: Object.assign({}, corsHeaders, {
+        "Content-Type": resp.headers.get("Content-Type") || "image/jpeg",
+        "Cache-Control": "public, max-age=600"
+      })
+    });
+  } catch (_) {
+    return new Response("Not Found", { status: 404, headers: corsHeaders });
+  }
+}
+
+// ---------- Aktion: Beauftragte festlegen ----------
+
+// ⚠️ Nur mit Administrieren-Recht, und JEDE Änderung wird protokolliert. Der
+// Verlauf geht über handleKsInfo an JEDEN Besucher — auch an nicht angemeldete.
+// Das ist Absicht: der technische Administrator kann sich eintragen, aber er
+// kann es nicht verbergen. Sichtbarkeit ist hier der einzige Schutz, der trägt.
+async function handleKsBeauftragteSetzen(request, body, env, authHeader, corsHeaders) {
+  try {
+    const ctx = await ksSession(request, env, authHeader, corsHeaders);
+    if (ctx.fehler) return ctx.fehler;
+    ksVerlangeAdmin(ctx);
+
+    const roh = Array.isArray(body && body.namen) ? body.namen : [];
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const gueltig = roh.slice(0, 10)
+      .map((n) => normalizeUsername(String(n || "")))
+      .filter((n) => n && getOwn(usersDoc.users || {}, n));
+
+    let neueListe = [];
+    await ksMutiere(authHeader, (doc) => {
+      const vorher = (doc.beauftragteUsernames || []).slice();
+      const dazu = gueltig.filter((n) => vorher.indexOf(n) === -1);
+      const weg = vorher.filter((n) => gueltig.indexOf(n) === -1);
+      if (!dazu.length && !weg.length) { neueListe = vorher; return {}; }
+
+      doc.beauftragteUsernames = gueltig;
+      if (!Array.isArray(doc.beauftragteVerlauf)) doc.beauftragteVerlauf = [];
+      const teile = [];
+      if (dazu.length) teile.push("hinzugefügt: " + dazu.join(", "));
+      if (weg.length) teile.push("entfernt: " + weg.join(", "));
+      doc.beauftragteVerlauf.push({
+        am: new Date().toISOString(),
+        von: String(ctx.session.username || ""),
+        was: teile.join(" · ")
+      });
+      if (doc.beauftragteVerlauf.length > KS_MAX_VERLAUF) doc.beauftragteVerlauf.shift();
+      neueListe = gueltig;
+      return {};
+    });
+
+    const frisch = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    return json({
+      ok: true,
+      daten: {
+        beauftragteUsernames: neueListe,
+        beauftragteNamen: ksAnzeigeNamen(frisch, usersDoc),
+        beauftragteVerlauf: (frisch.beauftragteVerlauf || []).slice(-50)
+      }
+    }, 200, corsHeaders);
+  } catch (e) {
+    return ksAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Nächtlicher Lauf: Erinnerungen ----------
+
+// Zwei Erinnerungen, beide ohne jeden Inhalt:
+//   1. Meldungen, die länger als die zugesagte Frist ohne Antwort liegen.
+//   2. Meldungen, deren Aufbewahrungsfrist abgelaufen ist.
+//   3. Personen mit Schulungspflicht, die nach vier Wochen nicht durch sind.
+//
+// ⚠️ Gelöscht wird NICHTS automatisch (Michel-Entscheidung 2026-08-29). Die App
+// erinnert, die Beauftragte entscheidet. Folge: der Datenschutztext verspricht
+// keine Automatik, die es nicht gibt.
+async function ksTaeglicherLauf(env, authHeader, execCtx) {
+  try {
+    const [doc, mdoc, sdoc, usersDoc] = await Promise.all([
+      readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()).then(ksNormalisiere),
+      readJson(KS_MELDUNGEN_URL, authHeader, ksMeldungenLeer()),
+      readJson(KS_SCHULUNG_URL, authHeader, ksSchulungLeer()),
+      readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
+    ]);
+    const e = doc.einstellungen || {};
+    const fristTage = Number(e.rueckmeldeTage) || 3;
+    const wochen = Number(e.loeschfristWochen) || 8;
+    const jetzt = Date.now();
+
+    const ueberfaellig = (mdoc.meldungen || []).filter((m) =>
+      m.status !== "abgeschlossen" && !m.antwortAm &&
+      (jetzt - (Date.parse(m.eingangAm) || jetzt)) > fristTage * 86400000).length;
+
+    const loeschreif = (mdoc.meldungen || []).filter((m) => {
+      if (m.status === "extern") return false;
+      const start = m.status === "abgeschlossen" ? m.abgeschlossenAm : m.eingangAm;
+      return (jetzt - (Date.parse(start) || jetzt)) >= wochen * 7 * 86400000;
+    }).length;
+
+    if (ueberfaellig || loeschreif) {
+      const zeilen = [];
+      if (ueberfaellig) zeilen.push("- " + ueberfaellig + " Meldung(en) warten laenger als " + fristTage + " Werktage auf eine Rueckmeldung.");
+      if (loeschreif) zeilen.push("- " + loeschreif + " Meldung(en) haben die Aufbewahrungsfrist erreicht und koennen geloescht werden.");
+      const text = "Im Kinder- und Jugendschutz-Modul gibt es offene Punkte:\n\n" + zeilen.join("\n") +
+        "\n\nhttps://sc1911heiligenstadt.github.io/kinderschutz/\n\n" +
+        "Diese Nachricht enthaelt bewusst keine Angaben zum Inhalt.\n\n1. SC 1911 Heiligenstadt e.V.";
+      for (const n of (doc.beauftragteUsernames || [])) {
+        const u = getOwn(usersDoc.users || {}, normalizeUsername(String(n || "")));
+        const mail = u && (u.email || u.mail);
+        if (mail) await ksMailSenden(env, mail, "Kinderschutz: offene Punkte", text);
+      }
+    }
+
+    // Schulungs-Erinnerung. Alle vier Wochen, bis erledigt.
+    const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
+    if (kapitel.length) {
+      const faellig = [];
+      for (const [name, s] of Object.entries(sdoc.stand || {})) {
+        if (!s || !s.noetig || s.bestandenAm) continue;
+        const zuletzt = Date.parse(s.erinnertAm || "") || 0;
+        if (jetzt - zuletzt < 28 * 86400000) continue;
+        faellig.push(name);
+      }
+      for (const name of faellig) {
+        const u = getOwn(usersDoc.users || {}, name);
+        const mail = u && (u.email || u.mail);
+        if (!mail) continue;
+        await ksMailSenden(env, mail, "Kurze Schulung Kinder- und Jugendschutz",
+          "Hallo,\n\ndie kurze Schulung zum Kinder- und Jugendschutz steht bei dir noch offen. " +
+          "Sie dauert etwa 20 Minuten und besteht aus " + kapitel.length + " kurzen Kapiteln.\n\n" +
+          "https://sc1911heiligenstadt.github.io/kinderschutz/\n\n" +
+          "Danke dir!\n1. SC 1911 Heiligenstadt e.V.");
+      }
+      if (faellig.length) {
+        await ksSchulungMutiere(authHeader, (s2) => {
+          for (const name of faellig) {
+            if (s2.stand[name]) s2.stand[name].erinnertAm = new Date().toISOString();
+          }
+          return {};
+        });
+      }
+    }
+  } catch (_) {
+    // Ein Fehler im nächtlichen Lauf darf die anderen Läufe nicht mitreißen.
+  }
 }

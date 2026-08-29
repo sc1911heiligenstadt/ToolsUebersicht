@@ -392,6 +392,24 @@ const TOOLS = [
     icon: "⚽",
     category: "Verein",
     mail: true
+  },
+  {
+    // ⚠️ Diese App ist auch OHNE Anmeldung erreichbar — Info, Ansprechpartnerin
+    // und Meldeformular. Kinder, Jugendliche und Eltern haben kein Vereinskonto.
+    // Die Kachel hier ist der Weg für Angemeldete; von außen führt der Wegweiser
+    // auf der Vereinsseite und ein QR-Code hin.
+    //
+    // ⚠️ Sichtbarkeit bewusst für ALLE Angemeldeten, Spieler eingeschlossen
+    // (Michel-Entscheidung 2026-08-29). Jugendliche sind die wichtigste
+    // Zielgruppe — sie hier auszusperren wäre genau falsch.
+    id: "kinderschutz",
+    name: "Kinder- und Jugendschutz",
+    description: "Die Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ganz oben steht unsere Kinder- und Jugendschutzbeauftragte mit Foto und Erreichbarkeit, dazu ein Knopf zum Anrufen und einer zum Mailschreiben. Wer einen Verdacht oder Vorfall melden will, tut das über ein Formular — auf Wunsch anonym, mit Quittungsnummer zum späteren Nachschauen. Dazu das Schutzkonzept im Wortlaut, der Meldeweg in sechs Schritten, häufige Fragen, externe Hilfsangebote und eine eigene Fassung in einfacher Sprache für Kinder. Eine kurze Schulung mit Quiz weist nach, wer geschult ist. Meldungen lesen ausschließlich die eingetragenen Beauftragten — der Administrator ausdrücklich nicht.",
+    url: "https://sc1911heiligenstadt.github.io/kinderschutz/",
+    icon: "🛟",
+    category: "Verein",
+    mail: true,
+    push: true
   }
 ];
 
@@ -411,7 +429,14 @@ const KRITISCHE_TOOLS = [
   // fussballcamp: Allergien, Medikamente und Erkrankungen von MINDERJÄHRIGEN,
   // dazu Anschrift und Notfallnummer der Familien. Besondere Daten nach Art. 9
   // DSGVO über Kinder — die empfindlichste Sammlung der ganzen Flotte.
-  "fussballcamp"
+  "fussballcamp",
+  // kinderschutz: Meldungen ueber Verdachtsfaelle. Angaben nach Art. 9 DSGVO
+  // (Gesundheit, Sexualleben) und Art. 10 DSGVO (strafbare Handlungen), oft
+  // ueber Minderjaehrige. ⚠️ Die Rechte hier bedeuten NICHT dasselbe wie sonst:
+  // Bearbeiten heisst Texte pflegen. Meldungen lesen haengt AUSSCHLIESSLICH an
+  // der Beauftragten-Liste in der App selbst — auch der Administrator sieht sie
+  // sonst nicht. Wer hier Rechte vergibt, gibt keinen Zugang zu Meldungen.
+  "kinderschutz"
 ];
 
 // Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
@@ -493,6 +518,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.34",
+    groups: [
+      {
+        title: "Neue Kachel: Kinder- und Jugendschutz",
+        items: [
+          "Die zentrale Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ansprechpartnerin, Meldeweg, Schutzkonzept, Schulung, Fragen und Hilfsangebote an einem Ort.",
+          "Die Kachel sehen alle Angemeldeten — auch Spieler. Das ist Absicht: Jugendliche sind die wichtigste Zielgruppe.",
+          "Info und Meldeformular gehen auch ganz ohne Anmeldung. Eltern und Kinder erreichen sie über die Vereinsseite oder einen QR-Code.",
+          "Meldungen lesen ausschließlich die in der App eingetragenen Beauftragten. Der Administrator sieht sie nicht — und wer die Liste ändert, tut das nachweislich sichtbar für jeden."
+        ]
+      }
+    ]
+  },
   {
     version: "1.33",
     groups: [
