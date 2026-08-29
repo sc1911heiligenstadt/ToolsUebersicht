@@ -41,6 +41,7 @@ function lade(quelle) {
 // Der echte Konzepttext aus der App — die Gegenprobe, dass nichts kaputtgeht.
 const VORGABE = readFileSync("E:/kinderschutz/inhalte-vorgabe.js", "utf8");
 const APP = readFileSync("E:/kinderschutz/app.js", "utf8");
+const CSS = readFileSync("E:/kinderschutz/kinderschutz.css", "utf8");
 const zaehle = (t, tag) => (t.match(new RegExp("<" + tag + "[ >]", "gi")) || []).length;
 
 // ---------------------------------------------------------------------------
@@ -182,7 +183,19 @@ function quelltext() {
     ["F15b Der Aufklapper startet ZU, nicht offen",
       !/melde-ds-hinweis[\s\S]{0,3000}<details class=\\"ds-block\\"[^>]*\sopen/.test(APP)],
     ["F16 Der Datenschutztext sagt, was anonym NICHT leisten kann (IP-Adresse)",
-      VORGABE.includes("IP-Adresse") && /anonym melden[\s\S]{0,900}IP-Adresse/.test(VORGABE)]
+      VORGABE.includes("IP-Adresse") && /anonym melden[\s\S]{0,900}IP-Adresse/.test(VORGABE)],
+
+    // ⚠️ Das Feld fuer Anhaenge braucht eine EIGENE Regel. Der Block
+    // `.ks-feld input[type="text"], [type="tel"], [type="email"], [type="date"]`
+    // zaehlt die Feldarten einzeln auf -- `file` war dort nie dabei und fiel
+    // deshalb auf die Browser-Vorgabe von 24 px zurueck (gemessen 2026-08-29).
+    // Wer die Regel loescht oder die Liste umbaut, faellt hier wieder auf.
+    ["F17 Das Feld fuer Anhaenge hat mindestens 44 px Tippziel",
+      /\.ks-feld input\[type="file"\][^}]*min-height:\s*44px/.test(CSS)],
+    // Ohne das saesse ein kleiner Knopf mittig in einer grossen Box und saehe
+    // aus, als waere nur er gemeint.
+    ["F18 ...und der Knopf darin ist mitvergroessert",
+      /::file-selector-button[^}]*min-height:\s*3[0-9]px/.test(CSS)]
   ];
 }
 
