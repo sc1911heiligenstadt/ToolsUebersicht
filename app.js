@@ -10640,12 +10640,24 @@ function pnNeuAnzahl() {
 // ⚠️ Gefiltert wird ueber `isVisibleToUser`: ein Ziel anzubieten, das der
 // Absender selbst nicht sehen darf, waere eine Aussage darueber, welche
 // Werkzeuge es gibt.
+//
+// ⚠️⚠️ Die Signatur ist `(toolId, user)` -- die Tool-ID und der Nutzer, NICHT
+// das Tool-Objekt. Die erste Fassung schrieb `isVisibleToUser(t)`; damit lief
+// `visibilityState[{...}]` immer ins Leere, JEDES Werkzeug fiel durch, und die
+// Auswahl stand live nur mit der Vorgabe-Zeile da (Michel-Meldung 2026-08-30).
+// ⚠️ Der Browser-Test hat es NICHT gefunden, weil er `isVisibleToUser` fuer die
+// Layout-Probe durch `() => true` ersetzt hatte -- die Abkuerzung blendete genau
+// den kaputten Aufruf aus. Alle zwoelf uebrigen Aufrufer uebergeben `t.id,
+// currentUser`; wer hier abweicht, hat sich vertan.
+//
+// `t.url` mitgeprueft wie in renderFeedbackTab: ein Eintrag ohne Adresse waere
+// eine Option mit leerem Wert und damit stillschweigend die Vorgabe.
 function pnZielFeldFuellen() {
   const sel = document.getElementById("pn-ziel");
   if (!sel) return;
   const vorher = sel.value;
   const eintraege = TOOLS
-    .filter((t) => isVisibleToUser(t))
+    .filter((t) => t.url && isVisibleToUser(t.id, currentUser))
     .map((t) => ({ url: t.url, name: t.name }))
     .sort((a, b) => a.name.localeCompare(b.name, "de"));
   sel.innerHTML = '<option value="">Zur Tools-Übersicht (Vorgabe)</option>' +
