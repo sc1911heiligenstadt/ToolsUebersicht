@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.35",
+    groups: [
+      {
+        title: "Die Werkzeugsuche findet jetzt genau das Werkzeug",
+        items: [
+          "Die Suche in der Leiste über den Kacheln vergleicht ab sofort nur noch den Namen des Werkzeugs.",
+          "Vorher wurde auch der Beschreibungstext unter dem Namen und die Überschrift der Gruppe durchsucht. Ein kurzes Wort brachte dadurch halbe Seiten voller Kacheln, die den Begriff nur irgendwo im Fließtext stehen hatten.",
+          "Groß- und Kleinschreibung sowie Umlaute sind weiter egal: „platze“ und „plaetze“ finden beide die Platzbelegung. Mehrere Wörter dürfen weiter in beliebiger Reihenfolge stehen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.34",
     groups: [
       {

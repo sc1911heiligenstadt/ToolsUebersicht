@@ -1405,13 +1405,13 @@ function sucheNormLang(text) {
     .replace(/ß/g, "ss");
 }
 
-// Alle getippten Woerter muessen vorkommen, die Reihenfolge ist egal ("plan foto"
-// findet die Fotoauftraege genauso wie "foto plan"). Gesucht wird in Name,
-// Beschreibung und Kategorie -- die Beschreibung ist der eigentliche Gewinn, denn
-// den Namen kennt nur, wer das Werkzeug ohnehin schon gefunden hat.
+// Alle getippten Woerter muessen vorkommen, die Reihenfolge ist egal ("ablauf plan"
+// findet den Ablaufplan genauso wie "plan ablauf"). ⚠️ Gesucht wird NUR im Namen --
+// Michel-Entscheidung: Beschreibung und Kategorie mitzudurchsuchen warf zu viele
+// Karten aus, die das getippte Wort bloss irgendwo im Fliesstext stehen haben.
 function toolPasstZurSuche(t, woerter) {
   if (!woerter.length) return true;
-  const roh = [t.name, t.description, t.category].join(" ");
+  const roh = String(t.name || "");
   const grund = sucheNormGrund(roh);
   const lang = sucheNormLang(roh);
   return woerter.every((w) => grund.includes(sucheNormGrund(w)) || lang.includes(sucheNormLang(w)));
