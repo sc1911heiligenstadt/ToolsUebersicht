@@ -5393,7 +5393,7 @@ async function handleDokumentDateiGet(request, body, env, authHeader, corsHeader
   if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
   return new Response(resp.body, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": "application/pdf", "Cache-Control": "private, no-store" }
+    headers: dateiKopfzeilen(corsHeaders, "application/pdf")
   });
 }
 
@@ -6561,7 +6561,7 @@ async function handleVaDateiGet(request, body, env, authHeader, corsHeaders) {
     // eigenen Header und damit auch kein Access-Control-Expose-Headers.
     return new Response(resp.body, {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": meta.mime || "application/octet-stream", "Cache-Control": "private, no-store" }
+      headers: dateiKopfzeilen(corsHeaders, meta.mime)
     });
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -6897,7 +6897,7 @@ async function handleNewsDateiGet(request, body, env, authHeader, corsHeaders) {
   // Vereinsinterna.
   return new Response(resp.body, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": mime, "Cache-Control": "private, max-age=300" }
+    headers: dateiKopfzeilen(corsHeaders, mime, "private, max-age=300")
   });
 }
 
@@ -7029,7 +7029,7 @@ async function handleNutzerfotoGet(request, body, env, authHeader, corsHeaders) 
   // Blob-Cache, dessen Schlüssel die fotoVersion ist.
   return new Response(resp.body, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": mime, "Cache-Control": "private, no-store" }
+    headers: dateiKopfzeilen(corsHeaders, mime)
   });
 }
 
@@ -10285,6 +10285,53 @@ async function handleWikiFragenLoeschen(request, body, env, authHeader, corsHead
 const FILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB (muss zum Client-Cap in config.js passen)
 
+// ⚠️ Der Typ, mit dem eine Datei an den Browser geht. Sicherheits-Durchsicht
+// 2026-08-29: neun Wege dieses Workers reichten Dateien durch, und die Haelfte
+// ihres Typs kam aus einer Quelle, der man nicht trauen kann.
+//
+// ⚠️ Zwei verschiedene Loecher, und nosniff schliesst nur EINES davon:
+//
+//   1. Der Browser RAET den Typ, weil der gemeldete nicht passt.
+//      -> dagegen hilft der Kopf X-Content-Type-Options: nosniff.
+//   2. Der gemeldete Typ IST text/html, weil ihn der Hochladende so behauptet
+//      hat (vereinsaufgabe-datei-put und zertifizierung-datei-put schneiden ihn
+//      aus der data:-Adresse des Clients heraus) oder weil die Datei von Hand in
+//      der Nextcloud liegt.
+//      -> dagegen hilft nosniff NICHT. Nur diese weisse Liste.
+//
+// Was nicht draufsteht, geht als application/octet-stream raus. Das ist fuer die
+// Flotte folgenlos: alle neun Wege sind POST-Aktionen, und jeder Client liest die
+// Antwort per res.blob() und baut sich seine eigene Objekt-Adresse. Der Kopf
+// wirkt nur, wenn jemand die Antwort direkt im Browser oeffnet.
+//
+// ⚠️ image/svg+xml steht bewusst NICHT drauf -- ein SVG kann Skript tragen.
+const DATEI_TYP_ERLAUBT = new Set([
+  "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
+  "application/pdf", "text/plain", "text/csv",
+  "video/mp4", "video/webm", "video/quicktime", "audio/mpeg", "audio/mp4",
+  "application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/zip"
+]);
+
+function sichererDateiTyp(roh) {
+  const t = String(roh || "").split(";")[0].trim().toLowerCase();
+  return DATEI_TYP_ERLAUBT.has(t) ? t : "application/octet-stream";
+}
+
+// Die Kopfzeilen, mit denen eine durchgereichte Datei den Worker verlaesst.
+// ⚠️ Wer einen NEUEN Dateiweg baut, nimmt diese Funktion -- nicht die Kopfzeilen
+// von Hand. pruef-nosniff.mjs faellt sonst um.
+function dateiKopfzeilen(corsHeaders, typ, cache) {
+  return Object.assign({}, corsHeaders, {
+    "Content-Type": sichererDateiTyp(typ),
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": cache || "private, no-store"
+  });
+}
+
 // Verzeichnis-URL (ohne Slash am Ende) für die Datei-Anhänge einer App: der
 // Unterordner "dateien" neben der JSON-Datendatei. Die einzelne Datei liegt unter
 // <dir>/<id> — der Original-Dateiname fließt NIE in den Pfad ein (Path-Traversal-
@@ -10369,7 +10416,7 @@ async function handleDavFileGet(request, body, env, authHeader, corsHeaders) {
   // per Blob einen Download-/Vorschau-Link.
   return new Response(resp.body, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": ctype, "Cache-Control": "private, no-store" }
+    headers: dateiKopfzeilen(corsHeaders, ctype)
   });
 }
 
@@ -10473,7 +10520,7 @@ async function handleDavRestrictedGet(request, body, env, authHeader, corsHeader
   const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
   return new Response(resp.body, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": ctype, "Cache-Control": "private, no-store" }
+    headers: dateiKopfzeilen(corsHeaders, ctype)
   });
 }
 
@@ -11187,7 +11234,7 @@ async function handleFahrtenbuchBelegFileGet(request, body, env, authHeader, cor
   const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
   return new Response(resp.body, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": ctype, "Cache-Control": "private, no-store" }
+    headers: dateiKopfzeilen(corsHeaders, ctype)
   });
 }
 
@@ -14738,12 +14785,11 @@ async function handleKboExternFotoGet(request, body, env, authHeader, corsHeader
   if (!resp.ok) return json({ error: "Dieses Bild gibt es nicht." }, 404, corsHeaders);
   return new Response(resp.body, {
     status: 200,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": resp.headers.get("Content-Type") || "image/jpeg",
-      // Kein oeffentlicher Cache: die Antwort haengt am Link-Schluessel.
-      "Cache-Control": "private, max-age=300"
-    }
+    // ⚠️ Der einzige dieser neun Wege, der OHNE Anmeldung erreichbar ist --
+    // der Ausweis ist allein der Link-Schluessel. Kein oeffentlicher Cache: die
+    // Antwort haengt an eben diesem Schluessel.
+    headers: dateiKopfzeilen(corsHeaders, resp.headers.get("Content-Type") || "image/jpeg",
+                             "private, max-age=300")
   });
 }
 
@@ -18324,7 +18370,7 @@ async function handleZertDateiGet(request, body, env, authHeader, corsHeaders) {
     // String zeichenweise auf und reisst bei mehreren Megabyte das CPU-Limit.
     return new Response(resp.body, {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": meta.mime || "application/octet-stream", "Cache-Control": "private, no-store" }
+      headers: dateiKopfzeilen(corsHeaders, meta.mime)
     });
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
