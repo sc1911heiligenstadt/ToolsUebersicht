@@ -561,6 +561,7 @@ const APP_CHANGELOG = [
           "Wer keine Meldungen aufs Handy möchte, schaltet unter „Benachrichtigungen aufs Handy“ den neuen Punkt „Persönliche Nachrichten“ aus. Die E-Mail kommt weiterhin.",
           "Der Administrator sieht in den Einstellungen ein Protokoll: wer wann an wen geschrieben hat. Der Inhalt steht dort bewusst nicht — weder Überschrift noch Text.",
           "Nachrichten verschwinden von selbst: gelesene nach 90 Tagen, ungelesene nach einem Jahr. Löschen kann jeder seine eigenen jederzeit.",
+          "Liegt eine ungelesene Nachricht bereit, steht eine kleine rote Zahl am Tab „Mein Konto“ — sie zählt zusammen mit bereitliegenden Unterlagen und verschwindet, sobald du die Nachricht als gelesen markierst.",
           "Lange Listen werden nach 20 Einträgen gekürzt, ein Knopf zeigt den Rest. Ungelesene Nachrichten stehen dabei immer da, auch wenn sie älter sind — sonst verschwindet ausgerechnet das, worauf die rote Zahl am Tab zeigt.",
           "Achtung: Überschrift und Text stehen sichtbar auf dem Sperrbildschirm des Empfängers und in seinem Postfach. Nichts Vertrauliches hineinschreiben — die Schreibmaske sagt das noch einmal an."
         ]

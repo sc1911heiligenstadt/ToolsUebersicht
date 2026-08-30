@@ -103,7 +103,7 @@ let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte,
 // Persoenliche Ansicht der Startseite (seit 2026-08-07): Kacheln oder Liste + eigene
 // Reihenfolge je Kategorie. Liegt am Konto (Aktion "meine-ansicht"), gilt also auf
 // jedem Geraet gleich.
-let ansichtState = { modus: "kacheln", reihenfolge: {} };
+let ansichtState = { modus: "kacheln", reihenfolge: {}, unterlagenNeu: 0, nachrichtenNeu: 0 };
 let ansichtBearbeiten = false;   // Anordnen-Modus an? Nur dann laesst sich etwas verschieben.
 // Suchtext ueber den Kacheln (seit 2026-08-13). Bewusst NICHT Teil von ansichtState und
 // damit nicht am Konto gespeichert: es ist ein fluechtiger Filter fuer diesen einen
@@ -1176,7 +1176,7 @@ function isVisibleToUser(toolId, user) {
 // localStorage bleibt ausschliesslich als Zwischenspeicher fuer den Seitenaufbau.
 
 function ansichtStandard() {
-  return { modus: "kacheln", reihenfolge: {}, unterlagenNeu: 0 };
+  return { modus: "kacheln", reihenfolge: {}, unterlagenNeu: 0, nachrichtenNeu: 0 };
 }
 
 // Nimmt an, was vom Server oder aus dem Zwischenspeicher kommt, und baut daraus einen
@@ -1190,11 +1190,23 @@ function ansichtUebernehmen(roh) {
     const ids = rohReihenfolge[kategorie];
     if (Array.isArray(ids)) reihenfolge[kategorie] = ids.map((id) => String(id || "")).filter(Boolean);
   });
-  // Zähler fürs rote Abzeichen am Konto-Tab. Steht hier, weil ansicht.json beim
+  // Zähler fürs rote Abzeichen am Konto-Tab. Stehen hier, weil ansicht.json beim
   // Seitenaufbau ohnehin gelesen wird -- das Abzeichen kostet damit keinen
-  // zusätzlichen Roundtrip (siehe unterlagenNeuAnzahl).
+  // zusätzlichen Roundtrip (siehe unterlagenNeuAnzahl und pnNeuAnzahl).
+  //
+  // ⚠️⚠️ Diese Funktion baut `ansichtState` KOMPLETT NEU. Jedes Feld, das hier
+  // nicht ausdrücklich übernommen wird, ist nach dem Laden weg -- auch wenn der
+  // Worker es geliefert hat. Genau so ist `nachrichtenNeu` beim Ausliefern
+  // verlorengegangen: der Worker schickte die Zahl, `handleMeineAnsicht` hatte
+  // sie, und hier fiel sie unter den Tisch -- das rote Abzeichen für neue
+  // Privatnachrichten blieb dauerhaft aus (Michel-Meldung 2026-08-30).
+  // ⚠️ Der Test hat es nicht gefunden, weil er `ansichtState` von Hand setzte
+  // statt `ladeAnsicht()` zu fahren -- die Abkürzung ging am Fehler vorbei.
+  // **Wer einen weiteren Zähler ergänzt, muss ihn HIER, in `ansichtStandard()`
+  // und in `downloadsBadgeZeichnen()` eintragen.** Alle drei, sonst wirkt er nicht.
   const unterlagenNeu = Number.isFinite(roh && roh.unterlagenNeu) ? Math.max(0, roh.unterlagenNeu) : 0;
-  ansichtState = { modus, reihenfolge, unterlagenNeu };
+  const nachrichtenNeu = Number.isFinite(roh && roh.nachrichtenNeu) ? Math.max(0, roh.nachrichtenNeu) : 0;
+  ansichtState = { modus, reihenfolge, unterlagenNeu, nachrichtenNeu };
 }
 
 function ansichtCacheLesen(username) {
