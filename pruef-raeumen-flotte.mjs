@@ -28,14 +28,29 @@ const MUTATION = process.argv.includes("--mutation");
 // Die Apps und ihre app-spezifischen Namen.
 // Wer eine App ergaenzt, traegt sie hier ein -- und C6 prueft ihre Dialoge mit.
 // -----------------------------------------------------------------------------
+// dbWuerfe = wie viele "throw new NotLoggedInError" in db.js stehen. Jeder davon
+// muss den Haken tragen (Zusage C2) -- deshalb die genaue Zahl und nicht "min. 1".
+const SHELL_AN = 'document.getElementById("app-shell").style.display = "";';
 const APPS = [
-  { name: "spielstatistik",  gate: "showConnectScreen", trichter: ["renderAll"],   start: "startApp",  dbPaare: 1 },
-  { name: "spieltagscrew",   gate: "zeigeLoginGate",    trichter: ["renderAll"],   startAnker: 'document.getElementById("app-shell").style.display = "";', dbPaare: 1 },
-  { name: "ablaufplan",      gate: "zeigeAbmeldung",    trichter: ["renderAlles"], startAnker: 'document.getElementById("app-shell").style.display = "";', dbPaare: 2 },
-  { name: "schulsport",      gate: "showConnectScreen", trichter: ["renderAlles"], start: "startApp",  dbPaare: 1 },
-  { name: "ausbildungsplan", gate: "showConnectScreen", trichter: ["renderAlles"], start: "startApp",  dbPaare: 1 },
-  { name: "kleiderboerse",   gate: "showConnectScreen", trichter: ["renderAlles"], start: "startApp",  dbPaare: 2 },
-  { name: "kontakte",        gate: "showConnectScreen", trichter: ["renderListe", "renderMannschaften"], start: "showApp", dbPaare: 1 },
+  { name: "spielstatistik",  gate: "showConnectScreen", trichter: ["renderAll"],   start: "startApp",  dbWuerfe: 2 },
+  { name: "spieltagscrew",   gate: "zeigeLoginGate",    trichter: ["renderAll"],   startAnker: SHELL_AN, dbWuerfe: 2 },
+  { name: "ablaufplan",      gate: "zeigeAbmeldung",    trichter: ["renderAlles"], startAnker: SHELL_AN, dbWuerfe: 4 },
+  { name: "schulsport",      gate: "showConnectScreen", trichter: ["renderAlles"], start: "startApp",  dbWuerfe: 2 },
+  { name: "ausbildungsplan", gate: "showConnectScreen", trichter: ["renderAlles"], start: "startApp",  dbWuerfe: 2 },
+  { name: "kleiderboerse",   gate: "showConnectScreen", trichter: ["renderAlles"], start: "startApp",  dbWuerfe: 4 },
+  { name: "kontakte",        gate: "showConnectScreen", trichter: ["renderListe", "renderMannschaften"], start: "showApp", dbWuerfe: 2 },
+
+  // Zweite Runde (30.08.2026): raeumten schon die Huelle, aber nicht, was daneben steht.
+  { name: "kadermanager",         gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 6 },
+  { name: "Vereinsaufgaben",      gate: "zeigeLoginGate",    trichter: ["renderAll"], startAnker: SHELL_AN, dbWuerfe: 6 },
+  { name: "busplan",              gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 2 },
+  { name: "Personalkosten",       gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 2 },
+  { name: "fahrtenbuch",          gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 6 },
+  { name: "platzbelegung",        gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 4 },
+  { name: "spielersichtung",      gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 2 },
+  { name: "abwesenheitskalender", gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 2 },
+  { name: "vereinskalender",      gate: "showConnectScreen", trichter: ["renderAll"], start: "startApp", dbWuerfe: 4 },
+  { name: "raumnutzung",          gate: "showConnectScreen", trichter: ["renderListen"], startAnker: 'el("app-shell").style.display = "";', dbWuerfe: 3 },
 ];
 
 // -----------------------------------------------------------------------------
@@ -168,22 +183,41 @@ function abbruch(text) {
 // =============================================================================
 // Mutationen -- jede muss auffallen
 // =============================================================================
+// ⚠️ Zwei Fallen, beide hier aufgeschlagen:
+//
+//   1. Eine Mutation, die auf den WORTLAUT zielt, laeuft ins Leere, sobald sich
+//      der Wortlaut aendert. Also auf die Struktur zielen.
+//   2. Eine Mutation, die einfach das erste Vorkommen im FILE ersetzt, trifft
+//      irgendeine andere Stelle -- `el.innerHTML = "";` steht in kadermanager
+//      schon 500 Zeilen frueher. Sie aendert dann etwas Belangloses und meldet
+//      "gefangen"/"durch" ueber eine Zeile, die gar nicht gemeint war.
+//
+// Deshalb wird jede Mutation, die auf den Raeum-Code zielt, auf DESSEN Rumpf
+// eingegrenzt.
+function nurIn(kopf, wandle) {
+  return (s) => {
+    const f = schneideFunktion(s, kopf);
+    if (f === null) return s;
+    return s.replace(f, wandle(f));
+  };
+}
+
+const RB = "function raeumeBildschirm() {";
+const RS = "function raeumeBeiSitzungsverlust() {";
+
 const MUTATIONEN = [
   { id: "M1", was: "app.js", beschreibung: "innerHTML-Leeren der Huelle entfernt",
-    tun: (s) => s.replace('  if (huelle) huelle.innerHTML = "";\n', "") },
-  // ⚠️ Diese Mutation lief beim ersten Versuch ins Leere, weil sie auf den
-  // damaligen Selektor-Wortlaut zielte -- und der hatte sich geaendert. Jetzt
-  // trifft sie den Selektor, egal was drinsteht.
+    tun: nurIn(RB, (f) => f.replace('  if (huelle) huelle.innerHTML = "";\n', "")) },
   { id: "M2", was: "app.js", beschreibung: "Selektor entkernt (alles neben der Huelle faellt raus)",
-    tun: (s) => s.replace(/querySelectorAll\("[^"]*"\)\.forEach\(\(el\) => \{/, 'querySelectorAll("#gibtesnicht").forEach((el) => {') },
-  { id: "M3", was: "app.js", beschreibung: "display:none der Dialoge entfernt",
-    tun: (s) => s.replace('    el.style.display = "none";\n', "") },
-  { id: "M4", was: "app.js", beschreibung: "innerHTML-Leeren der Dialoge entfernt",
-    tun: (s) => s.replace('    el.innerHTML = "";\n', "") },
+    tun: nurIn(RB, (f) => f.replace(/querySelectorAll\("[^"]*"\)/, 'querySelectorAll("#gibtesnicht")')) },
+  { id: "M3", was: "app.js", beschreibung: "display:none neben der Huelle entfernt",
+    tun: nurIn(RB, (f) => f.replace('    el.style.display = "none";\n', "")) },
+  { id: "M4", was: "app.js", beschreibung: "innerHTML-Leeren neben der Huelle entfernt",
+    tun: nurIn(RB, (f) => f.replace('    el.innerHTML = "";\n', "")) },
   { id: "M5", was: "app.js", beschreibung: "Merker bildschirmGeraeumt wird nicht gesetzt",
-    tun: (s) => s.replace("  bildschirmGeraeumt = true;\n", "") },
+    tun: nurIn(RB, (f) => f.replace("  bildschirmGeraeumt = true;\n", "")) },
   { id: "M6", was: "app.js", beschreibung: "Riegel gegen den Start-Fall entfernt",
-    tun: (s) => s.replace("  if (!appLaeuft) return;\n", "") },
+    tun: nurIn(RS, (f) => f.replace("  if (!appLaeuft) return;\n", "")) },
   { id: "M7", was: "app.js", beschreibung: "Gate raeumt nicht mehr",
     tun: (s, cfg) => s.replace(`function ${cfg.gate}(`, `function ${cfg.gate}(`).replace(
       new RegExp(`(function ${cfg.gate}\\([^)]*\\) \\{\\n)  raeumeBildschirm\\(\\);\\n`), "$1") },
@@ -201,9 +235,13 @@ function pruefeApp(cfg, mutation) {
   const ordner = join(FLOTTE, cfg.name);
   if (!existsSync(ordner)) return false;
 
-  let appJs = readFileSync(join(ordner, "app.js"), "utf8");
-  let dbJs = readFileSync(join(ordner, "db.js"), "utf8");
-  const html = readFileSync(join(ordner, "index.html"), "utf8");
+  // ⚠️ Vier der Repos haben CRLF- oder gemischte Zeilenenden. Hier wird nur
+  // GELESEN, nie geschrieben -- deshalb darf normalisiert werden, und die
+  // Zusagen unten kommen mit einem einzigen Zeilenende aus.
+  const lf = (p) => readFileSync(join(ordner, p), "utf8").replace(/\r\n/g, "\n");
+  let appJs = lf("app.js");
+  let dbJs = lf("db.js");
+  const html = lf("index.html");
 
   // --- Anfangsmarken. Fehlt eine, ist der Prueflauf wertlos -> lauter Abbruch.
   if (!mutation) {
@@ -304,7 +342,12 @@ function pruefeApp(cfg, mutation) {
     zusage("A7", "ein Feld im offenen Dialog ist nicht mehr erreichbar", !dom.haengtDran(feldDialog));
   }
 
+  // Der Name im Kopf ist in JEDER App der Flotte da -- er traegt die Zusage auch
+  // dort, wo neben der Huelle sonst nichts steht (kontakte, kleiderboerse,
+  // raumnutzung). Ohne ihn haetten die drei Apps gar keine Probe fuer den
+  // Selektor.
   zusage("A8", "der Name im Seitenkopf ist weg", dom.nachId.get("header-user").innerHTML === "");
+  zusage("A8b", "der Name im Seitenkopf ist auch unsichtbar", dom.nachId.get("header-user").style.display === "none");
 
   // Gegenprobe: der Anmeldeschirm darf NICHT mitgeraeumt werden, sonst stuende
   // der Nutzer vor einer weissen Seite ohne Hinweis.
@@ -317,8 +360,8 @@ function pruefeApp(cfg, mutation) {
 
   const wuerfe = (dbJs.match(/throw new NotLoggedInError/g) || []).length;
   const haken = (dbJs.match(/typeof raeumeBeiSitzungsverlust === "function"/g) || []).length;
-  zusage("C2", `db.js: jeder der ${wuerfe} Sitzungs-Wuerfe traegt den Haken`,
-    wuerfe === cfg.dbPaare * 2 && haken === wuerfe);
+  zusage("C2", `db.js: alle ${cfg.dbWuerfe} Sitzungs-Wuerfe tragen den Haken (gefunden: ${wuerfe} Wuerfe, ${haken} Haken)`,
+    wuerfe === cfg.dbWuerfe && haken === wuerfe);
 
   // Kein zweiter, handgebauter Raeum-Ort: sonst weiss niemand mehr, welcher gilt.
   const eigenhaendig = (appJs.match(/app-shell"\)\.innerHTML|__huelle\.innerHTML/g) || []).length;
@@ -380,20 +423,26 @@ console.log(`\n${gruen} Zusagen gruen, ${rot.length} rot (${gefunden}/${APPS.len
 
 if (MUTATION) {
   console.log("\n--- Mutationsprobe: jede Aenderung muss auffallen ---");
+  // ⚠️ Nicht beim ersten Treffer aufhoeren. Sonst belegt die Probe nur, dass die
+  // Mutation in EINER App auffaellt -- und eine App, in der sie durchrutscht,
+  // faellt nie auf. Jede Mutation muss in JEDER App auffallen.
   let gefangen = 0;
   for (const m of MUTATIONEN) {
-    let entdeckt = false;
+    const durch = [];
     for (const cfg of APPS) {
       const vorher = rot.length, vorherGruen = gruen;
+      let entdeckt = false;
       try { pruefeApp(cfg, m); } catch (_) { entdeckt = true; }
       if (rot.length > vorher) entdeckt = true;
       rot.length = vorher; gruen = vorherGruen;
-      if (entdeckt) break;
+      if (!entdeckt) durch.push(cfg.name);
     }
-    console.log(`  ${entdeckt ? "gefangen " : "DURCH    "} ${m.id} (${m.was}) ${m.beschreibung}`);
-    if (entdeckt) gefangen++;
+    const alle = durch.length === 0;
+    console.log(`  ${alle ? "gefangen " : "DURCH    "} ${m.id} (${m.was}) ${m.beschreibung}` +
+      (alle ? ` [${APPS.length}/${APPS.length}]` : `  -> durchgerutscht bei: ${durch.join(", ")}`));
+    if (alle) gefangen++;
   }
-  console.log(`\n${gefangen}/${MUTATIONEN.length} Mutationen gefangen.`);
+  console.log(`\n${gefangen}/${MUTATIONEN.length} Mutationen in ALLEN ${APPS.length} Apps gefangen.`);
   if (gefangen < MUTATIONEN.length) process.exit(1);
 }
 
