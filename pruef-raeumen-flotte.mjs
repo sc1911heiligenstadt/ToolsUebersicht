@@ -72,6 +72,9 @@ class PappEl {
     this.kinder = [];
     this.eltern = null;
     this.style = { display: "" };
+    this.type = "";
+    this.value = "";
+    this.checked = false;
     const satz = new Set((klassen || "").split(/\s+/).filter(Boolean));
     this.classList = {
       add: (k) => satz.add(k),
@@ -90,6 +93,10 @@ class PappEl {
   }
   get textContent() { return this._html; }
   set textContent(v) { this.innerHTML = v; }
+  querySelectorAll(sel) {
+    const teile = sel.split(",").map((s) => s.trim()).filter(Boolean);
+    return this.kinder.filter((k) => teile.some((t) => k.passt(t)));
+  }
   passt(sel) {
     if (sel.startsWith("#")) return this.id === sel.slice(1);
     if (sel.startsWith(".")) return this.classList.contains(sel.slice(1));
@@ -407,19 +414,139 @@ function pruefeApp(cfg, mutation) {
 }
 
 // =============================================================================
+// Trainerdaten -- eigene Bauform, eigener Abschnitt
+//
+// Diese App hat KEINE app-shell, sondern zwei Ablaeufe nebeneinander. Der
+// Trainer-Ablauf raeumt seit dem 25.08. seine fuenf Bildschirme; der
+// Admin-Ablauf raeumte gar nicht, obwohl dort die Liste ALLER Trainer steht.
+// =============================================================================
+const TD_MUTATIONEN = [
+  { id: "T-M1", was: "app.js", beschreibung: "Leeren des Admin-Panels entfernt",
+    tun: nurIn("function raeumeAdminBildschirm() {", (f) => f.replace('    panel.innerHTML = "";\n', "")) },
+  { id: "T-M2", was: "app.js", beschreibung: "Formularwerte im Admin-Panel bleiben stehen",
+    tun: nurIn("function raeumeAdminBildschirm() {", (f) => f.replace(/    panel\.querySelectorAll\("input, textarea"\)[\s\S]*?\n    \}\);\n/, "")) },
+  { id: "T-M3", was: "app.js", beschreibung: "Zwischenspeicher davConfig/appData bleiben stehen",
+    tun: nurIn("function raeumeAdminBildschirm() {", (f) => f.replace("  davConfig = null;\n", "")) },
+  { id: "T-M4", was: "app.js", beschreibung: "Riegel gegen den Start-Fall entfernt",
+    tun: nurIn("function raeumeBeiSitzungsverlust() {", (f) => f.replace("  if (!appLaeuft) return;\n", "")) },
+  { id: "T-M5", was: "db.js", beschreibung: "Haken in db.js entfernt",
+    tun: (s) => s.replace(/if \(typeof raeumeBeiSitzungsverlust === "function"\) raeumeBeiSitzungsverlust\(\); /g, "") },
+];
+
+function pruefeTrainerdaten(mutation) {
+  aktuelleApp = "Trainerdaten".padEnd(15);
+  const ordner = join(FLOTTE, "Trainerdaten");
+  if (!existsSync(ordner)) return false;
+  const lf = (p) => readFileSync(join(ordner, p), "utf8").replace(/\r\n/g, "\n");
+  let appJs = lf("app.js"), dbJs = lf("db.js");
+  const html = lf("index.html");
+
+  if (!mutation) {
+    if (!appJs.includes("function raeumeAdminBildschirm() {")) abbruch("Anfangsmarke fehlt -- raeumeAdminBildschirm in Trainerdaten/app.js");
+    if (!appJs.includes("function _showTrainerConnectScreen(")) abbruch("Anfangsmarke fehlt -- _showTrainerConnectScreen in Trainerdaten/app.js");
+  }
+  if (mutation) {
+    if (mutation.was === "app.js") appJs = mutation.tun(appJs);
+    else dbJs = mutation.tun(dbJs);
+  }
+
+  // ---- Szene: das Admin-Panel voller Daten, die niemand mehr sehen darf -----
+  const elemente = [
+    { tag: "div", id: "admin-flow", klasse: "" },
+    { tag: "div", id: "admin-panel", klasse: "" },
+    { tag: "div", id: "admin-connect-screen", klasse: "connect-screen" },
+    { tag: "p", id: "admin-connect-error", klasse: "" },
+    { tag: "div", id: "file-status", klasse: "" },
+    { tag: "input", id: "d-iban", klasse: "" },
+    { tag: "input", id: "d-anschrift", klasse: "" },
+    { tag: "textarea", id: "d-notiz", klasse: "" },
+  ];
+  const dom = bauePappDom(elemente);
+  dom.alle.forEach((el) => { el._wurzel = true; });
+  const panel = dom.nachId.get("admin-panel");
+  ["d-iban", "d-anschrift", "d-notiz"].forEach((id) => {
+    const f = dom.nachId.get(id);
+    f.eltern = panel; f._wurzel = false; panel.kinder.push(f);
+    f.value = "GEHEIM";
+  });
+  panel.innerHTML = "Trainerliste: Anna Beispiel, DE00 1234";
+  panel._html = "Trainerliste: Anna Beispiel, DE00 1234";
+  ["d-iban", "d-anschrift", "d-notiz"].forEach((id) => {
+    const f = dom.nachId.get(id);
+    f.eltern = panel; f._wurzel = false;
+  });
+  panel.kinder = ["d-iban", "d-anschrift", "d-notiz"].map((id) => dom.nachId.get(id));
+  dom.nachId.get("admin-panel").style.display = "";
+  dom.nachId.get("admin-connect-screen").style.display = "none";
+  dom.nachId.get("file-status").style.display = "";
+
+  const rumpf = rumpfVon(appJs, "function raeumeAdminBildschirm() {");
+  if (!rumpf) { if (!mutation) abbruch("raeumeAdminBildschirm nicht ausschneidbar"); return true; }
+
+  let api;
+  try {
+    api = new Function("document", "zustand",
+      "let bildschirmGeraeumt = false;\nlet davConfig = { url: 'x' };\nlet appData = { version: 1, trainer: [{ iban: 'DE00' }] };\n" +
+      rumpf +
+      "\nreturn { raeumeAdminBildschirm, stand: () => ({ bildschirmGeraeumt, davConfig, appData }) };")(dom.document, {});
+  } catch (e) {
+    if (!mutation) abbruch("Trainerdaten-Quelle nicht ausfuehrbar: " + e.message);
+    return true;
+  }
+
+  api.raeumeAdminBildschirm();
+
+  zusage("T1", "das Admin-Panel ist leer", panel.innerHTML === "");
+  zusage("T2", "die Eingabefelder darin sind geleert",
+    ["d-iban", "d-anschrift", "d-notiz"].every((id) => dom.nachId.get(id).value === ""));
+  zusage("T3", "das Admin-Panel ist unsichtbar", panel.style.display === "none");
+  zusage("T4", "der Anmeldeschirm des Verwaltungsteils steht", dom.nachId.get("admin-connect-screen").style.display === "");
+  zusage("T5", "der Hinweis nennt die abgelaufene Sitzung", /Sitzung ist abgelaufen/.test(dom.nachId.get("admin-connect-error").innerHTML));
+  zusage("T6", "die Zwischenspeicher sind geleert",
+    api.stand().davConfig === null && (api.stand().appData.trainer || []).length === 0);
+  zusage("T7", "der Merker steht", api.stand().bildschirmGeraeumt === true);
+
+  // ---- Quelltext ------------------------------------------------------------
+  const rs = rumpfVon(appJs, "function raeumeBeiSitzungsverlust() {");
+  zusage("T8", "der Start-Riegel steht vorn", /^function [^\n]*\{\n\s*if \(!appLaeuft\) return;/.test(rs));
+  zusage("T9", "auch der Trainer-Ablauf wird mitgeraeumt", /_showTrainerConnectScreen\(/.test(rs));
+
+  const wuerfe = (dbJs.match(/new NotLoggedInError/g) || []).length;
+  const haken = (dbJs.match(/typeof raeumeBeiSitzungsverlust === "function"/g) || []).length;
+  zusage("T10", `db.js: alle ${wuerfe} Sitzungs-Fehler tragen den Haken (gefunden ${haken})`,
+    wuerfe === 30 && haken === 30);
+
+  // ⚠️ Die Falle aus dem Durchgang vom 25.08.: wer einen SECHSTEN Trainer-Bildschirm
+  // ergaenzt, muss ihn in die Raeum-Liste eintragen -- sonst wird er versteckt,
+  // aber nicht geraeumt. Deshalb hier gegen das echte index.html geprueft.
+  const imMarkup = [...html.matchAll(/id="(trainer-(?:form|success)-screen|trainer-\w+-panel)"/g)].map((m) => m[1]);
+  const inDerListe = rumpfVon(appJs, "function _showTrainerConnectScreen(errorMsg) {");
+  const fehlend = imMarkup.filter((id) => !inDerListe.includes('"' + id + '"'));
+  zusage("T11", `jeder Trainer-Bildschirm steht in der Raeum-Liste (fehlt: ${fehlend.join(", ")})`, fehlend.length === 0);
+
+  // Nach dem Raeumen gibt es #admin-detail-error nicht mehr -- kein blinder Zugriff.
+  const blind = (appJs.match(/document\.getElementById\("admin-detail-error"\)\.(textContent|classList)/g) || []).length;
+  zusage("T12", `kein blinder Zugriff auf das Detail-Banner (gefunden: ${blind})`, blind <= 1);
+
+  return true;
+}
+
+// =============================================================================
 // Lauf
 // =============================================================================
 console.log("Prueft: Bildschirm raeumen bei Sitzungsverlust\n");
 
 let gefunden = 0;
 for (const cfg of APPS) if (pruefeApp(cfg, null)) gefunden++;
+if (pruefeTrainerdaten(null)) gefunden++;
 
 // Ein stiller No-Op ist schlimmer als ein roter Lauf: ohne Apps kein Urteil.
+const SOLL = APPS.length + 1; // + Trainerdaten
 if (gefunden === 0) abbruch("keine einzige App gefunden -- lief der Prueflauf im richtigen Ordner?");
-if (gefunden < APPS.length) console.log(`Hinweis: ${APPS.length - gefunden} App(s) nicht gefunden, uebersprungen.\n`);
+if (gefunden < SOLL) console.log(`Hinweis: ${SOLL - gefunden} App(s) nicht gefunden, uebersprungen.\n`);
 
 for (const z of rot) console.log("  ROT  " + z);
-console.log(`\n${gruen} Zusagen gruen, ${rot.length} rot (${gefunden}/${APPS.length} Apps).`);
+console.log(`\n${gruen} Zusagen gruen, ${rot.length} rot (${gefunden}/${SOLL} Apps).`);
 
 if (MUTATION) {
   console.log("\n--- Mutationsprobe: jede Aenderung muss auffallen ---");
@@ -443,7 +570,21 @@ if (MUTATION) {
     if (alle) gefangen++;
   }
   console.log(`\n${gefangen}/${MUTATIONEN.length} Mutationen in ALLEN ${APPS.length} Apps gefangen.`);
-  if (gefangen < MUTATIONEN.length) process.exit(1);
+
+  console.log("\n--- Mutationsprobe Trainerdaten (eigene Bauform) ---");
+  let tdGefangen = 0;
+  for (const m of TD_MUTATIONEN) {
+    const vorher = rot.length, vorherGruen = gruen;
+    let entdeckt = false;
+    try { pruefeTrainerdaten(m); } catch (_) { entdeckt = true; }
+    if (rot.length > vorher) entdeckt = true;
+    rot.length = vorher; gruen = vorherGruen;
+    console.log(`  ${entdeckt ? "gefangen " : "DURCH    "} ${m.id} (${m.was}) ${m.beschreibung}`);
+    if (entdeckt) tdGefangen++;
+  }
+  console.log(`\n${tdGefangen}/${TD_MUTATIONEN.length} Trainerdaten-Mutationen gefangen.`);
+
+  if (gefangen < MUTATIONEN.length || tdGefangen < TD_MUTATIONEN.length) process.exit(1);
 }
 
 process.exit(rot.length ? 1 : 0);
