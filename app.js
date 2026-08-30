@@ -2716,7 +2716,7 @@ const PFLICHTDATEN_MERKER = "td_pflichtdaten_geschickt";
 // ⚠️ Gleicher Tab (location.href), nicht window.open: ein Popup faengt der Blocker ab,
 // und der Sprung passiert ohne Klick -- da blockt jeder Browser.
 function pflichtdatenWeiterleitung(res) {
-  if (!res || res.stammdatenOk !== false) return;
+  if (!res || res.pflichtdatenOk !== false) return;
   try {
     if (sessionStorage.getItem(PFLICHTDATEN_MERKER)) return;
     sessionStorage.setItem(PFLICHTDATEN_MERKER, "1");

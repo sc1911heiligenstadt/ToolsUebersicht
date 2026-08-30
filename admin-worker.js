@@ -3700,7 +3700,31 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   // `vorhanden || vertragspflichtig` nicht mehr: sonst hätte ein Konto ohne
   // Vertragspflicht und ohne Datensatz weder Badge noch Weiterleitung und bliebe
   // für immer unbekannt.
-  const zeigeBadge = !istSpieler && (summary.vorhanden || vertragspflichtig || !stammdatenOk);
+  // Die drei Vertragsfelder, die seit Trainerdaten 1.9 ebenfalls Pflicht sind. Bei
+  // "andere Einnahmen" gehoert der Betrag dazu -- genau das prueft handleSubmit dort
+  // auch, sonst waere die Erklaerung unvollstaendig.
+  //
+  // ⚠️ Gelesen wird `td` (der Rohdatensatz), NICHT `summary`: iban/bankname stehen
+  // bewusst nicht im Summary, und sie duerfen dort auch nicht landen. Aus dieser
+  // Funktion geht nur das Ja/Nein hinaus, nie ein Wert -- PROVISION_ONLY_PATHS.
+  // trainerdaten ist die Datei mit den Bankverbindungen.
+  //
+  // ⚠️ Der BIC steht bewusst NICHT hier (siehe Trainerdaten: bei Inlands-SEPA
+  // ueberfluessig).
+  const vertragsdatenOk = !!(td &&
+    String(td.iban || "").trim() &&
+    String(td.bankname || "").trim() &&
+    (td.nebentaetigkeit === "keine" ||
+     (td.nebentaetigkeit === "andere" && String(td.nebentaetigkeitBetrag || "").trim())));
+
+  // Die Gesamtaussage "alle Pflichtangaben da". Das Dashboard entscheidet daran, ob es
+  // zum Ausfuellen weiterleitet -- und die Ampel unten benutzt dasselbe.
+  // ⚠️ Fuer Nicht-Vertragspflichtige duerfen die Vertragsfelder NICHT zaehlen: sie
+  // sehen die Bankverbindung im Formular gar nicht und koennten die Bedingung nie
+  // erfuellen.
+  const pflichtdatenOk = stammdatenOk && (!vertragspflichtig || vertragsdatenOk);
+
+  const zeigeBadge = !istSpieler && (summary.vorhanden || vertragspflichtig || !pflichtdatenOk);
 
   // Zwei Ampeln, weil es zwei Populationen gibt (seit 2026-07-17): Wer keinen
   // Trainervertrag braucht (Geschäftsführung o.ä.), sieht in Trainerdaten gar keine
@@ -3712,10 +3736,10 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   if (!zeigeBadge) {
     trainerdatenGesamtOk = null;
   } else if (!vertragspflichtig) {
-    trainerdatenGesamtOk = stammdatenOk;
+    trainerdatenGesamtOk = pflichtdatenOk;
   } else {
     trainerdatenGesamtOk = !!(
-      stammdatenOk &&
+      pflichtdatenOk &&
       summary.unterschriftAm &&
       lizenzOk &&
       summary.fuehrerscheinGueltig === true &&
@@ -3752,10 +3776,12 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     }
   }
 
-  // stammdatenOk geht IMMER mit raus, auch wenn trainerdatenGesamtOk null ist: das
+  // pflichtdatenOk geht IMMER mit raus, auch wenn trainerdatenGesamtOk null ist: das
   // Dashboard entscheidet daran, ob es zum Ausfüllen weiterleitet, und braucht die
   // Antwort gerade dann, wenn es (noch) kein Badge gibt.
-  const antwort = json({ ...summary, trainerdatenGesamtOk, vertragspflichtig, stammdatenOk }, 200, corsHeaders);
+  // ⚠️ Nur das Ja/Nein, nie die geprüften Werte -- die Bankverbindung verlässt diese
+  // Funktion nicht.
+  const antwort = json({ ...summary, trainerdatenGesamtOk, vertragspflichtig, pflichtdatenOk }, 200, corsHeaders);
   if (pflichtenBonus) antwort.punkteBonus = { art: "pflichten", username: session.username };
   return antwort;
 }

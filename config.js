@@ -519,6 +519,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.38",
+    groups: [
+      {
+        title: "Das Zeichen auf der Trainerdaten-Kachel prüft jetzt alles",
+        items: [
+          "Bisher schaute es nur auf Anschrift, Telefon und E-Mail. IBAN, Bankname und die Erklärung zur Nebentätigkeit blieben außen vor — die Kachel konnte also „Daten vollständig“ zeigen, obwohl das Formular beim Speichern etwas anderes gesagt hätte.",
+          "Jetzt zählen sie mit, bei allen mit Trainervertrag. Wer „andere Einnahmen“ angekreuzt hat, muss auch die Höhe angegeben haben.",
+          "Der BIC bleibt weiter freiwillig.",
+          "Wer keinen Trainervertrag bekommt, merkt nichts davon: Für ihn zählen wie bisher nur seine Kontaktdaten — eine Bankverbindung sieht er im Formular gar nicht."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.37",
     groups: [
       {
