@@ -191,6 +191,15 @@
 //     list-birthdays-today) — der Client nennt nur einen Nutzernamen, kann also nie eine beliebige Adresse
 //     erzwingen. Hat die Zielperson keine E-Mail hinterlegt, stiller No-Op (sent:false), kein Fehler. Versand
 //     über Brevo (Secret BREVO_API_KEY), Absender = NOTIFY_FROM_EMAIL/-NAME-Konstanten bei PROVISION_ONLY_PATHS.
+//   POST { action: "pn-info" } (jeder eingeloggte Nutzer) -> { ok, darfSenden, posteingang, postausgang, grenzen, empfaenger? }
+//   POST { action: "pn-senden", empfaenger:[], titel, text, ziel } (Bearbeiten-Recht IRGENDWO) -> { ok, bilanz }
+//   POST { action: "pn-gelesen", id } / { action: "pn-loeschen", id } (nur der Empfänger) -> { ok, ungelesen }
+//   POST { action: "pn-protokoll" } (globaler Admin) -> { ok, eintraege, gesamt }
+//     Privatnachrichten (seit 2026-08-30): ein gerichteter Anstupser an einzelne Personen — Postfach im
+//     Konto-Tab, dazu E-Mail und Push. Gedacht, um jemanden auf etwas Fehlendes hinzuweisen. Einseitig, der
+//     Rückweg ist die Antwort-Adresse der Mail. Empfänger nur Personal (nie Spielerkonten), höchstens zehn je
+//     Nachricht für Bearbeiter. ⚠️ pn-protokoll liefert dem Admin bewusst WEDER Titel NOCH Text — nur wer wann
+//     an wen geschrieben hat. Details, Begründungen und alle elf Entscheidungen: Block am Dateiende.
 //   POST { action: "vereinskalender-vote", terminId, candId, wert } (jeder mit Tool-Zugriff) -> { ok, rev, stimmen }
 //     Eigene Stimme bei einem Umfrage-Termin des Vereinskalenders setzen ("ja"/"nein") oder zurückziehen ("").
 //     Eigene Aktion, weil vereinskalender in WRITE_REQUIRES_EDIT_PERMISSION steht: Termine anlegen/ändern ist
@@ -1303,6 +1312,19 @@ export default {
         return handlePushRundnachricht(request, body, env, authHeader, corsHeaders, ctx);
       case "push-rundnachricht-verlauf":
         return handlePushRundnachrichtVerlauf(request, env, authHeader, corsHeaders);
+      // Privatnachrichten (seit 2026-08-30). Gerichteter Anstupser an einzelne
+      // Personen -- bewusst NEBEN der Rundnachricht darueber, nicht in ihr
+      // aufgegangen (Michel-Entscheidung). Siehe Block am Dateiende.
+      case "pn-info":
+        return handlePnInfo(request, env, authHeader, corsHeaders);
+      case "pn-senden":
+        return handlePnSenden(request, body, env, authHeader, corsHeaders, ctx);
+      case "pn-gelesen":
+        return handlePnGelesen(request, body, env, authHeader, corsHeaders);
+      case "pn-loeschen":
+        return handlePnLoeschen(request, body, env, authHeader, corsHeaders);
+      case "pn-protokoll":
+        return handlePnProtokoll(request, env, authHeader, corsHeaders);
       case "vereinskalender-termin-push":
         return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
       case "vorgang-push":
@@ -4172,7 +4194,13 @@ async function handleMeineAnsicht(request, env, authHeader, corsHeaders) {
   // bei JEDEM Aufruf der Startseite -- genau daran ist das Abzeichen am Ideen-Tab
   // gescheitert. Hochgezaehlt wird beim Verteilen (siehe unterlagenZaehlerErhoehen).
   const unterlagenNeu = Number.isFinite(eigen && eigen.unterlagenNeu) ? Math.max(0, eigen.unterlagenNeu) : 0;
-  return json({ ansicht: { modus, reihenfolge, unterlagenNeu } }, 200, corsHeaders);
+  // Zweiter Zaehler nach demselben Muster und aus demselben Grund: ungelesene
+  // Privatnachrichten. Gesetzt wird er in pnZaehlerSetzen (Block am Dateiende),
+  // und zwar auf die TATSAECHLICHE Zahl statt hoch- und runtergezaehlt.
+  // ⚠️ Das Abzeichen am Konto-Tab addiert beide -- wer hier einen dritten
+  // ergaenzt, muss ihn dort mitzaehlen, sonst zeigt die Pille zu wenig an.
+  const nachrichtenNeu = Number.isFinite(eigen && eigen.nachrichtenNeu) ? Math.max(0, eigen.nachrichtenNeu) : 0;
+  return json({ ansicht: { modus, reihenfolge, unterlagenNeu, nachrichtenNeu } }, 200, corsHeaders);
 }
 
 // Merkt sich, dass der Downloadbereich im Konto-Tab gerade offen war -- danach ist
@@ -11908,7 +11936,19 @@ const PUSH_ANLAESSE = [
   // Eintrag steht trotzdem hier, weil er den Schalter im Konto-Tab traegt und
   // das Ziel festlegt -- der Aufrufer bestimmt nur den Titel, sonst nichts.
   { id: "mitteilung", titel: "SC 1911 Heiligenstadt", ziel: "/ToolsUebersicht/",
-    label: "Mitteilungen des Vereins — von Hand verschickt, nur bei besonderen Anlässen" }
+    label: "Mitteilungen des Vereins — von Hand verschickt, nur bei besonderen Anlässen" },
+  // Privatnachricht an eine einzelne Person (seit 2026-08-30, siehe Block am
+  // Dateiende). Zweiter Anlass nach "mitteilung", dessen Titel UND Ziel vom
+  // Absender kommen: die Ueberschrift ist Teil der Nachricht, und das Ziel ist
+  // die App, in der das Fehlende nachzuholen ist. Beides wird in
+  // handlePnSenden geprueft, bevor es hier ankommt.
+  //
+  // ⚠️ Als EINZIGER Anlass traegt dieser den vollen Text auf den
+  // Sperrbildschirm (Michel-Entscheidung vom 2026-08-30, gegen die Empfehlung).
+  // Die Schreibmaske sagt das dem Absender an -- wer diesen Satz entfernt,
+  // nimmt ihm die Grundlage seiner Wortwahl.
+  { id: "nachricht", titel: "Nachricht", ziel: "/ToolsUebersicht/",
+    label: "Persönliche Nachrichten — wenn jemand mich direkt anschreibt" }
 ];
 
 function pushAnlassInfo(id) {
@@ -12826,7 +12866,13 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text, optionen) {
         // Nachricht ohne Ueberschrift zu erzeugen.
         titel: String((optionen && optionen.titel) || "").trim() || info.titel,
         text: String(text || ""),
-        ziel: info.ziel
+        // Ebenso das Ziel: gesetzt wird es nur von der Privatnachricht, wo der
+        // Absender die App waehlt, in der das Fehlende nachzuholen ist. Der Wert
+        // ist dort bereits durch pnZielPruefen gegangen (nur eigener Host,
+        // eingeschraenkter Zeichenvorrat) -- ungeprueft darf hier nichts
+        // ankommen, sonst waere jeder Absender eines Anlasses ein Weg, fremde
+        // Adressen auf die Handys des Vereins zu bringen.
+        ziel: String((optionen && optionen.ziel) || "").trim() || info.ziel
       };
 
       const tot = [];
@@ -13025,6 +13071,11 @@ const PUNKTE_IGNORIERT = new Set([
   // Zuklappen des Konto-Tabs beliebig nachfuellbar. Dasselbe gilt fuer die
   // beiden Leseaktionen der Unterlagen; das Verteilen zaehlt dagegen mit.
   "downloads-gesehen", "unterlagen-meine", "unterlagen-datei", "unterlagen-alle",
+  // Privatnachrichten: Laden und Lesen sind Anzeige, kein Vorgang. ⚠️ Auch
+  // "pn-gelesen" bleibt draussen, obwohl es schreibt -- es ist der Nebeneffekt
+  // des Hinschauens, gleiche Linie wie "downloads-gesehen". Das VERSCHICKEN
+  // zaehlt dagegen mit (PUNKTE_TATEN).
+  "pn-info", "pn-gelesen", "pn-protokoll",
   // Laeuft beim Oeffnen des Info-Tabs im Vereinskalender von selbst. Das Erzeugen
   // und Entwerten des Abo-Links sind Handlungen und zaehlen weiter mit.
   "vereinskalender-abo-status",
@@ -13090,6 +13141,10 @@ const PUNKTE_TATEN = new Map([
   // Antwort auf eine Rueckmeldung -- dasselbe Muster wie ein Kommentar an einer
   // Vereinsaufgabe: eine echte Rueckmeldung an eine Person, nicht wiederholbar.
   ["feedback-antwort", PUNKTE_PRO_TAT],
+  // Eine Privatnachricht verschicken. Eine echte Zuwendung an eine Person, und
+  // nicht billig nachfuellbar: sie kostet den Empfaenger eine Mail und einen
+  // Push, und die Doppelklick-Sperre verhindert das blosse Wiederholen.
+  ["pn-senden", PUNKTE_PRO_TAT],
   // Eine Idee aufschreiben ist eine echte Handlung, das Abarbeiten (Status
   // setzen, antworten) ebenso -- gleiche Linie wie feedback-antwort.
   ["idee-speichern", PUNKTE_PRO_TAT],
@@ -22950,4 +23005,657 @@ async function ksVerwaisteDateienRaeumen(authHeader, doc, mdoc) {
       weg++;
     } catch (_) { /* eine Datei mehr schadet nicht, ein Abbruch schon */ }
   }
+}
+
+// =============================================================================
+// Privatnachrichten (seit 2026-08-30)
+//
+// Ein gerichteter Anstupser: ein Bearbeiter schreibt einer einzelnen Person, dass
+// etwas fehlt ("dein Fuehrungszeugnis ist abgelaufen"). Die Nachricht geht drei
+// Wege gleichzeitig -- Postfach im Konto-Tab, E-Mail, Push -- und bleibt liegen,
+// bis sie gelesen ist.
+//
+// Bewusst als geschlossener Block am Dateiende, wie die Push-Nachrichten und die
+// Aktivitaetspunkte darueber: er laesst sich am Stueck wieder herausloesen.
+//
+// ⚠️ ABGRENZUNG zur Rundnachricht (handlePushRundnachricht weiter oben): die geht
+// an alle oder einen Kreis, darf nur der globale Admin, und ist reiner Push ohne
+// Postfach. Beide bleiben nebeneinander stehen (Michel-Entscheidung vom
+// 2026-08-30) -- deshalb weisen die Oberflaechen beider Stellen aufeinander hin.
+// Wer eine der beiden aendert, muss pruefen, ob der Hinweis in der anderen noch
+// stimmt.
+//
+// Elf Michel-Entscheidungen aus einem Grill-me-Interview am 2026-08-30:
+// einseitig, kein Chat (der Rueckweg ist die Antwort-Adresse der Mail) · senden
+// darf, wer IRGENDWO Bearbeiten-Recht hat · Empfaenger nur Personal, nie
+// Spielerkonten · voller Text in der Mail, Betreff neutral · Titel UND Text auch
+// im Push · Push abschaltbar, Mail nie · Postfach mit Lesebestaetigung · der
+// Admin sieht Absender/Empfaenger/Zeit, aber NICHT den Text · 90 Tage
+// (ungelesen 365) · mehrere Empfaenger, aber jeder bekommt seine eigene ·
+// hoechstens zehn je Nachricht fuer Bearbeiter.
+//
+// Vier davon sind gegen meine Empfehlung entschieden und tragen deshalb an ihrer
+// Stelle eine Warnung: der Text im Push, der Name "Privatnachricht", die
+// getrennte Rundnachricht und die Antwort-Adresse.
+
+const PN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/privatnachrichten.json";
+
+// Basis fuer Links in Mail und Push. Konstante statt Config: die Flotte liegt
+// vollstaendig unter diesem Host (alle 40 URLs in config.js geprueft am
+// 2026-08-30), und genau darauf beruht die Zielpruefung in pnZielPruefen.
+const PN_BASIS_URL = "https://sc1911heiligenstadt.github.io";
+
+const PN_TITEL_MAX = 100;   // wie PUSH_RUND_TITEL_MAX -- laenger kommt im Push nicht an
+// Der Text darf laenger sein als der Push traegt: die Mail ist ein Brief
+// ([[f-mailtext]]), der Sperrbildschirm nicht. Gekuerzt wird ERST beim Push,
+// und die Schreibmaske sagt ab 200 Zeichen an, dass ab dort gekuerzt wird --
+// sonst schreibt jemand das Wichtigste ans Ende.
+const PN_TEXT_MAX = 400;
+const PN_PUSH_TEXT_MAX = 200;
+
+// ⚠️ Der eigentliche Zweck dieser beiden Zahlen: die Rundnachricht darf nur der
+// globale Admin verschicken. Ohne Deckel haette ein Bearbeiter, der schlicht
+// alle Konten anhakt, sich genau diese Rundnachricht gebaut -- an der Regel
+// vorbei. Geprueft wird SERVERSEITIG, nicht nur in der Maske.
+const PN_EMPFAENGER_MAX_BEARBEITER = 10;
+const PN_EMPFAENGER_MAX_ADMIN = 200;
+
+// Doppelklick-Sperre, wortgleich zur Rundnachricht: der Versand antwortet, bevor
+// Mail und Push draussen sind, und zurueckholen laesst sich beides nicht.
+const PN_SPERRE_MS = 15000;
+
+// Aufbewahrung. Gelesenes darf frueher weg -- es hat seinen Zweck erfuellt.
+// Ungelesenes bleibt lange, damit nichts still verfaellt, bevor es jemand
+// gesehen hat.
+const PN_TAGE_GELESEN = 90;
+const PN_TAGE_UNGELESEN = 365;
+// Notbremse gegen eine Datei, die niemand mehr laden kann. Greift im
+// Normalbetrieb nie (rund 50 Personal-Konten), aber ohne sie waechst eine Datei,
+// die bei jedem Oeffnen des Konto-Tabs komplett gelesen wird.
+const PN_MAX_GESAMT = 3000;
+
+function leeresPnDoc() { return { version: 1, nachrichten: [] }; }
+
+// Prueft das gewaehlte Ziel und liefert einen PFAD ("/trainerdaten/") oder "".
+//
+// ⚠️ Der Client schickt den Pfad, nicht eine Id: die Ordnernamen der Flotte sind
+// nicht einheitlich klein geschrieben ("/Trainerdaten/" gegen "/vereinskalender/"),
+// eine aus einer Id gebaute Adresse traefe also die Haelfte der Apps nicht.
+// Erlaubt ist deshalb ein enger Zeichenvorrat und nichts, was aus dem eigenen
+// Host herausfuehrt -- kein "//" (protokollrelative Adresse) und kein "..".
+function pnZielPruefen(roh) {
+  let s = String(roh || "").trim();
+  if (!s) return "";
+  // Volle Adresse des eigenen Hosts wird auf den Pfad eingekuerzt; jede andere
+  // faellt unten durch die Musterpruefung.
+  if (s.startsWith(PN_BASIS_URL)) s = s.slice(PN_BASIS_URL.length) || "/";
+  if (!s.startsWith("/")) return "";
+  if (s.length > 80) return "";
+  if (s.includes("..") || s.includes("//")) return "";
+  if (!/^\/[A-Za-z0-9._\/-]*$/.test(s)) return "";
+  return s;
+}
+
+// Darf dieser Nutzer ueberhaupt schreiben? Bearbeiten- ODER Administrieren-Recht
+// in IRGENDEINEM Werkzeug reicht -- dieselbe Frage wie resolveEditPermission,
+// nur ohne feste App.
+//
+// ⚠️ Bewusst NICHT an eine einzelne App gebunden: der Anlass ("dein Vertrag
+// fehlt") entsteht in Trainerdaten, der Knopf steht aber im Gateway. Eine
+// App-Bindung hiesse, im Konto-Tab eine App zu waehlen, die mit der Nachricht
+// nichts zu tun hat.
+async function darfPnSenden(session, env, authHeader, cfgPrefetch) {
+  if (!session) return false;
+  // Ein Spielerkonto schreibt nie -- auch dann nicht, wenn es durch einen
+  // Konfigurationsfehler in einer Bearbeiter-Gruppe landet. Erste Pruefung,
+  // damit die Konfiguration daran nichts aendern kann.
+  if (session.art === USER_ART_SPIELER) return false;
+  if (session.isAdmin) return true;
+  const config = await (cfgPrefetch || readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }));
+  const tools = (config && config.tools && typeof config.tools === "object") ? config.tools : {};
+  const meine = Array.isArray(session.groupIds) ? session.groupIds : [];
+  if (!meine.length) return false;
+  for (const app of Object.keys(tools)) {
+    const entry = getOwn(tools, app);
+    if (!entry) continue;
+    const edit = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
+    const admin = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+    if (edit.concat(admin).some((g) => meine.includes(g))) return true;
+  }
+  return false;
+}
+
+// Wer angeschrieben werden darf: Personal, nicht archiviert, nicht man selbst.
+//
+// ⚠️ Spieler sind hier NICHT bloss ausgeblendet, sondern ausgeschlossen -- der
+// Versand prueft dieselbe Bedingung noch einmal gegen den Nutzerbestand
+// ([[f-ausblenden]]). Grund: ein privater Schreibkanal von einem Erwachsenen an
+// ein Kind ist genau das, was das Jugendschutzkonzept des Vereins vermeiden
+// will, und ein Bearbeiter ist nicht der Admin.
+function pnEmpfaengerErlaubt(usersDoc, absender, username) {
+  const name = normalizeUsername(String(username || ""));
+  if (!name || name === "__proto__") return false;
+  if (name === normalizeUsername(String(absender || ""))) return false;
+  const u = getOwn((usersDoc && usersDoc.users) || {}, name);
+  if (!u || u.archiviert) return false;
+  return istPersonal(u);
+}
+
+// E-Mail-Adressen aus den Trainerdaten, als Karte username -> Adresse.
+//
+// ⚠️ PROVISION_ONLY_PATHS.trainerdaten darf eingeloggten Nutzern nie durchgereicht
+// werden. Nach draussen geht deshalb nur ein Ja/Nein je Person (pn-info), nie die
+// Adresse -- gleiche Linie wie handleNotifyUser, das ebenfalls nur das
+// email-Feld benutzt und es nie zurueckgibt ([[f-minimal-disclosure]]).
+async function pnMailKarte(authHeader, usersDoc, namen) {
+  const karte = Object.create(null);
+  let doc;
+  try {
+    doc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  } catch (_) {
+    // Kein Grund, den ganzen Vorgang zu kippen: ohne Adressen geht die Nachricht
+    // ins Postfach und per Push, und die Bilanz sagt genau das an.
+    return karte;
+  }
+  for (const n of namen) {
+    const u = getOwn((usersDoc && usersDoc.users) || {}, n);
+    if (!u) continue;
+    const td = findTrainerdatenRecord(doc, u);
+    const mail = buildTrainerdatenSummary(td).email;
+    if (mail) karte[n] = String(mail);
+  }
+  return karte;
+}
+
+// Abgelaufenes entfernen. Laeuft NUR beim Senden, nie beim Lesen: sonst schriebe
+// jeder, der den Konto-Tab oeffnet, die gemeinsame Datei neu.
+function pnAufraeumen(liste, jetzt) {
+  const behalten = liste.filter((n) => {
+    const am = Date.parse(String((n && n.am) || ""));
+    if (!Number.isFinite(am)) return true;   // ohne lesbares Datum nichts wegwerfen
+    const tage = (n && n.gelesenAm) ? PN_TAGE_GELESEN : PN_TAGE_UNGELESEN;
+    return (jetzt - am) <= tage * 86400000;
+  });
+  // Neueste zuerst, dann harter Deckel. Die Liste wird ohnehin so ausgeliefert.
+  //
+  // ⚠️ Sortiert wird nach der GEPARSTEN Zeit, nicht per Textvergleich der
+  // ISO-Zeichenkette. Ein Eintrag mit unlesbarem Datum ("kaputt") sortiert als
+  // Text hinter jede Jahreszahl und stuende damit absteigend GANZ OBEN -- und
+  // waere beim harten Deckel darunter der letzte, der wegfaellt. Genau die
+  // Einträge, die oben behalten werden, weil man ihnen nicht traut, duerfen die
+  // Liste nicht anfuehren. Unlesbare kommen deshalb ans Ende.
+  const zeit = (n) => {
+    const t = Date.parse(String((n && n.am) || ""));
+    return Number.isFinite(t) ? t : -Infinity;
+  };
+  behalten.sort((a, b) => zeit(b) - zeit(a));
+  return behalten.slice(0, PN_MAX_GESAMT);
+}
+
+// Setzt den Zaehler fuers rote Abzeichen auf die TATSAECHLICHE Zahl ungelesener
+// Nachrichten, statt ihn hoch- und runterzuzaehlen.
+//
+// ⚠️ Der Zaehler liegt in `ansicht.json` und nicht in der Nachrichtendatei --
+// dieselbe Ueberlegung wie bei `unterlagenNeu` direkt daneben: `ansicht.json`
+// wird beim Seitenaufbau ohnehin gelesen, `privatnachrichten.json` erst beim
+// Oeffnen des Konto-Tabs. Ein Abzeichen, das seine Zahl aus den Nachrichten
+// zoege, kostete einen zweiten Nextcloud-Read bei JEDEM Aufruf der Startseite --
+// genau daran ist das Abzeichen am Ideen-Tab gescheitert.
+//
+// Neu SETZEN statt erhoehen, weil die Wahrheit hier ohnehin vorliegt: der
+// Aufrufer hat die Nachrichtenliste gerade in der Hand. Ein reiner Zaehler
+// liefe nach einem fehlgeschlagenen Schreibversuch dauerhaft aus dem Tritt,
+// diese Fassung heilt sich beim naechsten Vorgang selbst.
+//
+// ⚠️ Fehler werden GESCHLUCKT: die Nachricht ist zu diesem Zeitpunkt bereits
+// zugestellt. Ein fehlendes Abzeichen ist ein kleineres Uebel als ein Versand,
+// der wegen einer Anzeige-Notiz scheitert (gleiche Linie wie
+// unterlagenZaehlerErhoehen).
+async function pnZaehlerSetzen(authHeader, staende) {
+  const namen = Object.keys(staende).filter((n) => n && n !== "__proto__");
+  if (!namen.length) return;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    try {
+      const { data: doc, rev } = await readJsonWithRev(ANSICHT_URL, authHeader, leeresAnsichtDoc());
+      doc.version = doc.version || 1;
+      if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+      for (const n of namen) {
+        const bisher = (Object.prototype.hasOwnProperty.call(doc.byUser, n) && typeof doc.byUser[n] === "object")
+          ? doc.byUser[n] : {};
+        doc.byUser[n] = { ...bisher, nachrichtenNeu: Math.min(99, Math.max(0, staende[n])) };
+      }
+      await writeJson(ANSICHT_URL, authHeader, doc, rev || undefined);
+      return;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return;
+    }
+  }
+}
+
+// Zaehlt je Nutzer, wie viele ungelesene Nachrichten in der Liste stehen.
+function pnUngelesenJe(liste, namen) {
+  const out = Object.create(null);
+  for (const n of namen) out[n] = 0;
+  for (const nach of liste) {
+    const an = normalizeUsername(String((nach && nach.an) || ""));
+    if (!an || nach.gelesenAm) continue;
+    if (Object.prototype.hasOwnProperty.call(out, an)) out[an]++;
+  }
+  return out;
+}
+
+// ---------- Mailtext ----------
+
+// Ein Brief, kein Einzeiler ([[f-mailtext]]): Anrede, worum es geht, der volle
+// Text, was zu tun ist, Link, Fusszeile.
+//
+// ⚠️ Der BETREFF bleibt zurueckhaltend und nennt weder Titel noch Absender: er
+// steht in der Handy-Vorschau UND im Versandprotokoll von Brevo, also an zwei
+// Stellen mehr als die App. Der TEXT dagegen geht vollstaendig mit
+// (Michel-Entscheidung vom 2026-08-30) -- wer erst einloggen muss, um zu
+// erfahren was fehlt, erledigt es nicht.
+//
+// ⚠️ Damit liegt der Nachrichtentext im Brevo-Log, und jeder mit Zugang zum
+// Brevo-Konto liest ihn mit. Das steht so im Datenschutz-Hinweis der Uebersicht
+// und in der Schreibmaske. Vertrauliches gehoert nicht in eine Privatnachricht.
+const PN_MAIL_BETREFF = "Neue Nachricht in den Vereins-Tools";
+
+function pnMailInhalt(anVorname, vonName, titel, text, zielPfad, mitAntwort) {
+  const ziel = PN_BASIS_URL + (zielPfad || "/ToolsUebersicht/");
+  const zeilen = [
+    anVorname ? ("Hallo " + anVorname + ",") : "Hallo,",
+    "",
+    vonName + " hat dir über die Vereins-Tools eine Nachricht geschickt:",
+    "",
+    titel,
+    "",
+    text,
+    "",
+    "Hier geht es weiter: " + ziel,
+    "",
+    "Alle deine Nachrichten stehen in der Tools-Übersicht unter „Mein Konto“:",
+    PN_BASIS_URL + "/ToolsUebersicht/",
+    ""
+  ];
+  // ⚠️ Der Satz steht NUR, wenn wirklich eine Antwort-Adresse gesetzt wurde.
+  // Ohne Adresse in den Trainerdaten geht die Antwort sonst an das
+  // Vereinspostfach, und der Empfänger wartet auf eine Reaktion des Absenders,
+  // der nie etwas davon erfährt ([[f-stiller-noop]]).
+  if (mitAntwort) {
+    zeilen.push("Du kannst auf diese E-Mail direkt antworten — deine Antwort geht an " + vonName + ".");
+  } else {
+    zeilen.push("Diese Nachricht wurde in den Vereins-Tools geschrieben. Antworten kannst du " + vonName + " am besten direkt.");
+  }
+  zeilen.push("");
+  zeilen.push("Viele Grüße");
+  zeilen.push("1. SC 1911 Heiligenstadt e.V.");
+  return zeilen.join("\n");
+}
+
+// ---------- Aktionen ----------
+
+// Postfach, Postausgang und (fuer Berechtigte) die Empfaengerliste in EINER
+// Aktion. Gleiche Ueberlegung wie bei push-rundnachricht-verlauf: der Konto-Tab
+// will alles im selben Moment, drei Aktionen waeren drei Reads derselben Datei.
+async function handlePnInfo(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const ich = normalizeUsername(session.username);
+  const cfg = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const doc = await readJson(PN_URL, authHeader, leeresPnDoc());
+  const liste = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
+  const usersDoc = session.usersDoc;
+
+  const posteingang = liste
+    .filter((n) => n && normalizeUsername(String(n.an || "")) === ich)
+    .map((n) => ({
+      id: String(n.id || ""),
+      von: String(n.von || ""),
+      vonName: aufgabenAnzeigeName(usersDoc, String(n.von || "")),
+      titel: String(n.titel || ""),
+      text: String(n.text || ""),
+      ziel: String(n.ziel || ""),
+      am: String(n.am || ""),
+      gelesenAm: String(n.gelesenAm || "")
+    }));
+
+  // Der eigene Postausgang ist der Grund, warum es das Postfach ueberhaupt gibt:
+  // ohne ihn erfaehrt der Absender nie, ob sein Anstupser angekommen ist.
+  const postausgang = liste
+    .filter((n) => n && normalizeUsername(String(n.von || "")) === ich)
+    .map((n) => ({
+      id: String(n.id || ""),
+      an: String(n.an || ""),
+      anName: aufgabenAnzeigeName(usersDoc, String(n.an || "")),
+      titel: String(n.titel || ""),
+      text: String(n.text || ""),
+      ziel: String(n.ziel || ""),
+      am: String(n.am || ""),
+      gelesenAm: String(n.gelesenAm || ""),
+      mail: !!n.mail,
+      push: Number(n.push) || 0
+    }));
+
+  const darfSenden = await darfPnSenden(session, env, authHeader, cfg);
+
+  const antwort = {
+    ok: true,
+    darfSenden,
+    istAdmin: !!session.isAdmin,
+    posteingang,
+    postausgang,
+    grenzen: {
+      titel: PN_TITEL_MAX,
+      text: PN_TEXT_MAX,
+      pushText: PN_PUSH_TEXT_MAX,
+      empfaenger: session.isAdmin ? PN_EMPFAENGER_MAX_ADMIN : PN_EMPFAENGER_MAX_BEARBEITER,
+      tageGelesen: PN_TAGE_GELESEN,
+      tageUngelesen: PN_TAGE_UNGELESEN
+    }
+  };
+
+  // Die Empfaengerliste kostet zwei weitere Reads (Push-Abos + Trainerdaten) und
+  // wird deshalb nur fuer die geholt, die sie ueberhaupt brauchen.
+  if (darfSenden) {
+    const namen = [];
+    for (const schluessel of Object.keys((usersDoc && usersDoc.users) || {})) {
+      const u = usersDoc.users[schluessel];
+      const name = normalizeUsername((u && u.username) || schluessel);
+      if (pnEmpfaengerErlaubt(usersDoc, ich, name)) namen.push(name);
+    }
+    const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+    const mailKarte = await pnMailKarte(authHeader, usersDoc, namen);
+    antwort.empfaenger = namen.map((n) => ({
+      username: n,
+      name: aufgabenAnzeigeName(usersDoc, n),
+      // Nur Ja/Nein, nie die Adresse. Zweck ist die Warnung vor dem Anhaken
+      // ("erreicht ihn nicht"), nicht die Herausgabe von Kontaktdaten.
+      mail: !!mailKarte[n],
+      // Schalter aus zaehlt wie kein Geraet -- fuer den Absender ist beides
+      // derselbe Fall, und welche Anlaesse jemand abgestellt hat, geht ihn
+      // nichts an (gleiche Linie wie rundErreichbar).
+      geraete: pushAnlaesseFuer(abosDoc, n).nachricht ? pushAbosFuer(abosDoc, n).length : 0
+    })).sort((a, b) => a.name.localeCompare(b.name, "de"));
+  }
+
+  return json(antwort, 200, corsHeaders);
+}
+
+async function handlePnSenden(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const cfg = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!(await darfPnSenden(session, env, authHeader, cfg))) {
+    return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  }
+
+  const ich = normalizeUsername(session.username);
+  const usersDoc = session.usersDoc;
+  const titel = String((body && body.titel) || "").trim().slice(0, PN_TITEL_MAX);
+  const text = String((body && body.text) || "").trim().slice(0, PN_TEXT_MAX);
+  const ziel = pnZielPruefen(body && body.ziel);
+  if (!titel) return json({ error: "Titel fehlt" }, 400, corsHeaders);
+  if (!text) return json({ error: "Text fehlt" }, 400, corsHeaders);
+
+  // Doppelte Namen fallen weg, bevor gezaehlt wird -- sonst liesse sich die
+  // Obergrenze mit Wiederholungen ausschoepfen und ein Empfaenger bekaeme
+  // dieselbe Nachricht mehrfach.
+  const gesehen = Object.create(null);
+  const empfaenger = [];
+  const abgelehnt = [];
+  for (const roh of (Array.isArray(body && body.empfaenger) ? body.empfaenger : [])) {
+    const n = normalizeUsername(String(roh || ""));
+    if (!n || gesehen[n]) continue;
+    gesehen[n] = true;
+    // Zweite Pruefung gegen den Nutzerbestand, unabhaengig davon, was die Maske
+    // angeboten hat: Ausblenden ist keine Rechtepruefung ([[f-ausblenden]]).
+    if (!pnEmpfaengerErlaubt(usersDoc, ich, n)) { abgelehnt.push(n); continue; }
+    empfaenger.push(n);
+  }
+  if (!empfaenger.length) {
+    return json({ error: "Kein gültiger Empfänger — bitte mindestens eine Person auswählen." }, 400, corsHeaders);
+  }
+
+  const deckel = session.isAdmin ? PN_EMPFAENGER_MAX_ADMIN : PN_EMPFAENGER_MAX_BEARBEITER;
+  // ⚠️ ABLEHNEN, nicht abschneiden. Bei der Rundnachricht wird Ueberzaehliges
+  // gekuerzt, weil die Nachricht dadurch nur an WENIGER Leute geht. Hier ist der
+  // Deckel dagegen die Regel selbst ("Rundnachricht nur Admin") -- ein stilles
+  // Kuerzen liesse den Absender glauben, alle zehn plus Rest seien erreicht.
+  if (empfaenger.length > deckel) {
+    return json({
+      error: "Höchstens " + deckel + " Empfänger je Nachricht. Für eine Nachricht an alle gibt es die Rundnachricht im Einstellungen-Tab (nur Administratoren)."
+    }, 400, corsHeaders);
+  }
+
+  const jetzt = Date.now();
+  const { data: doc, rev } = await readJsonWithRev(PN_URL, authHeader, leeresPnDoc());
+  const bisher = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
+
+  // Doppelklick-Sperre, wortgleich zur Rundnachricht: der Versand laeuft in
+  // waitUntil und antwortet sofort -- ein zweiter Klick auf einen langsam
+  // reagierenden Knopf schickte dieselbe Nachricht ein zweites Mal an dieselben
+  // Leute, und zurueckholen laesst sich weder Mail noch Push. Nur bei GLEICHEM
+  // Text an DENSELBEN ersten Empfaenger; eine zweite, andere Nachricht darf
+  // sofort raus.
+  const letzte = bisher.find((n) => n && normalizeUsername(String(n.von || "")) === ich);
+  if (letzte && letzte.titel === titel && letzte.text === text && normalizeUsername(String(letzte.an || "")) === empfaenger[0]) {
+    const her = jetzt - Date.parse(String(letzte.am || ""));
+    if (her >= 0 && her < PN_SPERRE_MS) {
+      return json({ error: "Diese Nachricht ist gerade eben schon rausgegangen." }, 409, corsHeaders);
+    }
+  }
+
+  const amIso = new Date(jetzt).toISOString();
+  const mailKarte = await pnMailKarte(authHeader, usersDoc, empfaenger.concat([ich]));
+  const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  const vonName = aufgabenAnzeigeName(usersDoc, ich);
+  const vonMail = mailKarte[ich] || "";
+
+  // Je Empfaenger EIN eigener Eintrag, kein gemeinsamer mit Empfaengerliste:
+  // niemand soll sehen, wer sonst noch angeschrieben wurde (kein CC), und die
+  // Lesebestaetigung ist ohnehin je Person.
+  const neue = [];
+  const bilanz = { verschickt: 0, mail: 0, push: 0, ohneMail: [], ohnePush: [] };
+  for (const n of empfaenger) {
+    const geraete = pushAnlaesseFuer(abosDoc, n).nachricht ? pushAbosFuer(abosDoc, n).length : 0;
+    const hatMail = !!mailKarte[n];
+    neue.push({
+      id: crypto.randomUUID().replace(/-/g, ""),
+      // ⚠️ Nutzernamen, KEINE Klarnamen -- sonst zeigt ein alter Eintrag nach
+      // einer Umbenennung weiter den frueheren Namen. Aufgeloest wird beim
+      // Anzeigen (gleiche Linie wie aufgabenAnzeigeName).
+      von: ich,
+      an: n,
+      titel, text, ziel,
+      am: amIso,
+      gelesenAm: "",
+      mail: hatMail,
+      push: geraete
+    });
+    bilanz.verschickt++;
+    if (hatMail) bilanz.mail++; else bilanz.ohneMail.push(aufgabenAnzeigeName(usersDoc, n));
+    if (geraete) bilanz.push++; else bilanz.ohnePush.push(aufgabenAnzeigeName(usersDoc, n));
+  }
+
+  const gesamt = pnAufraeumen(neue.concat(bisher), jetzt);
+  doc.version = 1;
+  doc.nachrichten = gesamt;
+  try {
+    await writeJson(PN_URL, authHeader, doc, rev || undefined);
+  } catch (e) {
+    // ⚠️ HIER wird abgebrochen, anders als beim Protokoll der Rundnachricht: das
+    // Postfach IST die Nachricht. Waere sie nur per Mail und Push draussen,
+    // haette der Empfaenger nichts zum Nachlesen und der Absender keine
+    // Lesebestaetigung -- und ein zweiter Versuch schickte alles doppelt.
+    if (e instanceof ConflictError) {
+      return json({ error: "Jemand anderes hat im selben Moment geschrieben. Bitte noch einmal senden." }, 409, corsHeaders);
+    }
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  // Ab hier ist die Nachricht zugestellt. Alles Weitere darf schiefgehen, ohne
+  // den Vorgang zu kippen -- gemeldet wird es trotzdem.
+
+  // Push: Titel UND Text auf den Sperrbildschirm (Michel-Entscheidung, siehe
+  // PUSH_ANLAESSE). Gekuerzt auf die Laenge, die der Push-Dienst ueberhaupt
+  // traegt.
+  pushSenden(env, authHeader, execCtx, empfaenger, "nachricht", text.slice(0, PN_PUSH_TEXT_MAX),
+    { titel, ziel });
+
+  const mailArbeit = (async () => {
+    if (!env.BREVO_API_KEY) return;
+    for (const n of empfaenger) {
+      const adresse = mailKarte[n];
+      if (!adresse) continue;
+      const u = getOwn(usersDoc.users, n);
+      const koerper = {
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: adresse }],
+        subject: PN_MAIL_BETREFF,
+        textContent: pnMailInhalt((u && u.vorname) || "", vonName, titel, text, ziel, !!vonMail)
+      };
+      // ⚠️ Der Rueckweg (Michel-Entscheidung vom 2026-08-30): die Antwort geht
+      // an den Absender, nicht ans Vereinspostfach. Damit sieht der Empfaenger
+      // dessen Adresse -- beide sind Personal, deshalb tragbar. Ohne hinterlegte
+      // Adresse bleibt das Feld weg, und der Mailtext sagt das an.
+      if (vonMail) koerper.replyTo = { email: vonMail, name: vonName };
+      try {
+        const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": env.BREVO_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify(koerper)
+        });
+        if (!resp.ok) {
+          const t = await resp.text().catch(() => "");
+          console.error("Privatnachricht-Mail fehlgeschlagen", resp.status, t);
+        }
+      } catch (e) {
+        console.error("Privatnachricht-Mail fehlgeschlagen: " + (e && e.message ? e.message : e));
+      }
+    }
+  })();
+  if (execCtx && typeof execCtx.waitUntil === "function") execCtx.waitUntil(mailArbeit);
+
+  // Abzeichen der Empfaenger auf den tatsaechlichen Stand bringen.
+  const staende = pnUngelesenJe(gesamt, empfaenger);
+  const zaehlArbeit = pnZaehlerSetzen(authHeader, staende);
+  if (execCtx && typeof execCtx.waitUntil === "function") execCtx.waitUntil(zaehlArbeit);
+
+  // ⚠️ Die Bilanz ist der halbe Zweck der Aktion: eine blosse Erfolgsmeldung
+  // liesse den Absender glauben, alle seien erreicht -- gerade die Leute, die
+  // man anstupsen muss, haben oft weder Adresse noch angemeldetes Handy
+  // ([[f-stiller-noop]]).
+  if (abgelehnt.length) bilanz.abgelehnt = abgelehnt.length;
+  return json({ ok: true, bilanz }, 200, corsHeaders);
+}
+
+// Markiert EINE eigene Nachricht als gelesen. Nur der Empfaenger, nie der
+// Absender: die Lesebestaetigung waere sonst wertlos.
+async function handlePnGelesen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const ich = normalizeUsername(session.username);
+  if (!ich || ich === "__proto__") return json({ error: "Ungültiger Nutzer" }, 400, corsHeaders);
+  const id = String((body && body.id) || "").trim().slice(0, 64);
+  if (!id) return json({ error: "id fehlt" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(PN_URL, authHeader, leeresPnDoc());
+    const liste = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
+    const treffer = liste.find((n) => n && String(n.id || "") === id && normalizeUsername(String(n.an || "")) === ich);
+    // Kein Fehler, wenn schon gelesen oder inzwischen weg: der Client ruft das
+    // beim Aufklappen, und ein zweites Aufklappen darf nicht rot werden.
+    if (!treffer || treffer.gelesenAm) {
+      const stand = pnUngelesenJe(liste, [ich]);
+      await pnZaehlerSetzen(authHeader, stand);
+      return json({ ok: true, ungelesen: stand[ich] || 0 }, 200, corsHeaders);
+    }
+    treffer.gelesenAm = new Date().toISOString();
+    doc.version = doc.version || 1;
+    doc.nachrichten = liste;
+    try {
+      await writeJson(PN_URL, authHeader, doc, rev || undefined);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+    const stand = pnUngelesenJe(liste, [ich]);
+    await pnZaehlerSetzen(authHeader, stand);
+    return json({ ok: true, ungelesen: stand[ich] || 0 }, 200, corsHeaders);
+  }
+  return json({ error: "Konnte nicht gespeichert werden" }, 502, corsHeaders);
+}
+
+// Der EMPFAENGER loescht seine eigene Nachricht.
+//
+// ⚠️ Der Absender kann NICHT zurueckziehen (Michel-Entscheidung vom
+// 2026-08-30): Mail und Push sind zu dem Zeitpunkt draussen und nicht
+// zurueckholbar -- ein Loeschen-Knopf beim Absender wuerde nur das Postfach
+// leeren und ihm vorgaukeln, die Nachricht sei weg ([[f-spiegel-geloescht]]).
+// Sein Eintrag im eigenen Postausgang verschwindet mit der Nachricht mit; das
+// ist gewollt, es ist dieselbe Nachricht und keine zweite Kopie.
+async function handlePnLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const ich = normalizeUsername(session.username);
+  if (!ich || ich === "__proto__") return json({ error: "Ungültiger Nutzer" }, 400, corsHeaders);
+  const id = String((body && body.id) || "").trim().slice(0, 64);
+  if (!id) return json({ error: "id fehlt" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(PN_URL, authHeader, leeresPnDoc());
+    const liste = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
+    const rest = liste.filter((n) => !(n && String(n.id || "") === id && normalizeUsername(String(n.an || "")) === ich));
+    if (rest.length === liste.length) return json({ ok: true }, 200, corsHeaders);
+    doc.version = doc.version || 1;
+    doc.nachrichten = rest;
+    try {
+      await writeJson(PN_URL, authHeader, doc, rev || undefined);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+    const stand = pnUngelesenJe(rest, [ich]);
+    await pnZaehlerSetzen(authHeader, stand);
+    return json({ ok: true, ungelesen: stand[ich] || 0 }, 200, corsHeaders);
+  }
+  return json({ error: "Konnte nicht gelöscht werden" }, 502, corsHeaders);
+}
+
+// Protokoll fuer den globalen Admin: WER hat WANN an WEN geschrieben und ob es
+// gelesen wurde.
+//
+// ⚠️ OHNE Titel und OHNE Text (Michel-Entscheidung vom 2026-08-30, gleiche Linie
+// wie die Kinderschutz-Meldungen, die auch der Admin nicht liest). Das reicht
+// fuer die Frage, um die es geht -- schreibt hier jemand dreissig Leute am Tag
+// an? -- und haelt das Versprechen, das der Name gibt. Wer diese Aktion um ein
+// Textfeld erweitert, bricht es: dann muesste es in der Schreibmaske und im
+// Datenschutz-Hinweis stehen.
+//
+// Auch der TITEL bleibt draussen. Er wirkt harmlos, ist aber der Satz, den
+// jemand als Ueberschrift gewaehlt hat ("Fuehrungszeugnis abgelaufen") -- damit
+// stuende der Anlass jeder Nachricht im Klartext im Panel.
+async function handlePnProtokoll(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  const doc = await readJson(PN_URL, authHeader, leeresPnDoc());
+  const liste = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
+  const usersDoc = session.usersDoc;
+  const eintraege = liste.slice(0, 200).map((n) => ({
+    id: String((n && n.id) || ""),
+    vonName: aufgabenAnzeigeName(usersDoc, String((n && n.von) || "")),
+    anName: aufgabenAnzeigeName(usersDoc, String((n && n.an) || "")),
+    am: String((n && n.am) || ""),
+    gelesenAm: String((n && n.gelesenAm) || ""),
+    mail: !!(n && n.mail),
+    push: Number(n && n.push) || 0
+  }));
+  return json({ ok: true, eintraege, gesamt: liste.length }, 200, corsHeaders);
 }

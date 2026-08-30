@@ -2556,3 +2556,169 @@ nav .nav-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: inherit
 }
 
 .rechte-sicherung .rs-titel { font-weight: 600; font-size: 14px; }
+
+/* ---------- Privatnachrichten, Konto-Tab (seit 2026-08-30) ---------- */
+
+/* Die drei Warnsätze über der Schreibmaske. Sie stehen absichtlich in einem
+   farbigen Kasten und nicht als graue Kleinschrift: der Text landet sichtbar auf
+   einem fremden Sperrbildschirm, und wer das erst hinterher merkt, hat es schon
+   verschickt. */
+.pn-hinweis {
+  background: var(--gold-light);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pn-hinweis p { margin-bottom: 6px; }
+.pn-hinweis p:last-child { margin-bottom: 0; }
+
+.pn-titel { font-size: 14px; margin: 0 0 6px; }
+
+/* ⚠️ `line-height` ausdrücklich gesetzt: ein Textfeld bringt eine größere
+   Standard-Zeilenhöhe mit als die Knöpfe daneben, und in einer Flex-Reihe zieht
+   das höchste Element alle anderen mit (gemessen an der Werkzeug-Suche). */
+.pn-suche {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+/* Scrollt in sich, statt die Karte auf 50 Namen aufzuziehen. Gleicher Wert wie
+   bei der Eingrenzung der Rundnachricht. */
+.pn-personen {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+/* ⚠️ Bewusst NICHT in .form-field: dort gilt input { width: 100% } und macht aus
+   jedem Kästchen einen Balken quer durch die Karte (dieselbe Falle wie bei den
+   Push-Schaltern und der Rundnachricht). */
+.pn-person {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.pn-person input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  margin: 2px 0 0 0;
+  cursor: pointer;
+}
+/* Die Warnung, dass jemand nicht erreichbar ist. `overflow-wrap` fängt lange
+   Namen ab, die sonst die Karte seitlich aufziehen. */
+.pn-warn {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.pn-warn:before { content: "· "; }
+
+/* `flex-wrap` ist Pflicht: bei 375 px stehen sonst zwei Knöpfe nebeneinander und
+   sprengen die Karte (gleiche Gegenmaßnahme wie bei .kf-knopfreihe). */
+.pn-knopfreihe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pn-trenner {
+  height: 2px;
+  background: var(--border);
+  margin: 20px 0 16px;
+}
+
+/* Der zugeklappte Postausgang. Dezenter als die vier Karten-Aufklapper darum --
+   sonst sähe es aus wie eine eigene Karte in der Karte.
+   ⚠️ Kindselektor `>`, kein Nachfahre: `.collapsible summary` traf sonst auch
+   dieses summary und gäbe ihm die Optik der äußeren Karte samt "▾ offen",
+   während es selbst zugeklappt ist. */
+.pn-details { margin-top: 16px; }
+.pn-details > summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.pn-eintrag {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+/* Ungelesenes hebt sich ab -- ohne das sucht man in einer Liste aus zwanzig
+   Nachrichten die eine neue. */
+.pn-eintrag.pn-neu {
+  border-color: var(--blue);
+  background: var(--blue-light);
+}
+.pn-ausgang-eintrag { background: var(--gray); }
+
+/* ⚠️ `min-width: 0` am Flex-Kind: ohne das zieht eine lange Überschrift ohne
+   Leerzeichen die ganze Karte auf (gleiche Falle wie bei .dl-zeile-text). */
+.pn-kopf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pn-kopf > strong { min-width: 0; overflow-wrap: anywhere; }
+
+.pn-marke {
+  background: var(--blue);
+  color: var(--white);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+/* `pre-wrap` erhält die Zeilenumbrüche, die der Absender getippt hat --
+   `overflow-wrap` fängt lange Wörter ab. */
+.pn-text {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+}
+.pn-meta { font-size: 12px; margin-bottom: 4px; }
+.pn-ok { color: var(--green); }
+.pn-offen { color: var(--muted); }
+
+/* ⚠️ `table-layout: fixed` ist Pflicht, nicht Kosmetik: `main` hängt in einem
+   Flex-Container und wächst mit der Wunschbreite seines Inhalts. Eine Tabelle
+   ohne das zieht bei 375 px die GANZE Seite über den Rand -- an derselben Stelle
+   bei den Aktivitätspunkten gemessen. Ein `max-width` am Scroll-Container allein
+   hilft nicht. */
+.pn-tabelle-wrap { overflow-x: auto; max-width: 100%; }
+.pn-tabelle {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pn-tabelle th,
+.pn-tabelle td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.pn-tabelle th { color: var(--muted); font-weight: 600; }

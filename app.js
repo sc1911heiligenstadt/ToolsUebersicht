@@ -270,6 +270,7 @@ function logout() {
   // Unterlagen als Text im DOM. Am 2026-08-19 im Screenshot genau so aufgetreten.
   kfKarteLeeren();
   downloadsKarteLeeren();
+  pnKarteLeeren(); // fremde Namen UND der volle Nachrichtentext stehen als Text im DOM
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
@@ -6954,6 +6955,12 @@ function activateTab(name) {
   // Gleiche Ueberlegung: my-downloads liest trainerdaten.json. Holt zugleich das
   // rote Abzeichen ab -- wer hineinschaut, hat es gesehen.
   if (name === "konto") ladeUnterlagen();
+  // Gleiche Ueberlegung: pn-info liest privatnachrichten.json.
+  // ⚠️ Anders als bei den Unterlagen setzt das Oeffnen das Abzeichen NICHT
+  // zurueck. Hier ist "gesehen" der Klick auf eine einzelne Nachricht -- sonst
+  // waere die Lesebestaetigung, die der Absender bekommt, wertlos (aufgeklappt
+  // heisst nicht gelesen).
+  if (name === "konto") ladePrivatnachrichten();
 }
 
 function setupTabs() {
@@ -8017,6 +8024,7 @@ function renderAdminPanels() {
   document.getElementById("admin-links-panel").style.display = "none";
   document.getElementById("admin-mannschaften-panel").style.display = "none";
   document.getElementById("admin-rundnachricht-panel").style.display = "none";
+  document.getElementById("admin-pn-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("push-panel").style.display = "none";
   document.getElementById("punkte-panel").style.display = "none";
@@ -8052,6 +8060,7 @@ function renderAdminPanels() {
       document.getElementById("admin-links-panel").style.display = "block";
       document.getElementById("admin-mannschaften-panel").style.display = "block";
       document.getElementById("admin-rundnachricht-panel").style.display = "block";
+      document.getElementById("admin-pn-panel").style.display = "block";
       document.getElementById("admin-aufgaben-panel").style.display = "block";
       document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
     }
@@ -9223,9 +9232,11 @@ async function afterAuthChange() {
   // ihn sonst jemand von Hand neu oeffnen.
   kfKarteLeeren();
   downloadsKarteLeeren();
+  pnKarteLeeren();
   const kontoOffen = document.getElementById("tab-konto");
   if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeKontaktFreigabe();
   if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeUnterlagen();
+  if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladePrivatnachrichten();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
   await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   // Frueher stand hier vor loadAndRenderUsers() ein zweites renderKontoKarte(): die
@@ -10308,6 +10319,7 @@ async function init() {
   setupAufgabenWidget();
   setupAufgabenZuweisenDialog();
   setupDokumenteTab();
+  setupPrivatnachrichten();
   setupAuthForms();
   setupKontoFoto();
   setupKontaktFreigabe();
@@ -10420,13 +10432,30 @@ function unterlagenNeuAnzahl() {
   return Number.isFinite(n) ? Math.max(0, n) : 0;
 }
 
+// Das rote Abzeichen am Konto-Tab. Es zeigt seit 2026-08-30 ZWEI Dinge zugleich:
+// bereitliegende Unterlagen und ungelesene Privatnachrichten.
+//
+// ⚠️ Beide Zahlen kommen aus `ansicht.json`, die beim Seitenaufbau ohnehin
+// gelesen wird -- der Grund, aus dem der Zähler dort und nicht bei den Nutzdaten
+// liegt (siehe unterlagenNeuAnzahl und pnNeuAnzahl). Wer einen dritten Zähler
+// ergänzt, muss ihn HIER mitzählen, sonst zeigt die Pille zu wenig an.
+//
+// ⚠️ Der Name der Funktion ist aus Historie geblieben. Sie zeichnet das Abzeichen
+// des ganzen Tabs, nicht nur das der Downloads -- sie heißt nur so.
 function downloadsBadgeZeichnen() {
   const el = document.getElementById("nav-konto-badge");
   if (!el) return;
-  const n = unterlagenNeuAnzahl();
+  const u = unterlagenNeuAnzahl();
+  const p = pnNeuAnzahl();
+  const n = u + p;
   if (!n) { el.style.display = "none"; el.textContent = ""; el.removeAttribute("title"); return; }
   el.textContent = String(n);
-  el.title = n === 1 ? "Eine neue Unterlage für dich" : n + " neue Unterlagen für dich";
+  // Der Tooltip nennt beide Anlässe getrennt: eine bloße Zahl sagt nicht, wo man
+  // nachsehen muss, und die zwei Karten stehen zugeklappt untereinander.
+  const teile = [];
+  if (u) teile.push(u === 1 ? "eine neue Unterlage" : u + " neue Unterlagen");
+  if (p) teile.push(p === 1 ? "eine ungelesene Nachricht" : p + " ungelesene Nachrichten");
+  el.title = "Für dich: " + teile.join(" und ");
   el.style.display = "";
 }
 
@@ -10579,4 +10608,424 @@ function downloadsKarteLeeren() {
   if (f) { f.textContent = ""; f.style.display = "none"; }
   const st = document.getElementById("dl-status");
   if (st) { st.textContent = "Wird geladen …"; st.style.display = ""; }
+}
+
+
+// ---------- Privatnachrichten, Konto-Tab (seit 2026-08-30) ----------
+//
+// Ein gerichteter Anstupser an einzelne Personen: Postfach, E-Mail und Push.
+// Die Begruendungen und alle elf Entscheidungen stehen im Block am Ende von
+// `admin-worker.js` -- hier steht nur, was den Client betrifft.
+//
+// ⚠️ Laeuft ueber das GATEWAY (`callWorker`), wie die Unterlagen darueber.
+
+let pnState = null;          // Antwort von pn-info (erst beim Oeffnen des Tabs geholt)
+let pnAuswahl = new Set();   // angehakte Empfaenger, ueberlebt das Neuzeichnen der Liste
+
+// Wie viele ungelesene Nachrichten liegen fuer mich bereit?
+//
+// ⚠️ Der Zaehler kommt aus `ansicht.json` (`nachrichtenNeu`), die beim Seitenaufbau
+// ohnehin gelesen wird -- NICHT aus `privatnachrichten.json`. Genau wie bei
+// `unterlagenNeu` daneben: sonst kostete das Abzeichen einen zweiten
+// Nextcloud-Read bei jedem Aufruf der Startseite, und daran ist das Abzeichen am
+// Ideen-Tab gescheitert.
+function pnNeuAnzahl() {
+  if (!currentUser || currentUser.art === "spieler") return 0;
+  const n = ansichtState && ansichtState.nachrichtenNeu;
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+// Ziel-Auswahl. Gebaut aus TOOLS, also derselben Liste, aus der auch die Kacheln
+// kommen -- eine eigene Liste liefe auseinander, sobald ein Werkzeug dazukommt.
+// ⚠️ Gefiltert wird ueber `isVisibleToUser`: ein Ziel anzubieten, das der
+// Absender selbst nicht sehen darf, waere eine Aussage darueber, welche
+// Werkzeuge es gibt.
+function pnZielFeldFuellen() {
+  const sel = document.getElementById("pn-ziel");
+  if (!sel) return;
+  const vorher = sel.value;
+  const eintraege = TOOLS
+    .filter((t) => isVisibleToUser(t))
+    .map((t) => ({ url: t.url, name: t.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"));
+  sel.innerHTML = '<option value="">Zur Tools-Übersicht (Vorgabe)</option>' +
+    eintraege.map((e) => `<option value="${escapeHtml(e.url)}">${escapeHtml(e.name)}</option>`).join("");
+  if (vorher) sel.value = vorher;
+}
+
+function pnDatum(iso) {
+  const t = Date.parse(String(iso || ""));
+  if (!Number.isFinite(t)) return "";
+  const d = new Date(t);
+  const zwei = (n) => String(n).padStart(2, "0");
+  return `${zwei(d.getDate())}.${zwei(d.getMonth() + 1)}.${d.getFullYear()}, ${zwei(d.getHours())}:${zwei(d.getMinutes())} Uhr`;
+}
+
+// ⚠️ Nur der Worker-Aufruf steht im stillen try, nicht das Rendern. Kennt ein
+// noch nicht deployter Worker die Aktion nicht, bleibt die Karte weg, statt einen
+// roten Hinweis auf etwas zu zeigen, das es serverseitig noch nicht gibt (gleiche
+// Linie wie ladeUnterlagen und ladeKontaktFreigabe).
+async function ladePrivatnachrichten() {
+  const card = document.getElementById("pn-panel");
+  if (!card || !currentUser) return;
+  if (currentUser.art === "spieler") { card.style.display = "none"; return; }
+
+  let data;
+  try {
+    data = await callWorker("pn-info", {});
+  } catch (e) {
+    card.style.display = "none";
+    return;
+  }
+  pnState = data;
+  card.style.display = "block";
+  pnZielFeldFuellen();
+  renderPrivatnachrichten();
+
+  // ⚠️ Liegt etwas Ungelesenes bereit, klappt die Karte VON SELBST auf --
+  // dieselbe Ueberlegung wie bei den Unterlagen: die vier Konto-Karten stehen
+  // zugeklappt da, und ein rotes Abzeichen am Tab, das auf eine geschlossene
+  // Karte zeigt, fuehrt niemanden irgendwohin.
+  const ungelesen = (data.posteingang || []).filter((n) => !n.gelesenAm).length;
+  if (ungelesen) card.open = true;
+}
+
+function renderPrivatnachrichten() {
+  const st = document.getElementById("pn-status");
+  const schreiben = document.getElementById("pn-schreiben");
+  const eingangEl = document.getElementById("pn-eingang");
+  const ausgangBlock = document.getElementById("pn-ausgang-block");
+  const ausgangEl = document.getElementById("pn-ausgang");
+  const rundHinweis = document.getElementById("pn-rund-hinweis");
+  if (!st || !eingangEl) return;
+  const d = pnState || {};
+
+  if (schreiben) schreiben.style.display = d.darfSenden ? "block" : "none";
+  // Der Wegweiser zur Rundnachricht nur fuer die, die sie ueberhaupt bedienen
+  // duerfen -- sonst verweist er auf einen Knopf, den es fuer den Leser nicht gibt.
+  if (rundHinweis) rundHinweis.style.display = d.istAdmin ? "block" : "none";
+
+  const eingang = Array.isArray(d.posteingang) ? d.posteingang : [];
+  const ungelesen = eingang.filter((n) => !n.gelesenAm).length;
+  st.textContent = eingang.length
+    ? (ungelesen ? `${ungelesen} ungelesen von ${eingang.length}` : `${eingang.length} gelesen`)
+    : "Für dich liegt gerade nichts vor.";
+
+  eingangEl.innerHTML = eingang.map((n) => {
+    const neu = !n.gelesenAm;
+    const ziel = n.ziel ? `<a class="btn-link secondary small" href="${escapeHtml(n.ziel)}">Dorthin wechseln</a>` : "";
+    return `<div class="pn-eintrag${neu ? " pn-neu" : ""}" data-pn-id="${escapeHtml(n.id)}">
+      <div class="pn-kopf">
+        <strong>${escapeHtml(n.titel)}</strong>
+        ${neu ? '<span class="pn-marke">neu</span>' : ""}
+      </div>
+      <p class="pn-text">${escapeHtml(n.text)}</p>
+      <p class="muted pn-meta">von ${escapeHtml(n.vonName)} · ${escapeHtml(pnDatum(n.am))}</p>
+      <div class="pn-knopfreihe">
+        ${ziel}
+        ${neu ? `<button type="button" class="btn secondary small" data-pn-gelesen="${escapeHtml(n.id)}">Gelesen</button>` : ""}
+        <button type="button" class="btn secondary small" data-pn-loeschen="${escapeHtml(n.id)}">Löschen</button>
+      </div>
+    </div>`;
+  }).join("") || '<p class="muted">Keine Nachrichten.</p>';
+
+  const ausgang = Array.isArray(d.postausgang) ? d.postausgang : [];
+  if (ausgangBlock) ausgangBlock.style.display = ausgang.length ? "block" : "none";
+  if (ausgangEl) {
+    ausgangEl.innerHTML = ausgang.map((n) => {
+      // Die Lesebestaetigung ist der eigentliche Wert des Postausgangs: ohne sie
+      // erfaehrt der Absender nie, ob sein Anstupser angekommen ist.
+      const gelesen = n.gelesenAm
+        ? `<span class="pn-ok">gelesen ${escapeHtml(pnDatum(n.gelesenAm))}</span>`
+        : '<span class="pn-offen">noch nicht gelesen</span>';
+      // ⚠️ Wege, die NICHT geklappt haben, gehoeren dazu -- eine blosse
+      // Erfolgsmeldung liesse den Absender glauben, alle seien erreicht.
+      const wege = [];
+      wege.push(n.mail ? "per E-Mail" : "ohne E-Mail");
+      wege.push(n.push ? `auf ${n.push} Gerät${n.push === 1 ? "" : "en"}` : "ohne Handy");
+      return `<div class="pn-eintrag pn-ausgang-eintrag">
+        <div class="pn-kopf"><strong>${escapeHtml(n.titel)}</strong></div>
+        <p class="muted pn-meta">an ${escapeHtml(n.anName)} · ${escapeHtml(pnDatum(n.am))} · ${escapeHtml(wege.join(", "))}</p>
+        <p class="muted pn-meta">${gelesen}</p>
+      </div>`;
+    }).join("");
+  }
+
+  pnPersonenZeichnen();
+  pnZaehlerZeichnen();
+}
+
+// Empfaengerliste mit Erreichbarkeit.
+//
+// ⚠️ Angehakte Personen stehen IMMER oben und werden von der Suche nie
+// ausgeblendet -- dieselbe Regel wie beim Eingrenzen der Rundnachricht: ein
+// gesetzter Haken, den man nicht mehr sieht, verschickt trotzdem.
+function pnPersonenZeichnen() {
+  const el = document.getElementById("pn-personen");
+  if (!el) return;
+  const liste = (pnState && Array.isArray(pnState.empfaenger)) ? pnState.empfaenger : [];
+  const suche = String((document.getElementById("pn-suche") || {}).value || "").trim().toLowerCase();
+  const passt = (p) => pnAuswahl.has(p.username) || !suche || p.name.toLowerCase().includes(suche);
+  const sortiert = liste.slice().sort((a, b) => {
+    const aa = pnAuswahl.has(a.username) ? 0 : 1;
+    const bb = pnAuswahl.has(b.username) ? 0 : 1;
+    return aa !== bb ? aa - bb : a.name.localeCompare(b.name, "de");
+  });
+  const sichtbar = sortiert.filter(passt);
+  el.innerHTML = sichtbar.map((p) => {
+    // ⚠️ Die Warnung steht VOR dem Anhaken, nicht erst in der Bilanz danach:
+    // wer weder Adresse noch angemeldetes Handy hat, erfaehrt von der Nachricht
+    // erst beim naechsten Anmelden.
+    const fehlt = [];
+    if (!p.mail) fehlt.push("keine E-Mail hinterlegt");
+    if (!p.geraete) fehlt.push("kein Handy angemeldet");
+    const warn = fehlt.length ? `<span class="pn-warn">${escapeHtml(fehlt.join(", "))}</span>` : "";
+    return `<label class="pn-person">
+      <input type="checkbox" data-pn-person="${escapeHtml(p.username)}"${pnAuswahl.has(p.username) ? " checked" : ""} />
+      <span>${escapeHtml(p.name)} ${warn}</span>
+    </label>`;
+  }).join("") || '<p class="muted">Niemand gefunden.</p>';
+}
+
+function pnZaehlerZeichnen() {
+  const stand = document.getElementById("pn-auswahl-stand");
+  const grenzen = (pnState && pnState.grenzen) || {};
+  const max = Number(grenzen.empfaenger) || 10;
+  if (stand) {
+    stand.textContent = pnAuswahl.size
+      ? `${pnAuswahl.size} von höchstens ${max} ausgewählt.`
+      : `Niemand ausgewählt — höchstens ${max} je Nachricht.`;
+    stand.style.color = pnAuswahl.size > max ? "#c0392b" : "";
+  }
+  const feld = document.getElementById("pn-text");
+  const z = document.getElementById("pn-text-zaehler");
+  if (feld && z) {
+    const laenge = feld.value.length;
+    const pushMax = Number(grenzen.pushText) || 200;
+    // ⚠️ Der Hinweis ab der Push-Grenze ist Pflicht, nicht Zierde: der Push
+    // traegt nur die ersten 200 Zeichen. Ohne ihn schreibt jemand das Wichtigste
+    // ans Ende, und auf dem Sperrbildschirm steht davon nichts.
+    z.textContent = laenge > pushMax
+      ? `${laenge} Zeichen — auf dem Handy sind nur die ersten ${pushMax} zu sehen. Das Wichtigste nach vorn.`
+      : `${laenge} von ${Number(grenzen.text) || 400} Zeichen`;
+    z.style.color = laenge > pushMax ? "#c0392b" : "";
+  }
+}
+
+async function pnSenden() {
+  const meldung = document.getElementById("pn-meldung");
+  const knopf = document.getElementById("btn-pn-senden");
+  const titel = String((document.getElementById("pn-titel") || {}).value || "").trim();
+  const text = String((document.getElementById("pn-text") || {}).value || "").trim();
+  const ziel = String((document.getElementById("pn-ziel") || {}).value || "");
+  const zeigen = (txt, farbe) => {
+    if (!meldung) return;
+    meldung.textContent = txt;
+    meldung.style.color = farbe || "";
+    meldung.style.display = txt ? "block" : "none";
+  };
+
+  // ⚠️ Vor dem Worker-Aufruf pruefen, nicht danach: eine Absage ohne Netzwerkweg
+  // ist sofort da, und der Worker wuerde ohnehin dasselbe sagen.
+  if (!titel) return zeigen("Bitte eine Überschrift eintragen.", "#c0392b");
+  if (!text) return zeigen("Bitte einen Text eintragen.", "#c0392b");
+  if (!pnAuswahl.size) return zeigen("Bitte mindestens eine Person auswählen.", "#c0392b");
+  const max = Number((pnState && pnState.grenzen && pnState.grenzen.empfaenger)) || 10;
+  if (pnAuswahl.size > max) {
+    return zeigen(`Höchstens ${max} Empfänger je Nachricht. Für eine Nachricht an alle gibt es die Rundnachricht im Tab „Einstellungen“.`, "#c0392b");
+  }
+
+  const namen = Array.from(pnAuswahl)
+    .map((u) => ((pnState.empfaenger || []).find((p) => p.username === u) || {}).name || u);
+  // ⚠️ Sicherheitsabfrage wie bei der Rundnachricht: Mail und Push lassen sich
+  // nicht zurueckholen, und der Text steht sichtbar auf einem Sperrbildschirm.
+  if (!confirm(`Nachricht jetzt verschicken an:\n\n${namen.join("\n")}\n\nSie erscheint auf dem Sperrbildschirm und im E-Mail-Postfach und lässt sich nicht zurückholen.`)) {
+    return zeigen("Nicht verschickt.", "");
+  }
+
+  if (knopf) knopf.disabled = true;
+  zeigen("Wird verschickt …", "");
+  try {
+    const res = await callWorker("pn-senden", {
+      empfaenger: Array.from(pnAuswahl), titel, text, ziel
+    });
+    const b = (res && res.bilanz) || {};
+    // ⚠️ Die Bilanz wird ANGEZEIGT, nicht geschluckt. Gerade die Leute, die man
+    // anstupsen muss, haben oft weder Adresse noch angemeldetes Handy -- ein
+    // blosses "verschickt" liesse den Absender auf eine Reaktion warten, die
+    // nie kommt.
+    const teile = [`${b.verschickt || 0} verschickt`];
+    teile.push(`${b.mail || 0} per E-Mail`);
+    teile.push(`${b.push || 0} aufs Handy`);
+    let txt = teile.join(", ") + ".";
+    if (b.ohneMail && b.ohneMail.length) txt += ` Ohne E-Mail: ${b.ohneMail.join(", ")}.`;
+    if (b.ohnePush && b.ohnePush.length) txt += ` Ohne Handy: ${b.ohnePush.join(", ")}.`;
+    if ((b.ohneMail && b.ohneMail.length) || (b.ohnePush && b.ohnePush.length)) {
+      txt += " Diese Personen sehen die Nachricht erst beim nächsten Anmelden.";
+    }
+    zeigen(txt, "#2d8c4e");
+    pnFormularLeeren();
+    await ladePrivatnachrichten();
+  } catch (e) {
+    zeigen(e.message || "Konnte nicht verschickt werden.", "#c0392b");
+  } finally {
+    if (knopf) knopf.disabled = false;
+  }
+}
+
+function pnFormularLeeren() {
+  ["pn-titel", "pn-text", "pn-suche"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  const ziel = document.getElementById("pn-ziel");
+  if (ziel) ziel.value = "";
+  // Die Auswahl gilt fuer die EINE Nachricht -- gleiche Linie wie bei der
+  // Rundnachricht. Ein stehengebliebener Haken schickt sonst beim naechsten Mal
+  // jemanden mit, den niemand gemeint hat.
+  pnAuswahl = new Set();
+  pnPersonenZeichnen();
+  pnZaehlerZeichnen();
+}
+
+// Fehler werden angezeigt, nicht geschluckt: bleibt eine Nachricht ungelesen
+// stehen, obwohl man sie angeklickt hat, sucht man den Fehler bei sich.
+async function pnGelesenMelden(id) {
+  try {
+    const res = await callWorker("pn-gelesen", { id });
+    if (ansichtState) ansichtState.nachrichtenNeu = Number(res && res.ungelesen) || 0;
+    downloadsBadgeZeichnen();
+    await ladePrivatnachrichten();
+  } catch (e) {
+    const f = document.getElementById("pn-fehler");
+    if (f) { f.textContent = e.message || "Konnte nicht gespeichert werden."; f.style.display = "block"; }
+  }
+}
+
+async function pnLoeschen(id) {
+  if (!confirm("Diese Nachricht endgültig löschen?")) return;
+  try {
+    const res = await callWorker("pn-loeschen", { id });
+    if (ansichtState) ansichtState.nachrichtenNeu = Number(res && res.ungelesen) || 0;
+    downloadsBadgeZeichnen();
+    await ladePrivatnachrichten();
+  } catch (e) {
+    const f = document.getElementById("pn-fehler");
+    if (f) { f.textContent = e.message || "Konnte nicht gelöscht werden."; f.style.display = "block"; }
+  }
+}
+
+// ⚠️ Beim Abmelden reicht `display: none` NICHT -- dieselbe Falle wie bei
+// kfKarteLeeren() und downloadsKarteLeeren(). Hier stehen fremde Namen UND der
+// volle Nachrichtentext als Text im DOM; an einem geteilten Gerät läse der
+// nächste Nutzer beides mit.
+function pnKarteLeeren() {
+  pnState = null;
+  pnAuswahl = new Set();
+  const card = document.getElementById("pn-panel");
+  if (!card) return;
+  card.style.display = "none";
+  card.open = false; // zugeklappt zurueckgeben, siehe renderAdminPanels()
+  ["pn-eingang", "pn-ausgang", "pn-personen"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = "";
+  });
+  ["pn-titel", "pn-text", "pn-suche"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  const ausgangBlock = document.getElementById("pn-ausgang-block");
+  if (ausgangBlock) { ausgangBlock.style.display = "none"; ausgangBlock.open = false; }
+  const schreiben = document.getElementById("pn-schreiben");
+  if (schreiben) schreiben.style.display = "none";
+  ["pn-meldung", "pn-fehler"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ""; el.style.display = "none"; }
+  });
+  const st = document.getElementById("pn-status");
+  if (st) { st.textContent = "Wird geladen …"; st.style.display = ""; }
+}
+
+// ⚠️ Die Listen werden bei jedem Rendern neu gebaut -- ein Listener an einer
+// einzelnen Zeile wäre danach verwaist. Deshalb einmal am Container gebunden
+// (gleiches Muster wie beim Admin-Nutzerfoto).
+function setupPrivatnachrichten() {
+  const eingang = document.getElementById("pn-eingang");
+  if (eingang) {
+    eingang.addEventListener("click", (e) => {
+      const g = e.target.closest("[data-pn-gelesen]");
+      if (g) return pnGelesenMelden(g.getAttribute("data-pn-gelesen"));
+      const l = e.target.closest("[data-pn-loeschen]");
+      if (l) return pnLoeschen(l.getAttribute("data-pn-loeschen"));
+    });
+  }
+  const personen = document.getElementById("pn-personen");
+  if (personen) {
+    personen.addEventListener("change", (e) => {
+      const box = e.target.closest("[data-pn-person]");
+      if (!box) return;
+      const name = box.getAttribute("data-pn-person");
+      if (box.checked) pnAuswahl.add(name); else pnAuswahl.delete(name);
+      pnZaehlerZeichnen();
+    });
+  }
+  const suche = document.getElementById("pn-suche");
+  // ⚠️ Der Wert wird beim Tippen NICHT neu gesetzt (nur die Liste gezeichnet) --
+  // ein Zuweisen bei jedem Tastendruck setzte die Schreibmarke ans Ende, und
+  // mitten im Wort zu korrigieren wäre danach unmöglich. Gleiche Falle wie beim
+  // Suchfeld der Werkzeug-Übersicht.
+  if (suche) suche.addEventListener("input", () => pnPersonenZeichnen());
+  const text = document.getElementById("pn-text");
+  if (text) text.addEventListener("input", () => pnZaehlerZeichnen());
+  const senden = document.getElementById("btn-pn-senden");
+  if (senden) senden.addEventListener("click", () => pnSenden());
+  const verwerfen = document.getElementById("btn-pn-verwerfen");
+  if (verwerfen) verwerfen.addEventListener("click", () => pnFormularLeeren());
+
+  // Admin-Protokoll. ⚠️ Hängt am `toggle` des <details>, nicht an
+  // renderAdminPanels() -- es ist ein Nextcloud-Read für ein Panel, das
+  // meistens niemand öffnet (gleiche Überlegung wie beim Rundnachricht-Verlauf).
+  const adminPanel = document.getElementById("admin-pn-panel");
+  if (adminPanel) {
+    adminPanel.addEventListener("toggle", (e) => {
+      if (e.target.open) ladePnProtokoll();
+    });
+  }
+}
+
+async function ladePnProtokoll() {
+  const st = document.getElementById("admin-pn-status");
+  const liste = document.getElementById("admin-pn-liste");
+  if (!st || !liste) return;
+  st.textContent = "Wird geladen …";
+  st.style.display = "";
+  let data;
+  try {
+    data = await callWorker("pn-protokoll", {});
+  } catch (e) {
+    st.textContent = e.message || "Konnte nicht geladen werden.";
+    st.style.color = "#c0392b";
+    liste.innerHTML = "";
+    return;
+  }
+  st.style.color = "";
+  const eintraege = Array.isArray(data.eintraege) ? data.eintraege : [];
+  if (!eintraege.length) {
+    st.textContent = "Bisher wurde keine Privatnachricht verschickt.";
+    liste.innerHTML = "";
+    return;
+  }
+  st.textContent = `${eintraege.length} von ${data.gesamt || eintraege.length} Nachrichten.`;
+  // ⚠️ `table-layout: fixed` am Container ist Pflicht -- eine Tabelle ohne das
+  // zieht in diesem Flex-`main` die ganze Seite auf (gemessen bei den
+  // Aktivitätspunkten).
+  liste.innerHTML = `<div class="pn-tabelle-wrap"><table class="pn-tabelle">
+    <thead><tr><th>Von</th><th>An</th><th>Wann</th><th>Gelesen</th></tr></thead>
+    <tbody>${eintraege.map((e) => `<tr>
+      <td>${escapeHtml(e.vonName)}</td>
+      <td>${escapeHtml(e.anName)}</td>
+      <td>${escapeHtml(pnDatum(e.am))}</td>
+      <td>${e.gelesenAm ? escapeHtml(pnDatum(e.gelesenAm)) : "—"}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
 }

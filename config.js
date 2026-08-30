@@ -519,6 +519,25 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.36",
+    groups: [
+      {
+        title: "Neu: Privatnachrichten an einzelne Personen",
+        items: [
+          "Im Tab „Mein Konto“ gibt es jetzt die Karte „Privatnachrichten“. Wer in irgendeinem Werkzeug Bearbeiten-Recht hat, kann damit einzelne Personen anschreiben — zum Beispiel, weil noch eine Unterlage fehlt.",
+          "Die Nachricht geht drei Wege gleichzeitig: sie bleibt im Postfach liegen, kommt als E-Mail und meldet sich auf dem Handy.",
+          "Auf die E-Mail kann man direkt antworten — die Antwort geht an den Absender, nicht an den Verein. In der App selbst gibt es keine Antwortfunktion.",
+          "Der Absender sieht, ob die Nachricht gelesen wurde, und nach dem Verschicken, wen sie wirklich erreicht hat. Wer keine E-Mail hinterlegt oder kein Handy angemeldet hat, ist schon vor dem Anhaken gekennzeichnet.",
+          "Angeschrieben werden können nur Mitarbeiterinnen und Mitarbeiter des Vereins, keine Spielerkonten. Höchstens zehn Empfänger je Nachricht — für eine Nachricht an alle bleibt die Rundnachricht im Tab „Einstellungen“.",
+          "Wer keine Meldungen aufs Handy möchte, schaltet unter „Benachrichtigungen aufs Handy“ den neuen Punkt „Persönliche Nachrichten“ aus. Die E-Mail kommt weiterhin.",
+          "Der Administrator sieht in den Einstellungen ein Protokoll: wer wann an wen geschrieben hat. Der Inhalt steht dort bewusst nicht — weder Überschrift noch Text.",
+          "Nachrichten verschwinden von selbst: gelesene nach 90 Tagen, ungelesene nach einem Jahr. Löschen kann jeder seine eigenen jederzeit.",
+          "Achtung: Überschrift und Text stehen sichtbar auf dem Sperrbildschirm des Empfängers und in seinem Postfach. Nichts Vertrauliches hineinschreiben — die Schreibmaske sagt das noch einmal an."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.35",
     groups: [
       {

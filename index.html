@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.73" />
+<link rel="stylesheet" href="style.css?v=1.74" />
 </head>
 <body>
 
@@ -400,6 +400,30 @@
       des Vereins.
       Eine eigene Idee lässt sich selbst löschen, solange noch nicht an ihr gearbeitet wird;
       danach und für die Zustimmung genügt eine Nachricht an die oben genannte Anschrift.</p>
+      <!-- Privatnachrichten (seit 2026-08-30). Auskunftspflichtig aus drei
+           Gründen, die alle in den Absatz gehören: der geschriebene Text verlässt
+           den Verein Richtung Mailversender und liegt dort im Versandprotokoll;
+           der Empfänger sieht die Mailadresse des Absenders (Antwort-Adresse);
+           und der Administrator sieht die Verbindungsdaten, obwohl es
+           „Privatnachricht" heißt.
+           ⚠️ Der Satz zum Administrator ist die Gegenprobe zum Panel-Text im
+           Einstellungen-Tab: wer das Protokoll je um Titel oder Text erweitert,
+           muss BEIDE Stellen mitziehen, sonst steht hier eine Unwahrheit. -->
+      <p><strong>Privatnachrichten.</strong> Wer in einem Werkzeug Bearbeiten-Recht hat,
+      kann anderen Mitarbeiterinnen und Mitarbeitern über den Tab „Mein Konto“ eine
+      Nachricht schicken. Gespeichert werden Absender, Empfänger, Überschrift, Text,
+      Zeitpunkt und ob die Nachricht gelesen wurde; dieselbe Nachricht geht zusätzlich
+      als E-Mail und — wenn eingeschaltet — auf das Gerät. <strong>Der Text verlässt
+      dabei den Verein</strong>: er steht in der E-Mail und damit im Versandprotokoll
+      unseres Mailversenders, und er erscheint auf dem Sperrbildschirm des Empfängers.
+      Antwortet der Empfänger auf die E-Mail, geht die Antwort an die
+      <strong>E-Mail-Adresse des Absenders</strong>, die dieser dafür offenlegt.
+      Den <strong>Administratoren der Tools-Übersicht</strong> wird angezeigt, wer wann
+      an wen geschrieben hat — <strong>nicht der Inhalt</strong>, weder Überschrift noch
+      Text. Zweck ist es, auf Fehlendes hinzuweisen und die Vereinsarbeit abzustimmen;
+      Grundlage ist das berechtigte Interesse des Vereins. <strong>Gelesene Nachrichten
+      werden nach 90 Tagen gelöscht, ungelesene nach einem Jahr</strong>; jede eigene
+      Nachricht lässt sich jederzeit selbst früher löschen.</p>
       <p><a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung des Vereins</a>
       &middot;
       <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a></p>
@@ -571,6 +595,89 @@
         Bereitgestellt wird in den
         <a href="https://sc1911heiligenstadt.github.io/dokumentenvorlagen/">Dokumentenvorlagen</a>.
       </p>
+    </details>
+
+    <!-- Privatnachrichten (seit 2026-08-30). Steht bewusst DIREKT UNTER den
+         Unterlagen: beide sind Karten, in denen etwas auf eine Handlung wartet,
+         und beide speisen dasselbe rote Abzeichen am Tab. Die Michel-Vorgabe vom
+         2026-08-17 ("Unterlagen als ERSTE") bleibt damit unangetastet.
+         ⚠️ Kein eigener Tab in der Leiste (Michel-Entscheidung): die ist am Handy
+         schon voll, und Empfangen und Senden gehören an einen Ort. -->
+    <details class="card collapsible" id="pn-panel" style="display:none;">
+      <summary>Privatnachrichten</summary>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Kurze Hinweise an einzelne Personen aus dem Verein — etwa, dass noch eine Unterlage
+        fehlt. Jede Nachricht geht zusätzlich als E-Mail und aufs Handy.
+      </p>
+      <p class="muted" id="pn-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <!-- Schreibmaske. Nur für Bearbeiter, wird per JS eingeblendet. -->
+      <div id="pn-schreiben" style="display:none;">
+        <h3 style="margin:0 0 10px;">Nachricht schreiben</h3>
+
+        <!-- ⚠️ Diese drei Sätze gehören zur Funktion, nicht zur Zierde. Der Name
+             "Privatnachricht" weckt zwei falsche Erwartungen (man könne antworten,
+             und niemand sonst sähe etwas), und der volle Text landet auf einem
+             Sperrbildschirm. Wer sie entfernt, nimmt dem Absender die Grundlage
+             seiner Wortwahl. -->
+        <div class="pn-hinweis">
+          <p>📱 <strong>Dein Text steht sichtbar auf dem Sperrbildschirm</strong> des Empfängers
+            und in seinem E-Mail-Postfach. Nichts Vertrauliches hineinschreiben.</p>
+          <p>↩️ Der Empfänger kann hier <strong>nicht antworten</strong> — er antwortet auf die E-Mail,
+            und die geht direkt an dich.</p>
+          <p>👁️ Der Administrator sieht, <strong>dass</strong> du geschrieben hast — nicht was.</p>
+        </div>
+
+        <div class="form-field" style="margin-bottom:10px;">
+          <label for="pn-titel">Überschrift</label>
+          <input type="text" id="pn-titel" maxlength="100" placeholder="z. B. Führungszeugnis fehlt noch" />
+        </div>
+        <div class="form-field" style="margin-bottom:10px;">
+          <label for="pn-text">Nachricht</label>
+          <textarea id="pn-text" rows="4" maxlength="400" placeholder="Was fehlt, und bis wann du es brauchst."></textarea>
+          <small class="muted" id="pn-text-zaehler" style="display:block; margin-top:6px;"></small>
+        </div>
+        <div class="form-field" style="margin-bottom:14px;">
+          <label for="pn-ziel">Wohin soll der Empfänger klicken?</label>
+          <select id="pn-ziel"></select>
+        </div>
+
+        <h4 class="pn-titel">An wen?</h4>
+        <input type="text" id="pn-suche" class="pn-suche" placeholder="Namen suchen …" />
+        <!-- ⚠️ KEIN .form-field um die Kästchen: dort greift input{width:100%} und
+             macht aus jeder Checkbox einen Balken (gleiche Falle wie bei den
+             Push-Schaltern und der Rundnachricht). -->
+        <div class="pn-personen" id="pn-personen"></div>
+        <p class="muted" id="pn-auswahl-stand" style="margin:8px 0 14px;"></p>
+
+        <div class="pn-knopfreihe">
+          <button type="button" class="btn" id="btn-pn-senden">Nachricht senden</button>
+          <button type="button" class="btn secondary" id="btn-pn-verwerfen">Zurücksetzen</button>
+        </div>
+        <p class="muted" id="pn-meldung" style="display:none; margin-top:10px;"></p>
+
+        <!-- Wegweiser zur Rundnachricht. Beide Wege bleiben getrennt
+             (Michel-Entscheidung), deshalb muss jeder auf den anderen zeigen —
+             sonst überlegt man bei jedem Mal, welcher Knopf der richtige ist. -->
+        <p class="muted" id="pn-rund-hinweis" style="display:none; margin-top:14px; font-size:13px;">
+          Eine Nachricht an <strong>alle</strong> geht nicht hier, sondern über die Rundnachricht
+          im Tab „Einstellungen“.
+        </p>
+
+        <div class="pn-trenner"></div>
+      </div>
+
+      <div id="pn-eingang-block">
+        <h3 style="margin:0 0 10px;">Für mich</h3>
+        <div id="pn-eingang"></div>
+      </div>
+
+      <details class="pn-details" id="pn-ausgang-block" style="display:none;">
+        <summary>Von mir verschickt</summary>
+        <div id="pn-ausgang"></div>
+      </details>
+
+      <p class="muted" id="pn-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
     </details>
 
     <!-- Freigabe für die Kontaktliste (seit 2026-08-13). Stand bis dahin in
@@ -845,6 +952,16 @@
         Sperrbildschirm, wo auch andere mitlesen können: keine Namen und nichts Vertrauliches.
         Wer den Schalter „Mitteilungen des Vereins“ in seinem Konto ausgeschaltet hat, bekommt nichts.
       </p>
+      <!-- Wegweiser zur Privatnachricht (seit 2026-08-30). Beide Wege bleiben
+           bewusst getrennt (Michel-Entscheidung), deshalb zeigt jeder auf den
+           anderen — sonst überlegt man bei jedem Mal, welcher Knopf der richtige
+           ist. Der Gegenhinweis steht in der Karte „Privatnachrichten“ im Tab
+           „Mein Konto“; wer einen anfasst, prüft den anderen. -->
+      <p class="muted" style="margin-bottom:14px; font-size:13px;">
+        Für eine Nachricht an <strong>einzelne Personen</strong> — etwa weil dort noch etwas fehlt —
+        gibt es die Privatnachricht im Tab „Mein Konto“. Die geht zusätzlich per E-Mail
+        und bleibt im Postfach des Empfängers liegen.
+      </p>
       <div class="form-grid" style="align-items:flex-end;">
         <!-- Der Emoji-Knopf steht bei JEDEM der beiden Felder, nicht einmal für
              beide: welches Feld gemeint ist, muss vor dem Klick feststehen. Ein
@@ -919,6 +1036,25 @@
       <p class="muted" id="rund-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
       <p class="muted" id="rund-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
       <div id="rund-verlauf" style="margin-top:14px;"></div>
+    </details>
+
+    <!-- Protokoll der Privatnachrichten (seit 2026-08-30, nur Admin).
+         ⚠️ Es steht hier KEIN Text und KEINE Überschrift — nur wer wann an wen
+         geschrieben hat und ob es gelesen wurde (Michel-Entscheidung, gleiche
+         Linie wie bei den Kinderschutz-Meldungen). Das reicht für die Frage, um
+         die es geht: schreibt hier jemand dreißig Leute am Tag an? Wer dieses
+         Panel je um den Text erweitert, muss den Satz in der Schreibmaske und den
+         Datenschutz-Hinweis mitziehen — sonst ist es ein gebrochenes
+         Versprechen. -->
+    <details class="card collapsible" id="admin-pn-panel" style="display:none;">
+      <summary>Privatnachrichten — Protokoll</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Wer hat wann an wen geschrieben. <strong>Der Inhalt steht hier bewusst nicht</strong> —
+        weder Überschrift noch Text. Das Protokoll ist dafür da, auffälligen Gebrauch zu
+        erkennen, nicht zum Mitlesen.
+      </p>
+      <p class="muted" id="admin-pn-status" style="margin-bottom:14px;">Zum Laden aufklappen.</p>
+      <div id="admin-pn-liste"></div>
     </details>
 
     <!-- Materialcontainer-Code (nur Admin) -->
@@ -1725,7 +1861,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=5.3"></script>
-<script src="app.js?v=1.98"></script>
+<script src="config.js?v=5.4"></script>
+<script src="app.js?v=1.99"></script>
 </body>
 </html>
