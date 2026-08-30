@@ -3653,8 +3653,10 @@ function isVertragspflichtig(usersDoc, username) {
 // gar nichts -- Michel-Feedback 2026-07-14: "nicht vollständig sollte auch angezeigt
 // werden", nicht nur stillschweigend fehlen.
 // Seit 2026-07-17 zweistufig: für NICHT-Vertragspflichtige (die in Trainerdaten nur
-// noch Kontaktdaten sehen) ist die Ampel allein "E-Mail hinterlegt". Das mitgelieferte
+// noch Kontaktdaten sehen) zählen allein die Stammdaten. Das mitgelieferte
 // vertragspflichtig-Flag sagt dem Dashboard, welche der beiden Ampeln es anzeigt.
+// Seit Trainerdaten 1.9 (2026-08-30) sind das nicht mehr nur Name + E-Mail, sondern
+// auch Geburtsdatum, Anschrift und Telefon -- siehe stammdatenOk unten.
 async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -3678,21 +3680,30 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   const vertragspflichtig = isVertragspflichtig(session.usersDoc, session.username);
   const zeigeBadge = summary.vorhanden || vertragspflichtig;
 
+  // Die Stammdaten, die seit Trainerdaten 1.9 JEDER liefern muss.
+  // ⚠️ Dieselbe Liste steht dort als STAMMDATEN_PFLICHT (submit-worker.js) und als
+  // TRAINER_STAMMDATEN_PFLICHT (app.js). Läuft sie hier auseinander, zeigt die Kachel
+  // Grün für einen Datensatz, den das Formular selbst nicht mehr speichern würde --
+  // genau der Fall aus [[feedback-status-fallback-parity]].
+  // vorname/nachname fehlen bewusst: sie stehen nicht in buildTrainerdatenSummary,
+  // sondern am Konto, und ohne sie gäbe es hier gar keine Sitzung.
+  const stammdatenOk = ["geburtsdatum", "strasse", "plz", "ort", "telefon", "email"]
+    .every((k) => String(summary[k] || "").trim() !== "");
+
   // Zwei Ampeln, weil es zwei Populationen gibt (seit 2026-07-17): Wer keinen
   // Trainervertrag braucht (Geschäftsführung o.ä.), sieht in Trainerdaten gar keine
   // Bankverbindung/Unterschrift/Dokumente mehr und kann die volle Bedingung deshalb
   // NIE erfüllen -- er bekäme dauerhaft ein rotes Kreuz für etwas, das er weder sieht
-  // noch soll. Für ihn zählt allein die E-Mail: der einzige Grund, warum er das
-  // Formular überhaupt ausfüllt (Kontaktaufnahme), und clientseitig sein einziges
-  // zusätzliches Pflichtfeld -- Anzeige und Ampel bleiben so deckungsgleich, siehe
-  // [[feedback-status-fallback-parity]].
+  // noch soll. Für ihn zählen genau die Stammdaten, die er auch im Formular sieht --
+  // Anzeige und Ampel bleiben so deckungsgleich.
   let trainerdatenGesamtOk;
   if (!zeigeBadge) {
     trainerdatenGesamtOk = null;
   } else if (!vertragspflichtig) {
-    trainerdatenGesamtOk = !!summary.email;
+    trainerdatenGesamtOk = stammdatenOk;
   } else {
     trainerdatenGesamtOk = !!(
+      stammdatenOk &&
       summary.unterschriftAm &&
       lizenzOk &&
       summary.fuehrerscheinGueltig === true &&
