@@ -359,6 +359,11 @@
 //      plus Bearbeiten-Recht-Check wie dav-save für Apps in WRITE_REQUIRES_EDIT_PERMISSION)
 //   POST { action: "dav-file-get", app, id } + Authorization: Bearer    -> rohe Datei-Bytes (Content-Type von Nextcloud) | 404
 //   POST { action: "dav-file-delete", app, id } + Authorization: Bearer -> { ok:true } (204/404 = Erfolg beim Aufräumen; Bearbeiten-Recht-Check wie dav-file-put)
+//   POST { action: "wiki-frage-log", frage, dokumentAnzahl?, status?, fehler? } + Authorization: Bearer -> { ok:true }
+//     (schreibt eine an das Toolbox Wiki gestellte Frage ins Protokoll; ruft NUR der vereinswiki-Worker per Service
+//      Binding mit dem Token des Fragenden auf. Recht = Tool-Sichtbarkeit, damit auch Nur-Seher protokolliert werden.)
+//   POST { action: "wiki-fragen-list" } + Authorization: Bearer          -> { fragen:[...], max } (neueste zuerst; nur mit Bearbeiten-Recht für vereinswiki)
+//   POST { action: "wiki-fragen-loeschen", id | alle:true } + Auth Bearer -> { ok:true, anzahl } (dito Bearbeiten-Recht)
 //   POST { action: "dav-restricted-put", app, contentType, dataBase64 } + Bearer -> { ok:true }
 //     (abgeschotteter Datei-Upload: die Datei wird IMMER unter dem eigenen, aus dem Token stammenden
 //      Nutzernamen abgelegt und ist NUR für Eigentümer/viewGroupId/Admin lesbar — für sensible
@@ -1698,6 +1703,14 @@ export default {
         return handleSchulsportSchuljahrArchivieren(request, body, env, authHeader, corsHeaders);
       case "schulsport-erinnerung-push":
         return handleSchulsportErinnerungPush(request, body, env, authHeader, corsHeaders, ctx);
+      // Toolbox-Wiki-Frageprotokoll (seit 2026-08-30). wiki-frage-log schreibt der
+      // vereinswiki-Worker, die beiden anderen ruft die Vereinswiki-Oberflaeche.
+      case "wiki-frage-log":
+        return handleWikiFrageLog(request, body, env, authHeader, corsHeaders);
+      case "wiki-fragen-list":
+        return handleWikiFragenList(request, body, env, authHeader, corsHeaders);
+      case "wiki-fragen-loeschen":
+        return handleWikiFragenLoeschen(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-ordner-anlegen":
         return handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-spielbericht-hochladen":
@@ -10134,6 +10147,135 @@ async function handleFotoauftragLoeschen(request, body, env, authHeader, corsHea
       // mehr an, ein erneuter Versuch auf frischem Stand ist folgenlos wiederholbar.
       return json({ error: "Auftrag wurde zwischenzeitlich verändert — bitte neu laden und erneut versuchen", conflict: true }, 409, corsHeaders);
     }
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+}
+
+// ---------- Aktionen: Toolbox-Wiki-Frageprotokoll ----------
+//
+// Jede an den vereinswiki-Worker gestellte Frage wird hier mitgeschrieben --
+// damit die Bearbeiter sehen, wonach im Verein tatsaechlich gesucht wird, und
+// die Wissensbasis gezielt ergaenzen koennen (eine Frage ohne Antwort ist ein
+// fehlendes Dokument). Geschrieben wird mit dem Token des Fragenden, GELESEN
+// nur mit Bearbeiten-Recht fuer "vereinswiki": Frage samt Name ist eine
+// personenbezogene Angabe und gehoert nicht in die Sicht jedes Nutzers.
+//
+// ⚠️ Bewusst KEIN zweiter DAV_APPS-Eintrag (gleiche Begruendung wie beim
+// Schulsport-Archiv): eine App-Id ohne Eintrag in config.tools kommt an
+// userMayAccessTool nicht vorbei, alle Nicht-Admins bekaemen 403. Stattdessen
+// drei schmale Aktionen, die die Rechte des Toolbox-Wikis mitbenutzen. Und
+// bewusst KEIN generisches dav-save: vereinswiki steht in
+// WRITE_REQUIRES_EDIT_PERMISSION, ein Nur-Seher koennte damit gar nichts
+// protokollieren -- ausgerechnet seine Fragen sind aber die interessanten.
+const VEREINSWIKI_FRAGEN_URL =
+  "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki-fragen.json";
+
+// Wie viele Fragen aufgehoben werden. Die Datei wird bei JEDER Frage komplett
+// gelesen und wieder geschrieben -- ein unbegrenztes Protokoll macht mit der
+// Zeit jede Frage langsamer. Aelteste fliegen raus.
+const VEREINSWIKI_FRAGEN_MAX = 500;
+
+function normalisiereFrageProtokoll(doc) {
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.fragen)) return { version: 1, fragen: [] };
+  return { version: 1, fragen: doc.fragen.filter((f) => f && typeof f === "object" && f.id) };
+}
+
+// Read-modify-write mit ETag; bei einem Konflikt (zwei Leute fragen im selben
+// Moment) EINMAL auf frischem Stand wiederholen. Der mutator muss deshalb
+// idempotent sein -- beide Aufrufer arbeiten ueber eine eigene id bzw. filtern.
+async function mutiereFrageProtokoll(authHeader, mutator) {
+  let letzterFehler = null;
+  for (let versuch = 0; versuch < 2; versuch++) {
+    jsonCache.delete(VEREINSWIKI_FRAGEN_URL);
+    const { data, rev } = await readJsonWithRev(VEREINSWIKI_FRAGEN_URL, authHeader, null);
+    const doc = normalisiereFrageProtokoll(data);
+    mutator(doc);
+    try {
+      // Beim allerersten Schreiben existiert die Datei noch nicht: ohne ifMatch
+      // legt writeJson den fehlenden Ordner selbst an (409/404-Zweig).
+      await writeJson(VEREINSWIKI_FRAGEN_URL, authHeader, doc, data ? rev : null);
+      return doc;
+    } catch (e) {
+      if (!(e instanceof ConflictError)) throw e;
+      letzterFehler = e;
+    }
+  }
+  throw letzterFehler;
+}
+
+// ---------- wiki-frage-log ----------
+// Ruft NUR der vereinswiki-Worker auf (Service Binding, mit dem Token des
+// Fragenden -- dadurch steht im Protokoll, WER gefragt hat, ohne dass der
+// Worker dafuer eigene Rechte braeuchte).
+async function handleWikiFrageLog(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("vereinswiki", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const frage = capStr(body.frage, 1000);
+  if (!frage) return json({ error: "Keine Frage übergeben" }, 400, corsHeaders);
+
+  const user = getOwn(session.usersDoc.users, session.username);
+  const anzahl = Number(body.dokumentAnzahl);
+  const eintrag = {
+    id: crypto.randomUUID(),
+    wann: new Date().toISOString(),
+    username: session.username,
+    wer: (user && user.vorname && user.nachname) ? `${user.vorname} ${user.nachname}` : session.username,
+    frage,
+    dokumentAnzahl: Number.isFinite(anzahl) ? Math.max(0, Math.floor(anzahl)) : null,
+    status: body.status === "fehler" ? "fehler" : "ok",
+    fehler: capStr(body.fehler, 300)
+  };
+
+  try {
+    await mutiereFrageProtokoll(authHeader, (doc) => {
+      if (doc.fragen.some((f) => f.id === eintrag.id)) return; // idempotent fuer den Konflikt-Retry
+      doc.fragen.push(eintrag);
+      if (doc.fragen.length > VEREINSWIKI_FRAGEN_MAX) {
+        doc.fragen = doc.fragen.slice(doc.fragen.length - VEREINSWIKI_FRAGEN_MAX);
+      }
+    });
+  } catch (e) {
+    // Das Protokoll ist Beiwerk und darf eine Antwort nie kippen: Fehler wird
+    // gemeldet, aber mit 200, damit der aufrufende Worker nichts abbricht.
+    return json({ ok: false, error: "Protokoll konnte nicht geschrieben werden: " + e.message }, 200, corsHeaders);
+  }
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// ---------- wiki-fragen-list ----------
+// Neueste zuerst. Bearbeiten-Recht statt blosser Sichtbarkeit, siehe Kopf.
+async function handleWikiFragenList(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("vereinswiki", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+  const doc = normalisiereFrageProtokoll(await readJson(VEREINSWIKI_FRAGEN_URL, authHeader, null));
+  return json({ fragen: doc.fragen.slice().reverse(), max: VEREINSWIKI_FRAGEN_MAX }, 200, corsHeaders);
+}
+
+// ---------- wiki-fragen-loeschen ----------
+// Einzelne Frage (id) oder das ganze Protokoll (alle:true). Loeschen gehoert
+// hierher, weil Fragen personenbezogen sind -- ohne diesen Weg gaebe es keine
+// Moeglichkeit, eine versehentlich mitgeschriebene Angabe wieder loszuwerden.
+async function handleWikiFragenLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("vereinswiki", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+  const alle = body.alle === true;
+  const id = capStr(body.id, 64);
+  if (!alle && !id) return json({ error: "Keine Frage angegeben" }, 400, corsHeaders);
+  try {
+    const doc = await mutiereFrageProtokoll(authHeader, (d) => {
+      d.fragen = alle ? [] : d.fragen.filter((f) => f.id !== id);
+    });
+    return json({ ok: true, anzahl: doc.fragen.length }, 200, corsHeaders);
+  } catch (e) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 }
