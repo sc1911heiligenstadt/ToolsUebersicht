@@ -2722,3 +2722,8 @@ nav .nav-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: inherit
   overflow-wrap: anywhere;
 }
 .pn-tabelle th { color: var(--muted); font-weight: 600; }
+
+/* Der Knopf unter einer gekürzten Nachrichtenliste (seit 2026-08-30). Steht
+   linksbündig unter dem letzten Eintrag, nicht mittig: er ist die Fortsetzung
+   der Liste, kein Abschluss. */
+.pn-mehr { margin: 4px 0 10px; }

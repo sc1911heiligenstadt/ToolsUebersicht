@@ -10622,6 +10622,23 @@ function downloadsKarteLeeren() {
 let pnState = null;          // Antwort von pn-info (erst beim Oeffnen des Tabs geholt)
 let pnAuswahl = new Set();   // angehakte Empfaenger, ueberlebt das Neuzeichnen der Liste
 
+// Wie viele Nachrichten je Liste zu sehen sind, bevor der Knopf "alle anzeigen"
+// kommt. Michel-Wunsch vom 2026-08-30, nachdem der Postausgang beim ersten Blick
+// unbegrenzt war: bei zehn Anstupsern die Woche stehen nach drei Monaten rund 130
+// Eintraege untereinander in einer aufgeklappten Karte.
+//
+// Rein clientseitig gekuerzt, KEIN Worker-Deploy. Der Server liefert weiter alles
+// -- deshalb braucht der Knopf keinen zweiten Aufruf, und die Zahl darin ist die
+// echte Gesamtzahl, keine geschaetzte.
+const PN_SICHTBAR = 20;
+
+// Muss das Neuzeichnen ueberleben. `pnGelesenMelden` und `pnLoeschen` rufen
+// `ladePrivatnachrichten()`, das die Liste komplett neu baut -- ohne diese beiden
+// Merker klappte die Liste bei jedem "Gelesen"-Klick wieder zusammen, genau
+// waehrend man sie durchgeht. Zurueckgesetzt wird in `pnKarteLeeren()`.
+let pnAlleEingang = false;
+let pnAlleAusgang = false;
+
 // Wie viele ungelesene Nachrichten liegen fuer mich bereit?
 //
 // ⚠️ Der Zaehler kommt aus `ansicht.json` (`nachrichtenNeu`), die beim Seitenaufbau
@@ -10702,6 +10719,35 @@ async function ladePrivatnachrichten() {
   if (ungelesen) card.open = true;
 }
 
+// Kuerzt eine Liste auf PN_SICHTBAR -- aber als `wichtig` markierte Eintraege
+// kommen IMMER mit, egal an welcher Stelle sie stehen. Die Reihenfolge der Quelle
+// bleibt erhalten (neueste zuerst); es wird nur ausgeduennt, nie umsortiert.
+function pnGekuerzt(liste, alleZeigen, wichtig) {
+  if (alleZeigen || liste.length <= PN_SICHTBAR) return liste;
+  // Erst die wichtigen -- sind es mehr als PN_SICHTBAR, kommen sie trotzdem alle
+  // mit und die Schleife darunter bricht sofort ab.
+  const behalten = new Set(liste.filter(wichtig));
+  for (const n of liste) {
+    if (behalten.size >= PN_SICHTBAR) break;
+    behalten.add(n);
+  }
+  // Ueber die QUELLE laufen, nicht ueber das Set: ein Set behaelt die
+  // Einfuegereihenfolge, und die waere hier "erst alle ungelesenen, dann der
+  // Rest" -- also nach Zustand sortiert statt nach Datum.
+  return liste.filter((n) => behalten.has(n));
+}
+
+// Der Knopf unter einer gekuerzten Liste. Nennt die ECHTE Gesamtzahl, nicht eine
+// geschaetzte -- der Server liefert ohnehin alles, gekuerzt wird nur die Anzeige.
+function pnMehrKnopf(gesamt, gezeigt, alleZeigen, welche) {
+  if (gesamt <= PN_SICHTBAR) return "";
+  if (gesamt <= gezeigt && !alleZeigen) return "";
+  const txt = alleZeigen
+    ? "Weniger anzeigen"
+    : "Alle " + gesamt + " anzeigen (" + (gesamt - gezeigt) + " weitere)";
+  return '<div class="pn-mehr"><button type="button" class="btn secondary small" data-pn-mehr="' + welche + '">' + escapeHtml(txt) + '</button></div>';
+}
+
 function renderPrivatnachrichten() {
   const st = document.getElementById("pn-status");
   const schreiben = document.getElementById("pn-schreiben");
@@ -10723,7 +10769,14 @@ function renderPrivatnachrichten() {
     ? (ungelesen ? `${ungelesen} ungelesen von ${eingang.length}` : `${eingang.length} gelesen`)
     : "Für dich liegt gerade nichts vor.";
 
-  eingangEl.innerHTML = eingang.map((n) => {
+  // Ungelesene zaehlen NICHT gegen die Grenze und sind immer alle sichtbar --
+  // dieselbe Regel wie beim Empfaenger-Picker, wo ein gesetzter Haken nie
+  // ausgeblendet wird. Eine aeltere ungelesene Nachricht steht weiter unten in
+  // der nach Datum sortierten Liste; fiele sie unter den Strich, verschwaende
+  // ausgerechnet das, worauf das rote Abzeichen zeigt.
+  const eingangSichtbar = pnGekuerzt(eingang, pnAlleEingang, (n) => !n.gelesenAm);
+
+  eingangEl.innerHTML = eingangSichtbar.map((n) => {
     const neu = !n.gelesenAm;
     const ziel = n.ziel ? `<a class="btn-link secondary small" href="${escapeHtml(n.ziel)}">Dorthin wechseln</a>` : "";
     return `<div class="pn-eintrag${neu ? " pn-neu" : ""}" data-pn-id="${escapeHtml(n.id)}">
@@ -10740,11 +10793,15 @@ function renderPrivatnachrichten() {
       </div>
     </div>`;
   }).join("") || '<p class="muted">Keine Nachrichten.</p>';
+  eingangEl.innerHTML += pnMehrKnopf(eingang.length, eingangSichtbar.length, pnAlleEingang, "eingang");
 
   const ausgang = Array.isArray(d.postausgang) ? d.postausgang : [];
   if (ausgangBlock) ausgangBlock.style.display = ausgang.length ? "block" : "none";
   if (ausgangEl) {
-    ausgangEl.innerHTML = ausgang.map((n) => {
+    // Im Postausgang ist das Gegenstueck zur ungelesenen Nachricht die noch nicht
+    // gelesene: sie ist der Grund, warum man hier ueberhaupt hineinschaut.
+    const ausgangSichtbar = pnGekuerzt(ausgang, pnAlleAusgang, (n) => !n.gelesenAm);
+    ausgangEl.innerHTML = ausgangSichtbar.map((n) => {
       // Die Lesebestaetigung ist der eigentliche Wert des Postausgangs: ohne sie
       // erfaehrt der Absender nie, ob sein Anstupser angekommen ist.
       const gelesen = n.gelesenAm
@@ -10760,7 +10817,7 @@ function renderPrivatnachrichten() {
         <p class="muted pn-meta">an ${escapeHtml(n.anName)} · ${escapeHtml(pnDatum(n.am))} · ${escapeHtml(wege.join(", "))}</p>
         <p class="muted pn-meta">${gelesen}</p>
       </div>`;
-    }).join("");
+    }).join("") + pnMehrKnopf(ausgang.length, ausgangSichtbar.length, pnAlleAusgang, "ausgang");
   }
 
   pnPersonenZeichnen();
@@ -10934,6 +10991,10 @@ async function pnLoeschen(id) {
 function pnKarteLeeren() {
   pnState = null;
   pnAuswahl = new Set();
+  // Aufgeklappte Listen ebenfalls zurueck: an einem geteilten Geraet soll die
+  // naechste Person nicht in einer weit aufgezogenen Liste landen.
+  pnAlleEingang = false;
+  pnAlleAusgang = false;
   const card = document.getElementById("pn-panel");
   if (!card) return;
   card.style.display = "none";
@@ -10969,6 +11030,17 @@ function setupPrivatnachrichten() {
       if (g) return pnGelesenMelden(g.getAttribute("data-pn-gelesen"));
       const l = e.target.closest("[data-pn-loeschen]");
       if (l) return pnLoeschen(l.getAttribute("data-pn-loeschen"));
+      const m = e.target.closest("[data-pn-mehr]");
+      if (m) { pnAlleEingang = !pnAlleEingang; renderPrivatnachrichten(); }
+    });
+  }
+  // Eigener Listener: der Postausgang liegt in einem anderen Container, ein Klick
+  // dort steigt nicht durch #pn-eingang auf.
+  const ausgangC = document.getElementById("pn-ausgang");
+  if (ausgangC) {
+    ausgangC.addEventListener("click", (e) => {
+      const m = e.target.closest("[data-pn-mehr]");
+      if (m) { pnAlleAusgang = !pnAlleAusgang; renderPrivatnachrichten(); }
     });
   }
   const personen = document.getElementById("pn-personen");
