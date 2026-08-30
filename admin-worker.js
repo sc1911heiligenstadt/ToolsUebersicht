@@ -2454,6 +2454,21 @@ async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
 
 // ---------- Aktionen: Gruppen ----------
 
+// Zwei Gruppen werden flottenweit über ihren NAMEN gefunden, nicht über die Id:
+// "Trainer" (isVertragspflichtig, handleGetAdminStats) und "Spieler"
+// (ensureSpielerGruppe). Das ist Absicht — die Id zieht bei einer Umbenennung
+// nicht nach, siehe der Kommentar an TRAINER_GROUP_NAME. Damit der Name diese
+// Rolle tragen kann, muss er unveränderlich sein: eine Umbenennung von
+// "Trainer" liesse isVertragspflichtig für JEDEN false liefern — niemand wäre
+// mehr vertragspflichtig, die Vertrags-Ampel würde flottenweit grün und keine
+// Erinnerung ginge mehr raus, alles ohne eine einzige Fehlermeldung. Ein
+// zweiter gleichnamiger Eintrag wäre genauso schlimm, weil `find()` dann die
+// erstbeste Gruppe nimmt.
+// Nur handleGetAdminStats behandelt das Fehlen bisher sauber (exists:false).
+function istSystemGruppenName(name) {
+  return name === TRAINER_GROUP_NAME || name === SPIELER_GROUP_NAME;
+}
+
 async function handleCreateGroup(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
@@ -2463,6 +2478,11 @@ async function handleCreateGroup(request, body, env, authHeader, corsHeaders) {
 
   const usersDoc = session.usersDoc;
   if (!usersDoc.groups) usersDoc.groups = {};
+
+  if (istSystemGruppenName(name) &&
+      Object.values(usersDoc.groups).some((g) => g && g.name === name)) {
+    return json({ error: `Es gibt bereits eine Gruppe "${name}". Zwei Gruppen mit diesem Namen würden die Zuordnung unbrauchbar machen.` }, 409, corsHeaders);
+  }
 
   const baseId = slugifyGroupName(name);
   const id = uniqueGroupId(baseId, new Set(Object.keys(usersDoc.groups)));
@@ -2505,6 +2525,14 @@ async function handleRenameGroup(request, body, env, authHeader, corsHeaders) {
   // Prototyp und der Handler schriebe an einem Objekt herum, das keine Gruppe ist.
   const group = getOwn(usersDoc.groups || {}, groupId);
   if (!group) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
+
+  // Siehe istSystemGruppenName: bei diesen beiden ist der Name der Schlüssel.
+  if (istSystemGruppenName(group.name)) {
+    return json({ error: `Die Gruppe "${group.name}" wird im ganzen Gateway an ihrem Namen erkannt und kann deshalb nicht umbenannt werden.` }, 409, corsHeaders);
+  }
+  if (istSystemGruppenName(name)) {
+    return json({ error: `"${name}" ist für die gleichnamige Gruppe reserviert.` }, 409, corsHeaders);
+  }
 
   // Kein Fehler bei gleichem Namen, aber auch kein Schreibvorgang: nutzer.json
   // wird bei jeder Sitzungspruefung der ganzen Flotte gelesen, ein Write ohne
@@ -4033,7 +4061,13 @@ async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
 
   const groupId = String(body.groupId || "");
   const usersDoc = session.usersDoc;
-  if (!getOwn(usersDoc.groups || {}, groupId)) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
+  const zuLoeschen = getOwn(usersDoc.groups || {}, groupId);
+  if (!zuLoeschen) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
+  // Siehe istSystemGruppenName — löschen hat dieselbe Wirkung wie umbenennen:
+  // die Namenssuche läuft danach für jeden ins Leere.
+  if (istSystemGruppenName(zuLoeschen.name)) {
+    return json({ error: `Die Gruppe "${zuLoeschen.name}" wird im ganzen Gateway an ihrem Namen erkannt und kann deshalb nicht gelöscht werden.` }, 409, corsHeaders);
+  }
   delete usersDoc.groups[groupId];
 
   try {

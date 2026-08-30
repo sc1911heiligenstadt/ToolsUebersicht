@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.39",
+    groups: [
+      {
+        title: "Die Gruppen „Trainer“ und „Spieler“ sind jetzt geschützt",
+        items: [
+          "Diese beiden Gruppen werden im ganzen Gateway an ihrem Namen erkannt — nicht an einer internen Nummer wie alle anderen.",
+          "Wer sie umbenannt hätte, hätte damit still die Vertragspflicht abgeschaltet: Das Zeichen auf der Trainerdaten-Kachel wäre für alle grün geworden und es wäre keine Erinnerung mehr rausgegangen. Ohne Fehlermeldung, ohne dass es jemand gemerkt hätte.",
+          "Umbenennen und Löschen sind für diese zwei Gruppen deshalb nicht mehr möglich, und ein zweiter Eintrag mit demselben Namen lässt sich nicht mehr anlegen. Alle anderen Gruppen bleiben frei änderbar."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.38",
     groups: [
       {
