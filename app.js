@@ -249,6 +249,9 @@ function logout() {
   currentToken = null;
   currentUser = null;
   trainerdatenStatus = null;
+  // Sonst ueberspränge die Pflichtdaten-Erinnerung genau den, der sich als Naechster
+  // an diesem Geraet anmeldet -- der Merker gehoert zur Anmeldung, nicht zum Tab.
+  try { sessionStorage.removeItem(PFLICHTDATEN_MERKER); } catch (e) { /* privater Modus */ }
   pendingFirstLoginUsername = null;
   pendingLoginUsername = null;
   storeToken(null);
@@ -2693,7 +2696,39 @@ async function loadBirthdaysToday() {
 // Trainerrolle) -- NICHT mehr res.vorhanden allein: eine vertragspflichtige Person
 // ohne jeden Datensatz soll trotzdem ein rotes "Daten unvollständig" sehen statt
 // gar nichts (seit 2026-07-14, siehe admin-worker.js).
-async function loadTrainerdatenStatus() {
+// Merker fuer die Pflichtdaten-Weiterleitung (siehe pflichtdatenWeiterleitung).
+// sessionStorage statt localStorage: "einmal je Anmeldung" heisst einmal je Tab und
+// nicht einmal fuer immer -- wer morgen wiederkommt, soll wieder erinnert werden.
+const PFLICHTDATEN_MERKER = "td_pflichtdaten_geschickt";
+
+// Wer seine Pflichtangaben in Trainerdaten nicht vollstaendig hat, wird beim Anmelden
+// EINMAL je Browser-Sitzung dorthin geschickt (Michel, 2026-08-30: "sofort in die
+// Trainerdaten bringen und darauf hinweisen").
+//
+// ⚠️ Nur bei ausdruecklichem `false`. Ein noch nicht deployter Worker liefert das Feld
+// gar nicht -- dann darf hier NIEMAND weggeschickt werden. Geschlossene Richtung.
+//
+// ⚠️ Der Merker MUSS vor dem Sprung stehen, sonst landet man nach dem Zurueckgehen
+// sofort wieder dort und kommt aus der Schleife nicht mehr raus. Aus demselben Grund
+// bricht ein nicht schreibbarer sessionStorage (privater Modus) den Sprung ganz ab:
+// lieber keine Erinnerung als eine Falle.
+//
+// ⚠️ Gleicher Tab (location.href), nicht window.open: ein Popup faengt der Blocker ab,
+// und der Sprung passiert ohne Klick -- da blockt jeder Browser.
+function pflichtdatenWeiterleitung(res) {
+  if (!res || res.stammdatenOk !== false) return;
+  try {
+    if (sessionStorage.getItem(PFLICHTDATEN_MERKER)) return;
+    sessionStorage.setItem(PFLICHTDATEN_MERKER, "1");
+  } catch (e) {
+    return;
+  }
+  const tool = TOOLS.find((t) => t.id === "trainerdaten");
+  if (!tool) return;
+  location.href = tool.url + "?pflichtdaten=1";
+}
+
+async function loadTrainerdatenStatus(opts) {
   _trainerdatenStatusLastFetch = Date.now();
   if (!currentUser || !isVisibleToUser("trainerdaten", currentUser)) {
     trainerdatenStatus = null;
@@ -2702,6 +2737,10 @@ async function loadTrainerdatenStatus() {
   try {
     const res = await callWorker("my-trainerdaten-status", {});
     trainerdatenStatus = (res && res.trainerdatenGesamtOk !== null) ? res : null;
+    // Bewusst NACH der Zuweisung: der Sprung braucht `res`, das Badge nur den Teil
+    // davon. Und bewusst nur, wenn der Aufrufer es erlaubt -- der
+    // visibilitychange-Listener ruft diese Funktion alle zehn Sekunden.
+    if (opts && opts.darfWeiterleiten) pflichtdatenWeiterleitung(res);
   } catch (e) {
     console.warn("Trainerdaten-Status nicht ladbar:", e);
     trainerdatenStatus = null;
@@ -9238,7 +9277,7 @@ async function afterAuthChange() {
   if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladeUnterlagen();
   if (currentUser && kontoOffen && kontoOffen.classList.contains("active")) ladePrivatnachrichten();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
-  await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus({ darfWeiterleiten: true }), loadTestspielplanerStatus()]);
   // Frueher stand hier vor loadAndRenderUsers() ein zweites renderKontoKarte(): die
   // Gruppennamen liessen sich erst nach loadAndRenderGroups() aufloesen. Seit "me"
   // sie als groupNames mitliefert, ist die Karte schon beim ersten Rendern vollstaendig.
@@ -10375,7 +10414,7 @@ async function init() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await Promise.all([loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus({ darfWeiterleiten: true }), loadTestspielplanerStatus()]);
   // Die Aufrufe laufen gemeinsam los, ausgewertet wird in Reihenfolge:
   // renderUsersList baut aus groupsState das Gruppen-Dropdown des Nutzer-Filters,
   // das also schon geladen sein muss, bevor loadAndRenderUsers() rendert.

@@ -3678,7 +3678,12 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     (!summary.trainerlizenzGueltigBis || summary.trainerlizenzGueltigBis >= heuteBerlin)
   );
   const vertragspflichtig = isVertragspflichtig(session.usersDoc, session.username);
-  const zeigeBadge = summary.vorhanden || vertragspflichtig;
+
+  // ⚠️ Spielerkonten sind hier komplett außen vor: sie sehen Trainerdaten gar nicht
+  // (PROVISION_APPS_SPIELER kennt nur den Kadermanager). Ohne diese Zeile bekämen sie
+  // ein rotes Badge und ab 1.37 sogar die Pflichtdaten-Weiterleitung -- in ein Tool,
+  // das sie nicht öffnen dürfen.
+  const istSpieler = session.art === USER_ART_SPIELER;
 
   // Die Stammdaten, die seit Trainerdaten 1.9 JEDER liefern muss.
   // ⚠️ Dieselbe Liste steht dort als STAMMDATEN_PFLICHT (submit-worker.js) und als
@@ -3687,8 +3692,15 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   // genau der Fall aus [[feedback-status-fallback-parity]].
   // vorname/nachname fehlen bewusst: sie stehen nicht in buildTrainerdatenSummary,
   // sondern am Konto, und ohne sie gäbe es hier gar keine Sitzung.
-  const stammdatenOk = ["geburtsdatum", "strasse", "plz", "ort", "telefon", "email"]
+  const stammdatenOk = istSpieler || ["geburtsdatum", "strasse", "plz", "ort", "telefon", "email"]
     .every((k) => String(summary[k] || "").trim() !== "");
+
+  // Wer noch gar keinen Datensatz hat, ist damit automatisch "nicht ok" -- genau der
+  // Erstanmelder, den das Dashboard hierher schicken soll. Deshalb reicht
+  // `vorhanden || vertragspflichtig` nicht mehr: sonst hätte ein Konto ohne
+  // Vertragspflicht und ohne Datensatz weder Badge noch Weiterleitung und bliebe
+  // für immer unbekannt.
+  const zeigeBadge = !istSpieler && (summary.vorhanden || vertragspflichtig || !stammdatenOk);
 
   // Zwei Ampeln, weil es zwei Populationen gibt (seit 2026-07-17): Wer keinen
   // Trainervertrag braucht (Geschäftsführung o.ä.), sieht in Trainerdaten gar keine
@@ -3740,7 +3752,10 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     }
   }
 
-  const antwort = json({ ...summary, trainerdatenGesamtOk, vertragspflichtig }, 200, corsHeaders);
+  // stammdatenOk geht IMMER mit raus, auch wenn trainerdatenGesamtOk null ist: das
+  // Dashboard entscheidet daran, ob es zum Ausfüllen weiterleitet, und braucht die
+  // Antwort gerade dann, wenn es (noch) kein Badge gibt.
+  const antwort = json({ ...summary, trainerdatenGesamtOk, vertragspflichtig, stammdatenOk }, 200, corsHeaders);
   if (pflichtenBonus) antwort.punkteBonus = { art: "pflichten", username: session.username };
   return antwort;
 }

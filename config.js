@@ -519,6 +519,21 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.37",
+    groups: [
+      {
+        title: "Fehlende Pflichtangaben führen direkt zu den Trainerdaten",
+        items: [
+          "Wer sich anmeldet und seine Pflichtangaben in „Trainerdaten“ noch nicht vollständig hinterlegt hat, wird beim Anmelden einmal dorthin gebracht — mit einem Hinweis, was genau fehlt.",
+          "Pflicht sind Vorname, Nachname, Geburtsdatum, Straße und Hausnummer, PLZ, Ort, Telefonnummer und E-Mail-Adresse. Wer einen Trainervertrag bekommt, zusätzlich IBAN, Bankname und die Erklärung zur Nebentätigkeit.",
+          "Das passiert höchstens einmal pro Anmeldung. Wer die Angaben gerade nicht zur Hand hat, geht über „Zurück zum Dashboard“ weiter und wird in dieser Sitzung nicht noch einmal geschickt.",
+          "Die Kachel „Trainerdaten“ zeigt jetzt auch dann ein rotes Kreuz, wenn noch gar keine Daten hinterlegt sind. Vorher blieb sie in dem Fall leer — man sah also nicht, dass etwas fehlt.",
+          "Spielerkonten sind davon nicht betroffen: Sie sehen die Trainerdaten gar nicht."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.36",
     groups: [
       {
