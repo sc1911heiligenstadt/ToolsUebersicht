@@ -404,7 +404,7 @@ const TOOLS = [
     // Zielgruppe — sie hier auszusperren wäre genau falsch.
     id: "kinderschutz",
     name: "Kinder- und Jugendschutz",
-    description: "Die Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ganz oben steht unsere Kinder- und Jugendschutzbeauftragte mit Foto und Erreichbarkeit, dazu ein Knopf zum Anrufen und einer zum Mailschreiben. Wer einen Verdacht oder Vorfall melden will, tut das über ein Formular — auf Wunsch anonym, mit Quittungsnummer zum späteren Nachschauen. Dazu das Schutzkonzept im Wortlaut, der Meldeweg in sechs Schritten, häufige Fragen, externe Hilfsangebote und eine eigene Fassung in einfacher Sprache für Kinder. Eine kurze Schulung mit Quiz weist nach, wer geschult ist. Meldungen lesen ausschließlich die eingetragenen Beauftragten — der Administrator ausdrücklich nicht.",
+    description: "Die Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ganz oben steht unsere Kinder- und Jugendschutzbeauftragte mit Foto und Erreichbarkeit, dazu ein Knopf zum Anrufen und einer zum Mailschreiben. Wer einen Verdacht oder Vorfall melden will, tut das über ein Formular — auf Wunsch anonym, mit Quittungsnummer zum späteren Nachschauen. Dazu das Schutzkonzept im Wortlaut, der Meldeweg in sechs Schritten, häufige Fragen, externe Hilfsangebote und eine eigene Fassung in einfacher Sprache für Kinder. Eine kurze Schulung mit Quiz weist nach, wer geschult ist. Am Ende dieser Schulung bestätigen Trainerinnen und Trainer auch das Schutzkonzept mit ihrer Unterschrift — die Bestätigung landet in ihrer Trainerakte. Meldungen lesen ausschließlich die eingetragenen Beauftragten — der Administrator ausdrücklich nicht.",
     url: "https://sc1911heiligenstadt.github.io/kinderschutz/",
     icon: "🛟",
     category: "Verein",
