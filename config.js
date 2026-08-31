@@ -342,7 +342,7 @@ const TOOLS = [
   {
     id: "schulsport",
     name: "Schulsport",
-    description: "Wochenplan und Nachweis der Sport- und Fußball-AGs an Schulen und im Hort sowie der Ferien-Camps: Eine AG wird einmal als Serie angelegt, die Termine des Schuljahres entstehen daraus von selbst und lassen Ferien automatisch aus. Nach jeder Einheit meldet der Übungsleiter am Handy, ob sie stattgefunden hat und wie viele Kinder da waren — daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den die Schule über einen Link auch digital gegenzeichnen kann.",
+    description: "Wochenplan und Nachweis der Sport- und Fußball-AGs an Schulen und im Hort. Eine AG wird einmal als Serie angelegt, die Termine des Schuljahres entstehen daraus von selbst und lassen Ferien automatisch aus. Nach jeder Einheit meldet der Übungsleiter am Handy, ob sie stattgefunden hat und wie viele Kinder da waren — daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den die Schule über einen Link auch digital gegenzeichnen kann. Ferien-Camps laufen nicht mehr hier, sondern im eigenen Werkzeug „Fußballcamp“.",
     url: "https://sc1911heiligenstadt.github.io/schulsport/",
     icon: "🏫",
     category: "Verein",
