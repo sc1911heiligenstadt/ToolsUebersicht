@@ -519,6 +519,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.41",
+    groups: [
+      {
+        title: "Nachrichten an viele Empfänger gehen jetzt zügig raus",
+        items: [
+          "Bei einer Nachricht an viele Leute wurden die E-Mails eine nach der anderen verschickt. Wer weit hinten in der Liste stand, bekam seine deutlich später — bei der erlaubten Höchstzahl von 200 Empfängern dauerte das gemessen über drei Sekunden reine Wartezeit.",
+          "Jetzt gehen sie in Gruppen zu zehn gleichzeitig raus. Dieselbe Menge braucht damit ein Zehntel der Zeit.",
+          "Für das Push aufs Handy war das schon immer so — nur beim E-Mail-Versand fehlte es.",
+          "Am Ergebnis ändert sich nichts: Jeder bekommt weiterhin genau eine eigene Nachricht, und eine fehlerhafte Adresse zieht die anderen nicht mit."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.40",
     groups: [
       {

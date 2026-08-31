@@ -23334,6 +23334,15 @@ const PN_PUSH_TEXT_MAX = 200;
 const PN_EMPFAENGER_MAX_BEARBEITER = 10;
 const PN_EMPFAENGER_MAX_ADMIN = 200;
 
+// Wie viele Mails gleichzeitig rausgehen. Gefunden bei der Bugjagd 2026-08-31:
+// der Versand lief eine nach der anderen, bei 200 erlaubten Empfaengern also 200
+// Brevo-Roundtrips nacheinander in EINEM waitUntil.
+//
+// ⚠️ Dieselbe Zahl wie PUSH_HAEPPCHEN, und aus demselben Grund: Workers deckeln
+// die gleichzeitigen Subrequests, und Brevo hat eine Rate-Grenze. Wer sie
+// hochsetzt, prueft beides nach.
+const PN_MAIL_HAEPPCHEN = 10;
+
 // Doppelklick-Sperre, wortgleich zur Rundnachricht: der Versand antwortet, bevor
 // Mail und Push draussen sind, und zurueckholen laesst sich beides nicht.
 const PN_SPERRE_MS = 15000;
@@ -23781,9 +23790,18 @@ async function handlePnSenden(request, body, env, authHeader, corsHeaders, execC
 
   const mailArbeit = (async () => {
     if (!env.BREVO_API_KEY) return;
-    for (const n of empfaenger) {
+
+    // Eine einzelne Mail. Bewusst eine eigene Funktion, damit unten ein Haeppchen
+    // daraus parallel laufen kann.
+    //
+    // ⚠️ Der try/catch bleibt HIER, um die einzelne Mail -- nicht um das
+    // Haeppchen. Sonst risse eine gescheiterte Adresse die neun anderen
+    // desselben Haeppchens mit, und der Fehler stuende nur einmal im Log statt
+    // beim Verursacher. Weil die Funktion damit nie wirft, kann das Promise.all
+    // unten auch nicht vorzeitig abbrechen.
+    const eineSenden = async (n) => {
       const adresse = mailKarte[n];
-      if (!adresse) continue;
+      if (!adresse) return;
       const u = getOwn(usersDoc.users, n);
       const koerper = {
         sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
@@ -23813,6 +23831,24 @@ async function handlePnSenden(request, body, env, authHeader, corsHeaders, execC
       } catch (e) {
         console.error("Privatnachricht-Mail fehlgeschlagen: " + (e && e.message ? e.message : e));
       }
+    };
+
+    // ⚠️ Haeppchenweise statt eine nach der anderen (Bugjagd 2026-08-31).
+    // Vorher lief hier eine reine Schleife mit `await` je Empfaenger. Bei
+    // PN_EMPFAENGER_MAX_ADMIN = 200 sind das 200 Brevo-Roundtrips nacheinander
+    // in EINEM waitUntil -- die Wall-Clock waechst linear mit der
+    // Empfaengerzahl, und wer hinten steht, bekommt seine Mail als Letzter oder
+    // gar nicht mehr. Dieselbe Datei macht es beim Push laengst richtig
+    // (PUSH_HAEPPCHEN, siehe pushSenden) -- nur hier fehlte es.
+    //
+    // ⚠️ Nicht alle auf einmal: Workers deckeln die gleichzeitigen Subrequests,
+    // und Brevo hat eine Rate-Grenze. Zehn parallel, dann die naechsten zehn --
+    // aus 200 Runden werden 20.
+    //
+    // ⚠️ Das `await` vor Promise.all muss bleiben. Ohne es liefen alle Haeppchen
+    // gleichzeitig los und die Drosselung waere wirkungslos.
+    for (let i = 0; i < empfaenger.length; i += PN_MAIL_HAEPPCHEN) {
+      await Promise.all(empfaenger.slice(i, i + PN_MAIL_HAEPPCHEN).map(eineSenden));
     }
   })();
   if (execCtx && typeof execCtx.waitUntil === "function") execCtx.waitUntil(mailArbeit);
