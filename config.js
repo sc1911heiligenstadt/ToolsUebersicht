@@ -519,6 +519,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.40",
+    groups: [
+      {
+        title: "Der Reiter „Info“ erklärt jetzt, was die App wirklich tut",
+        items: [
+          "Dort stand bisher ein einzelner Satz. Jetzt steht da, wofür die einzelnen Reiter da sind, was die App mit den Eingaben macht und wo etwas anderes hingehört.",
+          "Am Funktionsumfang ändert sich nichts — nur an der Beschreibung."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.39",
     groups: [
       {
