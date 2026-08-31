@@ -817,6 +817,10 @@ function summarizeProvisionReport(report) {
     const count = (x) => vals.filter((v) => v === x).length;
     const bits = [];
     if (count("created")) bits.push(`${count("created")} neu`);
+    // "aktualisiert" gibt es bisher nur bei Trainerdaten: ein alter Stub ohne
+    // vertragspflichtig-Feld hat es nachgetragen bekommen (siehe admin-worker.js
+    // provisionTrainerdaten). Ohne diese Zeile bliebe der Lauf als "—" stehen.
+    if (count("aktualisiert")) bits.push(`${count("aktualisiert")} ergänzt`);
     if (count("exists")) bits.push(`${count("exists")} vorhanden`);
     if (count("no-team")) bits.push(`${count("no-team")}× kein Team`);
     if (count("no-season")) bits.push(`${count("no-season")}× keine Saison`);

@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.43",
+    groups: [
+      {
+        title: "Ohne Häkchen „Vertrag benötigt“ landet der Eintrag als „Nur Kontaktdaten“",
+        items: [
+          "Wird ein Konto angelegt, das auch die Trainerdaten bekommt, entsteht dort automatisch ein Eintrag. Ob die Person einen Trainervertrag braucht, stand darin bisher nicht — die Verwaltung sah deshalb bei jedem neuen Konto Bankverbindung, Pauschale und Anlage 1, auch bei der Geschäftsstelle oder im Vorstand.",
+          "Neu wird beim Anlegen mitgeschrieben, ob ein Vertrag vorgesehen ist. Ohne Häkchen „Vertrag benötigt“ (und ohne Mitgliedschaft in der Gruppe „Trainer“) steht der Eintrag in den Trainerdaten sofort auf „Nur Kontaktdaten“, und die Vertragsfelder sind dort ausgeblendet.",
+          "Bereits vorhandene Einträge, die noch nie selbst eingereicht wurden, bekommen die Angabe beim nächsten Druck auf „Bestehende Mitglieder jetzt eintragen“ nachgetragen. Eine eingereichte Anmeldung und ein von Hand gesetzter Status werden dabei nie überschrieben."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.42",
     groups: [
       {

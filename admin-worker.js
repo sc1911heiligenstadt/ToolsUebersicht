@@ -2231,7 +2231,7 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
     const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
     const apps = provisionAppsForGroups(config, getUserGroupIds(usersDoc, username))
       .filter((app) => provisionErlaubtFuerArt(app, art));
-    if (apps.length) provisioned = await provisionUsers([usersDoc.users[username]], apps, env, authHeader);
+    if (apps.length) provisioned = await provisionUsers([usersDoc.users[username]], apps, env, authHeader, usersDoc);
   } catch (_) { /* Provisioning ist best effort */ }
 
   return json({ username, vorname, nachname, art, mustSetPassword: true, provisioned }, 201, corsHeaders);
@@ -4023,7 +4023,7 @@ async function handleUpdateGroupMembers(request, body, env, authHeader, corsHead
       const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
       const apps = provisionAppsForGroups(config, [groupId]);
       const members = added.map((u) => getOwn(usersDoc.users, u)).filter(Boolean);
-      if (apps.length && members.length) provisioned = await provisionUsers(members, apps, env, authHeader);
+      if (apps.length && members.length) provisioned = await provisionUsers(members, apps, env, authHeader, usersDoc);
     }
   } catch (_) { /* Provisioning ist best effort */ }
 
@@ -4050,7 +4050,7 @@ async function handleProvisionGroup(request, body, env, authHeader, corsHeaders)
 
   let provisioned = {};
   if (apps.length && members.length) {
-    provisioned = await provisionUsers(members, apps, env, authHeader);
+    provisioned = await provisionUsers(members, apps, env, authHeader, usersDoc);
   }
   return json({ provisioned, apps, memberCount: members.length }, 200, corsHeaders);
 }
@@ -11461,6 +11461,12 @@ function deriveIdentity(user, usersDoc) {
 // groupIds/editGroupIds). Rein ADDITIV und IDEMPOTENT: jeder Eintrag trägt
 // linkedUsername; ein zweiter Lauf legt kein Duplikat an, es wird nie etwas
 // gelöscht/überschrieben.
+//
+// ⚠️ EINE Ausnahme, siehe provisionTrainerdaten(): einem Trainerdaten-Stub, der noch
+// nie selbst eingereicht hat und keinen Admin-Status trägt, wird ein FEHLENDES
+// vertragspflichtig-Feld nachgetragen. Damit heilt "Bestehende Mitglieder jetzt
+// eintragen" die Einträge, die vor 2026-08-31 ohne dieses Feld angelegt wurden.
+// Überschrieben wird dabei nichts — nur ein Feld gefüllt, das gar nicht da war.
 
 // Nur diese Apps haben einen Adapter (die restlichen Tools bekommen keine Checkbox).
 const PROVISION_ADAPTERS = {
@@ -11498,13 +11504,17 @@ function provisionErlaubtFuerArt(app, art) {
   return art === USER_ART_SPIELER ? PROVISION_APPS_SPIELER.has(app) : true;
 }
 
-function provisionProfile(user) {
+function provisionProfile(user, usersDoc) {
   return {
     username: user.username,
     vorname: String(user.vorname || "").trim(),
     nachname: String(user.nachname || "").trim(),
     lizenz: user.lizenz || "",
-    mannschaften: Array.isArray(user.mannschaften) ? user.mannschaften : []
+    mannschaften: Array.isArray(user.mannschaften) ? user.mannschaften : [],
+    // Braucht dieses Konto überhaupt einen Trainervertrag? Gleiche Definition wie
+    // überall sonst (Gruppe "Trainer" ODER Häkchen "Vertrag benötigt", siehe
+    // isVertragspflichtig) — nur provisionTrainerdaten wertet es aus.
+    vertragspflichtig: isVertragspflichtig(usersDoc, user.username)
   };
 }
 
@@ -11598,10 +11608,19 @@ function provisionTrainerdaten(data, p) {
   if (!Array.isArray(data.trainer)) data.trainer = [];
   // Stub wie _createStubTrainer der App (ohne username -> Admin-Liste zeigt
   // "Unvollständig"; ein späteres Self-Submit merged per exaktem Namensabgleich).
-  const exists = data.trainer.some((t) =>
+  const vorhanden = data.trainer.find((t) =>
     (t.linkedUsername && sameText(t.linkedUsername, p.username)) ||
     sameNamePair(t.vorname, t.nachname, p.vorname, p.nachname));
-  if (exists) return "exists";
+  if (vorhanden) {
+    // Nachtragen statt überschreiben: nur wenn das Feld GANZ fehlt, der Eintrag noch
+    // nie selbst eingereicht hat (kein username) und der Admin keinen Status von Hand
+    // gesetzt hat. Eine spätere Einreichung und eine Handauswahl gehen also immer vor.
+    if (!vorhanden.username && !vorhanden.status && vorhanden.vertragspflichtig === undefined) {
+      vorhanden.vertragspflichtig = p.vertragspflichtig;
+      return "aktualisiert";
+    }
+    return "exists";
+  }
   data.trainer.push({
     id: crypto.randomUUID(),
     vorname: p.vorname,
@@ -11610,6 +11629,13 @@ function provisionTrainerdaten(data, p) {
     pauschale: "",
     erstelltAm: new Date().toISOString(),
     vertragsGeneriert: false,
+    // Ohne Vertragspflicht leitet Trainerdaten daraus den Status "Nur Kontaktdaten"
+    // ab und blendet Bankverbindung, Vertragsdaten, Anlage 1, Unterschrift und die
+    // Vertrags-Knöpfe aus (_trainerStatus / _applyDetailVertragsGate dort).
+    // Bewusst als Feld und NICHT als status-Override: ein späteres Self-Submit
+    // schreibt den dann gültigen Stand hinein (handleSubmit setzt status zurück),
+    // und der Admin kann den Status trotzdem jederzeit von Hand umstellen.
+    vertragspflichtig: p.vertragspflichtig,
     linkedUsername: p.username
   });
   return "created";
@@ -11632,26 +11658,27 @@ function provisionAppsForGroups(config, groupIds) {
 // Mitglied — schont die Cloudflare-Subrequest-Grenze). Bei Konflikt einmal frisch
 // neu laden und erneut anwenden (Adapter sind idempotent). Gibt je Nutzer das
 // Ergebnis zurück.
-async function provisionAppBatch(app, adapter, url, members, env, authHeader) {
+async function provisionAppBatch(app, adapter, url, members, env, authHeader, usersDoc) {
   let outcomes = {};
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) jsonCache.delete(url); // frischen Stand erzwingen
     const { data, rev } = await readJsonWithRev(url, authHeader, provisionDefault(app));
     const doc = (data && typeof data === "object") ? data : provisionDefault(app);
     outcomes = {};
-    let anyCreated = false;
+    let anyChanged = false;
     for (const u of members) {
-      const o = adapter(doc, provisionProfile(u));
+      const o = adapter(doc, provisionProfile(u, usersDoc));
       outcomes[u.username] = o;
-      if (o === "created") anyCreated = true;
+      // "aktualisiert" zählt mit — sonst bliebe ein nachgetragenes Feld ungeschrieben.
+      if (o === "created" || o === "aktualisiert") anyChanged = true;
     }
-    if (!anyCreated) return outcomes; // nichts zu schreiben
+    if (!anyChanged) return outcomes; // nichts zu schreiben
     try {
       await writeJson(url, authHeader, doc, rev || undefined);
       return outcomes;
     } catch (e) {
       if (e instanceof ConflictError && attempt === 0) continue;
-      Object.keys(outcomes).forEach((k) => { if (outcomes[k] === "created") outcomes[k] = "error"; });
+      Object.keys(outcomes).forEach((k) => { if (outcomes[k] === "created" || outcomes[k] === "aktualisiert") outcomes[k] = "error"; });
       return outcomes;
     }
   }
@@ -11659,14 +11686,14 @@ async function provisionAppBatch(app, adapter, url, members, env, authHeader) {
 }
 
 // Provisioniert eine Mitgliederliste in eine Liste von Apps. Report: { [app]: { [username]: ergebnis } }.
-async function provisionUsers(members, apps, env, authHeader) {
+async function provisionUsers(members, apps, env, authHeader, usersDoc) {
   const report = {};
   for (const app of apps) {
     const adapter = getOwn(PROVISION_ADAPTERS, app);
     const url = provisionPathFor(app);
     if (!adapter || !url) continue;
     try {
-      report[app] = await provisionAppBatch(app, adapter, url, members, env, authHeader);
+      report[app] = await provisionAppBatch(app, adapter, url, members, env, authHeader, usersDoc);
     } catch (e) {
       const o = {};
       members.forEach((u) => { o[u.username] = "error"; });
