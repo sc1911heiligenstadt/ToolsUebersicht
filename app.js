@@ -10570,14 +10570,20 @@ function renderUnterlagen() {
           <strong>${escapeHtml(f.name)}</strong>
           <span class="muted" style="font-size:12px;">${escapeHtml(f.dateiName)}${f.groesse ? " · " + dlGroesse(f.groesse) : ""} · seit ${escapeHtml(fmtDatumKurz(f.hochgeladenAm))}</span>
         </div>
-        <button type="button" class="btn secondary" data-dl-id="${escapeHtml(f.id)}">Öffnen</button>
+        <span class="dl-zeile-knoepfe">
+          <button type="button" class="btn secondary" data-dl-id="${escapeHtml(f.id)}">Ansehen</button>
+          <button type="button" class="btn secondary" data-dl-save="${escapeHtml(f.id)}" data-dl-name="${escapeHtml(f.dateiName)}">Speichern</button>
+        </span>
       </div>`).join("");
   };
   block("dl-persoenlich-block", "dl-persoenlich-liste", persoenlich);
   block("dl-allgemein-block", "dl-allgemein-liste", allgemein);
 
   document.querySelectorAll("#downloads-panel button[data-dl-id]").forEach((b) => {
-    b.addEventListener("click", () => holeUnterlage(b.dataset.dlId, b));
+    b.addEventListener("click", () => holeUnterlage(b.dataset.dlId, b, "oeffnen"));
+  });
+  document.querySelectorAll("#downloads-panel button[data-dl-save]").forEach((b) => {
+    b.addEventListener("click", () => holeUnterlage(b.dataset.dlSave, b, "speichern", b.dataset.dlName));
   });
 
   if (!persoenlich.length && !allgemein.length) {
@@ -10611,8 +10617,28 @@ function dlBlobTab() {
   };
 }
 
-async function holeUnterlage(id, btn) {
-  const tab = dlBlobTab();
+// Speichern statt Ansehen: Blob an einen <a download> hängen. Kein leeres Fenster
+// nötig — ein Download-Link braucht keinen Popup-Slot, und ein aufgehendes leeres
+// Tab, das gleich wieder zugeht, sähe wie ein Fehler aus.
+function dlBlobSpeichern(blob, dateiName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = dateiName || "unterlage.pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ⚠️ `zweck` geht mit an den Worker und landet im Zugriffsprotokoll, das die
+// Dokumentenvorlagen in „Liegt bereit" anzeigen. Er beschreibt den GEKLICKTEN
+// KNOPF, nicht das, was danach passiert — wer im PDF-Betrachter speichert, taucht
+// als „angesehen" auf. Die Anzeige drüben ist entsprechend formuliert.
+async function holeUnterlage(id, btn, zweck, dateiName) {
+  const speichern = zweck === "speichern";
+  // Nur der Ansehen-Weg braucht das synchron geöffnete Fenster (Safari-Falle).
+  const tab = speichern ? null : dlBlobTab();
   const fehler = document.getElementById("dl-fehler");
   fehler.style.display = "none";
   btn.disabled = true;
@@ -10623,13 +10649,15 @@ async function holeUnterlage(id, btn) {
     const resp = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ action: "unterlagen-datei", id })
+      body: JSON.stringify({ action: "unterlagen-datei", id, zweck: speichern ? "speichern" : "oeffnen" })
     });
     if (!resp.ok) throw new Error("Nicht abrufbar (HTTP " + resp.status + ")");
-    tab.zeigen(await resp.blob());
+    const blob = await resp.blob();
+    if (speichern) dlBlobSpeichern(blob, dateiName);
+    else tab.zeigen(blob);
   } catch (e) {
-    tab.abbrechen();
-    fehler.textContent = "Datei konnte nicht geöffnet werden: " + e.message;
+    if (tab) tab.abbrechen();
+    fehler.textContent = (speichern ? "Datei konnte nicht gespeichert werden: " : "Datei konnte nicht geöffnet werden: ") + e.message;
     fehler.style.display = "block";
   } finally {
     btn.disabled = false;

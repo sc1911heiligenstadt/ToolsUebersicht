@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.42",
+    groups: [
+      {
+        title: "Unterlagen: „Ansehen“ und „Speichern“ getrennt",
+        items: [
+          "Unter „Mein Konto“ hat jedes bereitliegende Dokument jetzt zwei Knöpfe: „Ansehen“ öffnet das PDF wie bisher in einem neuen Tab, „Speichern“ legt es direkt auf dem Gerät ab.",
+          "Bisher gab es nur „Öffnen“ — auf dem Handy war das Ablegen der Datei damit umständlich.",
+          "Neu steht dort auch offen dabei: Die Geschäftsstelle sieht, wann ein Dokument angesehen oder gespeichert wurde. Damit ist belegt, dass es angekommen ist."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.41",
     groups: [
       {

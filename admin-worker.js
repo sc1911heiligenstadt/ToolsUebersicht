@@ -1385,7 +1385,7 @@ export default {
       case "unterlagen-meine":
         return handleUnterlagenMeine(request, env, authHeader, corsHeaders);
       case "unterlagen-datei":
-        return handleUnterlagenDatei(request, body, env, authHeader, corsHeaders);
+        return handleUnterlagenDatei(request, body, env, authHeader, corsHeaders, ctx);
       case "unterlagen-alle":
         return handleUnterlagenAlle(request, env, authHeader, corsHeaders);
       case "unterlage-verteilen":
@@ -17308,6 +17308,7 @@ const UNTERLAGEN_DIR = DAV_APPS.dokumentenvorlagen.replace(/\/[^/]+$/, "") + "/v
 const UNTERLAGEN_MAX = 400;                    // Deckel ueber alle Eintraege
 const UNTERLAGEN_MAX_BYTES = 10 * 1024 * 1024; // je Datei
 const UNTERLAGEN_MAX_JE_LAUF = 60;             // Empfaenger je Verteilvorgang
+const UNTERLAGEN_ZUGRIFF_MAX_NUTZER = 200;     // verschiedene Namen je Eintrag im Zugriffsprotokoll
 
 function leeresUnterlagenDoc() {
   return { version: 1, eintraege: [] };
@@ -17326,6 +17327,91 @@ function unterlagenText(wert, maxLaenge) {
   return s.slice(0, maxLaenge);
 }
 
+// ---------- Wer hat eine Unterlage angesehen, wer gespeichert? (seit 2026-08-31) ----------
+//
+// Michel-Wunsch: in der Karte "Liegt bereit" der Dokumentenvorlagen soll stehen,
+// wann der Empfaenger das Dokument angesehen und wann er es gespeichert hat. Bei
+// einem Vertrag oder einem Behoerdenschreiben ist das der einzige Nachweis, dass
+// es angekommen ist -- ohne ihn bleibt nur Nachfragen.
+//
+// WARNUNG: Notiert wird NUR der Zugriff des Empfaengers. Wer verteilen darf, sieht
+// dieselbe Datei im eigenen Konto-Tab; zaehlte sein Kontrollblick mit, stuende
+// "angesehen" an einem Dokument, das der Empfaenger nie geoeffnet hat -- die
+// Anzeige behauptete dann das Gegenteil dessen, wofuer sie da ist. Bei einer
+// "fuer alle"-Datei ist der Verteiler selbst Empfaenger und zaehlt deshalb mit.
+//
+// WARNUNG: "Angesehen" und "gespeichert" sind ZWEI KNOEPFE im Konto-Tab, nicht
+// zwei Messungen desselben Klicks. Was jemand im PDF-Betrachter danach noch tut
+// (drucken, von dort speichern), sieht niemand. Die Anzeige sagt darum
+// "angesehen" und nicht "gelesen": gezaehlt wird der Vorgang, den es wirklich
+// gibt, nicht der, den man gern haette.
+//
+// WARNUNG: Fuer den Empfaenger selbst ist die Liste LEER (nur istAdmin bekommt
+// sie). Dafuer steht im Konto-Tab offen dabei, dass der Verein das sieht -- ein
+// stilles Protokoll ueber das Verhalten von Personen waere das falsche Mittel.
+
+function unterlagenZugriffListe(e) {
+  const roh = (e && typeof e.zugriffe === "object" && e.zugriffe) ? e.zugriffe : {};
+  const liste = [];
+  for (const nutzer of Object.keys(roh)) {
+    const z = getOwn(roh, nutzer);
+    if (!z || typeof z !== "object") continue;
+    liste.push({
+      nutzer:           unterlagenText(nutzer, 100),
+      geoeffnet:        Number.isFinite(z.geoeffnet) ? Math.max(0, z.geoeffnet) : 0,
+      geoeffnetErstAm:  unterlagenText(z.geoeffnetErstAm, 40),
+      geoeffnetLetztAm: unterlagenText(z.geoeffnetLetztAm, 40),
+      geladen:          Number.isFinite(z.geladen) ? Math.max(0, z.geladen) : 0,
+      geladenErstAm:    unterlagenText(z.geladenErstAm, 40),
+      geladenLetztAm:   unterlagenText(z.geladenLetztAm, 40)
+    });
+  }
+  // Zuletzt Aktive zuerst -- bei einer "fuer alle"-Datei ist die Liste lang.
+  const letzte = (x) => (String(x.geladenLetztAm || "") > String(x.geoeffnetLetztAm || "") ? x.geladenLetztAm : x.geoeffnetLetztAm);
+  liste.sort((a, b) => String(letzte(b) || "").localeCompare(String(letzte(a) || "")));
+  return liste;
+}
+
+// Laeuft in waitUntil, NACH der ausgelieferten Datei, und schluckt jeden Fehler:
+// der Download ist der Zweck, die Notiz ist Beiwerk. Wiederholversuch bei
+// Konflikt wie bei unterlagenZaehlerErhoehen -- zwei Empfaenger koennen im selben
+// Moment klicken, und beide schreiben dieselbe Datei.
+async function unterlagenZugriffNotieren(authHeader, id, username, zweck) {
+  const nutzer = normalizeUsername(String(username || ""));
+  if (!nutzer || nutzer === "__proto__") return;
+  if (!FILE_ID_RE.test(String(id || ""))) return;
+  const feld = zweck === "speichern" ? "geladen" : "geoeffnet";
+  const jetzt = new Date().toISOString();
+  for (let versuch = 0; versuch < 3; versuch++) {
+    try {
+      const { data: doc, rev } = await readJsonWithRev(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+      const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
+      const eintrag = alle.find((e) => e && e.id === id);
+      // Zwischen Download und Notiz kann die Unterlage entfernt worden sein.
+      if (!eintrag) return;
+      if (!eintrag.zugriffe || typeof eintrag.zugriffe !== "object") eintrag.zugriffe = {};
+      const bekannt = getOwn(eintrag.zugriffe, nutzer);
+      // WARNUNG: Deckel noetig -- eine "fuer alle"-Datei sammelt sonst unbegrenzt
+      // viele Namen ein, und diese Datei wird bei JEDEM Abruf komplett gelesen.
+      if (!bekannt && Object.keys(eintrag.zugriffe).length >= UNTERLAGEN_ZUGRIFF_MAX_NUTZER) return;
+      const bisher = (bekannt && typeof bekannt === "object") ? bekannt : {};
+      const alt = Number.isFinite(bisher[feld]) ? Math.max(0, bisher[feld]) : 0;
+      eintrag.zugriffe[nutzer] = {
+        ...bisher,
+        [feld]: Math.min(999, alt + 1),
+        [feld + "ErstAm"]: unterlagenText(bisher[feld + "ErstAm"], 40) || jetzt,
+        [feld + "LetztAm"]: jetzt
+      };
+      doc.eintraege = alle;
+      await writeJson(UNTERLAGEN_URL, authHeader, doc, rev || undefined);
+      return;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return;
+    }
+  }
+}
+
 // Sicht des Nutzers auf einen Eintrag. Ein persoenlicher Eintrag verlaesst den
 // Worker nur fuer seinen Empfaenger -- Ausblenden im Client waere kein
 // Zurueckhalten. Der Verteiler-Name bleibt drin (er steht ohnehin im Brief).
@@ -17341,7 +17427,9 @@ function unterlageFuerNutzer(e, username, istAdmin) {
     persoenlich:   !!fuer,
     // Nur fuer Admins von Belang: an wen der Eintrag geht. Fuer den Empfaenger
     // selbst waere es die eigene Kennung, also ohne Wert.
-    fuer:          istAdmin ? fuer : ""
+    fuer:          istAdmin ? fuer : "",
+    // Wer wann angesehen/gespeichert hat -- nur fuer die Verteil-Seite.
+    zugriffe:      istAdmin ? unterlagenZugriffListe(e) : []
   };
 }
 
@@ -17375,7 +17463,7 @@ async function handleUnterlagenMeine(request, env, authHeader, corsHeaders) {
 // ⚠️ Die Zugriffspruefung laeuft ueber DENSELBEN Filter wie die Liste
 // (`unterlageFuerNutzer`). Zwei getrennte Regeln liefen unweigerlich auseinander,
 // und ein Eintrag, der in der Liste fehlt, muss auch einzeln unerreichbar sein.
-async function handleUnterlagenDatei(request, body, env, authHeader, corsHeaders) {
+async function handleUnterlagenDatei(request, body, env, authHeader, corsHeaders, execCtx) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (!unterlagenZugang(session)) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
@@ -17401,6 +17489,16 @@ async function handleUnterlagenDatei(request, body, env, authHeader, corsHeaders
   }
   if (resp.status === 404) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
   if (!resp.ok) return json({ error: "Lesefehler " + resp.status }, 502, corsHeaders);
+
+  // Erst hier notieren, nicht vor dem Nextcloud-Abruf: ein 404 oder 502 ist
+  // kein Ansehen, und genau das stuende sonst in der Uebersicht.
+  const nutzer = normalizeUsername(session.username);
+  const empfaenger = unterlagenText(roh.fuer, 100);
+  const gehoertMir = !empfaenger || empfaenger === nutzer;
+  if (gehoertMir && execCtx && typeof execCtx.waitUntil === "function") {
+    const zweck = (body && body.zweck) === "speichern" ? "speichern" : "oeffnen";
+    execCtx.waitUntil(unterlagenZugriffNotieren(authHeader, id, nutzer, zweck));
+  }
 
   return new Response(resp.body, {
     status: 200,

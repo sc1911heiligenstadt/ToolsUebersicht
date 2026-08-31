@@ -618,6 +618,14 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
    hängt in einem Flex-Container und wächst mit der Wunschbreite seines Inhalts
    (dieselbe Falle wie bei der Protokoll-Tabelle der Aktivitätspunkte). */
 .dl-zeile-text > * { overflow-wrap: anywhere; min-width: 0; }
+/* Zwei Knöpfe („Ansehen" / „Speichern") sollen am Handy zusammen umbrechen und
+   nicht einzeln in verschiedene Zeilen fallen — deshalb stehen sie in einem
+   eigenen Flex-Kind und nicht direkt in .dl-zeile. */
+.dl-zeile-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .push-geraete { list-style: none; margin: 0; padding: 0; }
 .push-geraete li {
