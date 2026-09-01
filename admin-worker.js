@@ -518,7 +518,14 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8819", // Fußballcamp (Dev-Server)
   "http://localhost:8821", // Kinderschutz (Dev-Server)
   "https://sc1911heiligenstadt.github.io",
-  "https://tecko1985.github.io", // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
+  // ⚠️ NICHT loeschen. Zwei Gruende, der zweite ist der wichtigere:
+  //   1. Bis 2026-08 lag die ganze Flotte hier; PWAs mit eigenem SW-Cache rufen
+  //      teilweise noch die alte Adresse auf.
+  //   2. Seit dem 01.09.2026 ist das wieder eine AKTIVE Adresse: agelan und
+  //      beleg-scanner liegen jetzt unter Tecko1985 und werden von dort
+  //      ausgeliefert (die alten sc1911heiligenstadt-URLs geben 404, Pages
+  //      leitet nicht um). Ohne diese Zeile sperrt der Worker beide Apps aus.
+  "https://tecko1985.github.io",
   // Die oeffentliche VEREINSSEITE. Steht hier wegen fussballcamp: popup.js laeuft
   // dort eingebettet und ruft fussballcamp-oeffentlich auf. Diese eine Aktion
   // antwortet zusaetzlich mit "*" (siehe FC_OEFFENTLICHE_AKTIONEN) -- die
