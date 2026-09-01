@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.45",
+    groups: [
+      {
+        title: "Die Werkzeug-Suche fand nichts, wenn man den Suchbegriff einfügte",
+        items: [
+          "Wie bei der Anmeldung in 1.44: Ein „ä“ kann auf zwei Arten im Rechner stehen, und auf dem Bildschirm sieht beides gleich aus. Die Suche kannte nur die eine.",
+          "Wer „Plätze“ oder „Büro“ aus einer anderen App kopiert einfügte — von einem Mac oder iPhone kommt meist die zweite Art —, bekam eine leere Trefferliste, obwohl das Werkzeug da ist. Getippt hat es funktioniert.",
+          "Jetzt werden beide Arten gleich behandelt. Die Suche findet weiterhin sowohl „platze“ als auch „plaetze“; daran ändert sich nichts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.44",
     groups: [
       {

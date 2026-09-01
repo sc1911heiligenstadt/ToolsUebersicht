@@ -1409,6 +1409,11 @@ function startCardDrag(e, card, grid, category) {
 // "plaetze" steht; mit nur der Grundform findet "buero" das "buro" nicht.
 function sucheNormGrund(text) {
   return String(text || "")
+    // NFC zuerst: ein eingefuegtes "ä" kann zerlegt ankommen (a + Trema,
+    // so liefert es macOS/iOS). Dann greift .replace(/ä/) nicht, das Trema
+    // bleibt stehen -- und BEIDE Vergleichsformen unten fallen gleichzeitig
+    // aus: wer "Plätze" einfügt statt tippt, bekam eine leere Trefferliste.
+    .normalize("NFC")
     .toLowerCase()
     .replace(/ä/g, "a")
     .replace(/ö/g, "o")
@@ -1418,6 +1423,11 @@ function sucheNormGrund(text) {
 
 function sucheNormLang(text) {
   return String(text || "")
+    // NFC zuerst: ein eingefuegtes "ä" kann zerlegt ankommen (a + Trema,
+    // so liefert es macOS/iOS). Dann greift .replace(/ä/) nicht, das Trema
+    // bleibt stehen -- und BEIDE Vergleichsformen unten fallen gleichzeitig
+    // aus: wer "Plätze" einfügt statt tippt, bekam eine leere Trefferliste.
+    .normalize("NFC")
     .toLowerCase()
     .replace(/ä/g, "ae")
     .replace(/ö/g, "oe")
