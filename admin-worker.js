@@ -11762,8 +11762,17 @@ function normalizeMannschaften(raw) {
   return out;
 }
 
+// WARNUNG: normalize("NFC") MUSS vor den Ersetzungen stehen. Ein "oe" kann als
+// ein Zeichen (U+00F6) oder als "o" + Trema (U+0308) ankommen; macOS und iOS
+// liefern beim Kopieren die zerlegte Form. Die Ersetzungen unten treffen nur die
+// erste. Bei der zweiten bleibt das Trema stehen -- und weil normalizeUsername()
+// genau hierauf aufbaut, wuerde ein eingefuegtes "Joerg Mueller" zu einem
+// Benutzernamen mit Trema statt zu "joerg.mueller": Konto nicht gefunden, 401.
+// Das ist derselbe Fehler, den der Kommentar bei normalizeUsername beschreibt,
+// nur ueber einen Weg, den er nicht bedacht hat.
 function transliterate(str) {
   return String(str)
+    .normalize("NFC")
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue");
 }
@@ -14278,8 +14287,13 @@ function kbExternBremse() {
   return new Promise((resolve) => setTimeout(resolve, 800));
 }
 
+// WARNUNG: normalize("NFC") zuerst -- sonst greift die Umlaut-Ersetzung nicht,
+// der NFD-Strip darunter wirft das Trema weg und aus "mueller" wird "muller".
+// Der Schluessel wich damit von dem derselben Person in NFC-Schreibweise ab:
+// zwei externe Bestellungen fuer einen Menschen.
 function kbExternNamensteil(s) {
   return String(s == null ? "" : s)
+    .normalize("NFC")
     .toLowerCase()
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")

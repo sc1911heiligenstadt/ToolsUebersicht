@@ -519,6 +519,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.44",
+    groups: [
+      {
+        title: "Anmeldung mit eingefügtem Namen schlug in einem Sonderfall fehl",
+        items: [
+          "Ein „ö“ kann auf zwei Arten im Rechner stehen: als ein Zeichen, oder als „o“ mit einem getrennt gespeicherten Pünktchen-Zeichen dahinter. Auf dem Bildschirm sieht beides gleich aus.",
+          "Beim Anmelden wird der Name in die Kontokennung umgeschrieben („Jörg Müller“ wird zu „joerg.mueller“). Das griff nur bei der ersten Art. Wer seinen Namen von einem Mac oder iPhone kopiert einfügte, landete bei einer Kennung, die es nicht gibt — und bekam „falsches Passwort“ statt der Anmeldung.",
+          "Jetzt werden beide Arten gleich behandelt. An bestehenden Konten ändert sich nichts.",
+          "Dieselbe Korrektur steckt in den Schlüsseln für Bestellungen von außerhalb des Vereins."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.43",
     groups: [
       {
