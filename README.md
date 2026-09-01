@@ -57,8 +57,8 @@ Erreichbar, aber bewusst nicht als Kachel gelistet:
 
 | Werkzeug | Wofür | Repo |
 |---|---|---|
-| **[AgeLan – Streamplan](https://sc1911heiligenstadt.github.io/agelan/)** | Streamplan des AgeLan-Turniers: Die Streamer tragen sich selbst in einen Kalender über die Veranstaltungstage ein. | [`agelan`](https://github.com/sc1911heiligenstadt/agelan) |
-| **[Beleg-Scanner](https://sc1911heiligenstadt.github.io/beleg-scanner/)** | Belege abfotografieren, den Inhalt automatisch auslesen und als durchsuchbares PDF ablegen. | [`beleg-scanner`](https://github.com/sc1911heiligenstadt/beleg-scanner) |
+| **[AgeLan – Streamplan](https://tecko1985.github.io/agelan/)** | Streamplan des AgeLan-Turniers: Die Streamer tragen sich selbst in einen Kalender über die Veranstaltungstage ein. | [`agelan`](https://github.com/Tecko1985/agelan) |
+| **[Beleg-Scanner](https://tecko1985.github.io/beleg-scanner/)** | Belege abfotografieren, den Inhalt automatisch auslesen und als durchsuchbares PDF ablegen. | [`beleg-scanner`](https://github.com/Tecko1985/beleg-scanner) |
 | **[Familien-Quartett](https://sc1911heiligenstadt.github.io/familien-quartett/)** | Kartenspiel für mehrere Mitspieler an verschiedenen Geräten. | [`familien-quartett`](https://github.com/sc1911heiligenstadt/familien-quartett) |
 | **[Kassenbuch](https://sc1911heiligenstadt.github.io/kassenbuch/)** | Einnahmen und Ausgaben erfassen und gegenrechnen. | [`kassenbuch`](https://github.com/sc1911heiligenstadt/kassenbuch) |
 | **[Toolbox Wiki](https://sc1911heiligenstadt.github.io/Vereinswiki/)** | Nachschlagewerk zu allen Vereins-Werkzeugen: welches Tool wofür da ist, wie es bedient wird, und ein Assistent, der Fragen dazu aus den hinterlegten Unterlagen beantwortet. | [`Vereinswiki`](https://github.com/sc1911heiligenstadt/Vereinswiki) |
