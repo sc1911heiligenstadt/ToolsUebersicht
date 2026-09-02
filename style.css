@@ -37,16 +37,21 @@ header {
 header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 /* wrap + flex-end: seit der Abmelden-Button hier mit drin sitzt, wird die Gruppe
    auf schmalen Handys sonst breiter als der Schirm (header bricht zwar um, aber
-   nur als Ganzes) und schoebe das Wappen aus dem Bild. */
+   nur als Ganzes). */
 .header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; }
-.header-logo { height: 44px; width: auto; display: block; }
+/* Das Wappen sitzt seit 2026-09-02 VORNE im <h1> (vorher rechts in .header-right,
+   44px). flex: none, weil es sonst in der schmalen Kopfzeile des Handys als
+   einziges schrumpfbares Kind der Ueberschrift zusammengedrueckt wuerde --
+   width:auto haelt nur das Seitenverhaeltnis, nicht die Breite. */
+.header-logo { height: 56px; width: auto; display: block; flex: none; }
 /* ⚠️ Die Pillen der Kopfzeile (.header-code-btn, .header-user,
    .header-logout-btn) sind am 2026-08-13 auf Michel-Vorgabe eine Stufe kleiner
    geworden: Schrift 13→12px, Polsterung entsprechend. Sie
    gehoeren als Satz zusammen -- wer eine davon anfasst, zieht die anderen mit,
    sonst steht eine Pille sichtbar aus der Reihe. Die Kopfzeilen-HOEHE aendert
-   sich dadurch am Rechner nicht: das hoechste Element ist das 44px hohe
-   .header-logo, und in einer Flex-Leiste zieht das hoechste alle anderen. */
+   sich dadurch am Rechner nicht: das hoechste Element ist jetzt das <h1> mit dem
+   56px hohen .header-logo, und in einer Flex-Leiste zieht das hoechste alle
+   anderen. */
 .header-user {
   display: flex;
   align-items: center;

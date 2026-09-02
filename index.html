@@ -16,12 +16,17 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.76" />
+<link rel="stylesheet" href="style.css?v=1.77" />
 </head>
 <body>
 
 <header>
-  <h1>🧰 Tools-Übersicht</h1>
+  <!-- Das Wappen stand bis 2026-09-02 ganz rechts in .header-right. Michel-Vorgabe:
+       es gehört nach VORNE an den Titel, an die Stelle des 🧰-Emojis, und eine
+       Stufe größer. Bewusst NUR in dieser App -- die übrigen Tools der Flotte
+       behalten das Wappen rechts. Das 🧰 bleibt im <title> stehen: dort ist es das
+       einzige Erkennungszeichen im Browser-Reiter. -->
+  <h1><img class="header-logo" src="https://sc1911heiligenstadt.github.io/logo.svg" alt="1. SC 1911 Heiligenstadt e.V." />Tools-Übersicht</h1>
   <!-- margin-right:auto (in style.css) sitzt am WRAPPER, nicht an den Knoepfen: beide
        koennen je nach Konto einzeln ausgeblendet sein, und ein Layout-Anker an einem
        versteckten Element traegt nicht.
@@ -50,7 +55,6 @@
     <button type="button" class="header-code-btn" id="btn-todos-oeffnen" style="display:none;" title="Eigene ToDos anlegen und abhaken">📝 <span class="btn-lang">Meine </span>ToDos<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
     <div class="header-user" id="header-user" style="display:none;"></div>
     <button type="button" class="header-logout-btn" id="btn-logout" style="display:none;">Abmelden</button>
-    <img class="header-logo" src="https://sc1911heiligenstadt.github.io/logo.svg" alt="1. SC 1911 Heiligenstadt e.V." />
   </div>
 </header>
 
@@ -1873,7 +1877,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=6.8"></script>
+<script src="config.js?v=6.9"></script>
 <script src="app.js?v=2.8"></script>
 </body>
 </html>

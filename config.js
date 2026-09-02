@@ -519,6 +519,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.47",
+    groups: [
+      {
+        title: "Vereinswappen jetzt vorne in der Kopfzeile",
+        items: [
+          "Das Wappen stand ganz rechts am Bildschirmrand, hinter Nutzernamen und Abmelden-Knopf. Es steht jetzt vorne neben dem Titel „Tools-Übersicht“ — dort, wo bisher das Werkzeugkasten-Symbol war — und eine Stufe größer.",
+          "Nur in dieser Übersicht. Die übrigen Werkzeuge behalten das Wappen rechts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.46",
     groups: [
       {
