@@ -1,0 +1,792 @@
+const APP_VERSION = "1.0";
+
+// WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
+// direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
+const WHATSAPP_CONTACT = "491778587294";
+
+// Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
+// hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
+// (siehe admin-worker.js) — nur die Existenz eines Tools + seine Metadaten
+// ändern sich hier, das braucht einen Code-Push.
+//
+// Eine Versionsnummer je Tool gibt es hier bewusst NICHT mehr (2026-08-03): die
+// Kacheln zeigen keine, das Badge im Kopfbereich ist weg, und damit hätte das Feld
+// nur noch Pflegeaufwand ohne Anzeige bedeutet. Die einzige Versionsangabe der
+// Übersicht steht im Info-Tab (APP_VERSION + APP_CHANGELOG unten).
+//
+// Aus demselben Grund gibt es seit 2026-08-10 auch kein Feld `devices` mehr
+// (Michel-Vorgabe): die 📱/💻-Symbole oben rechts auf der Kachel sind entfallen,
+// damit war das Feld Pflegeaufwand ohne Anzeige. Soll je wieder ein Gerätehinweis
+// erscheinen, kommen Feld UND Anzeige zusammen zurück, nicht das Feld allein.
+//
+// Optionales Flag `mail: true` -> Briefumschlag-Symbol unten links auf der Kachel
+// (siehe renderToolGrid() in app.js). Es markiert Werkzeuge, die im Betrieb
+// tatsächlich E-Mails nach außen verschicken -- damit vor dem Klick sichtbar ist,
+// wo eine Handlung beim Empfänger im Postfach landet. **Maßgeblich ist der
+// admin-worker.js**, dort laufen ALLE Mails der Flotte über Brevo: vier
+// Sendestellen (`raumnutzung-mail-antrag`, `notify-user` -> Vereinskalender,
+// `vereinsaufgabe-anlegen`, `beleg-eingang-notify` -> Beleg-Eingang, ausgelöst
+// vom Worker sc-heiligenstadt-beleg-upload). Kommt eine Sendestelle dazu oder
+// weg, muss dieses Flag mitgezogen werden -- es gibt keine automatische
+// Verbindung zwischen Worker und Kachel.
+//
+// Optionales Flag `push: true` -> Glocken-Symbol daneben (seit 2026-08-03).
+// Gleiche Logik, anderer Kanal: es markiert Werkzeuge, in denen eine Handlung
+// eine Push-Nachricht auf die Handys der Betroffenen auslöst.
+//
+// ⚠️ Es markiert die AUSLÖSENDE Kachel, nicht die empfangende -- genau wie
+// `mail`, wo `beleg-eingang` das Flag trägt und nicht `geschaeftsstelle`.
+// Deshalb steht es bei `fahrtenbuch-extern` (dort wird eingereicht) und NICHT
+// bei `fahrtenbuch` (dort landet die Meldung nur). Wer das umdreht, muss beide
+// Flags umdrehen, sonst widersprechen sich die beiden Symbole.
+//
+// Maßgeblich sind PUSH_ANLAESSE in admin-worker.js **plus** die Stelle, die den
+// Versand tatsächlich auslöst. Der Anlass "unterschriften" hat bewusst keine
+// Kachel: er gehört zur Tools-Übersicht selbst. Dieselbe Handpflege wie bei
+// `mail` -- es gibt keine automatische Verbindung zwischen Worker und Kachel.
+const TOOLS = [
+  {
+    id: "trainerdaten",
+    name: "Trainerdaten",
+    description: "Trainer-Stammdaten erfassen, Trainerverträge automatisch als Word-Dokument erzeugen und digital unterschreiben, dazu Führerschein, Führungszeugnis und Trainerlizenz zentral hochladen und verwalten.",
+    url: "https://sc1911heiligenstadt.github.io/Trainerdaten/",
+    icon: "📝",
+    category: "Verein"
+  },
+  {
+    id: "vereinsverwaltung",
+    name: "Vereinsverwaltung",
+    description: "Mitglieder, Beiträge und Vereinsfinanzen an einer Stelle — mit Sparten, Haushalten und Beitragsklassen. Löst den GLS Vereinsmeister ab. Abteilungsleitungen sehen ausschließlich ihre eigene Sparte, ohne Bankdaten.",
+    url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/",
+    icon: "👥",
+    category: "Verein"
+  },
+  {
+    // Eigene Kachel für den öffentlichen Teil der Vereinsverwaltung -- dasselbe
+    // Muster wie `fahrtenbuch-extern` neben `fahrtenbuch`. Sie führt auf eine
+    // Seite OHNE Anmeldung: wer Mitglied werden will, hat noch kein Konto.
+    // ⚠️ Sie gehört deshalb im Sichtbarkeits-Panel auf "Öffentlich" -- steht sie
+    // auf "eingeloggt", erreicht sie genau die Leute nicht, für die sie da ist.
+    id: "mitgliedsantrag",
+    name: "Mitgliedsantrag",
+    description: "Aufnahmeantrag zum Ausfüllen und Unterschreiben am Handy — ohne Anmeldung, ohne Ausdruck. Der Antrag geht an die Geschäftsstelle; über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand.",
+    url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/antrag.html",
+    icon: "🙋",
+    category: "Verein"
+  },
+  {
+    // Zweite öffentliche Kachel der Vereinsverwaltung, neben
+    // `mitgliedsantrag`. Eigene Seite statt einer Weiche im Antrag
+    // (Michel-Entscheidung 2026-08-06): Eltern sollen einen Link bekommen,
+    // hinter dem alles steht, was der Verein für ein neues Nachwuchskind
+    // braucht — nicht ein allgemeines Formular mit einem Fußball-Abschnitt.
+    // ⚠️ Gehört wie der Mitgliedsantrag im Sichtbarkeits-Panel auf
+    // "Öffentlich". Eltern eines Neuzugangs haben kein Vereinskonto; steht
+    // sie auf "eingeloggt", erreicht sie genau die Leute nicht, für die sie
+    // da ist.
+    id: "nachwuchs-anmeldung",
+    name: "Mitgliedsantrag Nachwuchs",
+    description: "Neue Jugendspieler in einem Durchgang anmelden: Aufnahmeantrag nach § 4 und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband, unterschrieben am Handy. Nachweise wie Geburtsurkunde oder Spielerpass lassen sich als Foto mitschicken.",
+    url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/nachwuchs.html",
+    icon: "🧒",
+    category: "Verein"
+  },
+  {
+    id: "vereinsaufgaben",
+    name: "Vereinsaufgaben",
+    description: "Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer Historie. Zeigt auf einen Blick, wer was offen hat und wo etwas liegen bleibt.",
+    url: "https://sc1911heiligenstadt.github.io/Vereinsaufgaben/",
+    icon: "✅",
+    category: "Verein",
+    mail: true,
+    push: true
+  },
+  {
+    id: "trainercheckliste",
+    name: "TrainerCheckliste",
+    description: "Digitale Checkliste für Trainerzu- und -abgang im Nachwuchsbereich.",
+    url: "https://sc1911heiligenstadt.github.io/TrainerCheckliste/",
+    icon: "📋",
+    category: "Verein"
+  },
+  {
+    id: "materialliste",
+    name: "Materialliste",
+    description: "Vereinsmaterial (Trikots, Bälle, Leibchen) pro Mannschaft verwalten.",
+    url: "https://sc1911heiligenstadt.github.io/Materialliste/",
+    icon: "🎽",
+    category: "Verein"
+  },
+  {
+    id: "sc1911-anmeldung",
+    name: "Trainerversammlung-Anmeldung",
+    description: "Digitales Anmeldesystem für Trainerversammlungen beim 1. SC 1911 Heiligenstadt.",
+    url: "https://sc1911heiligenstadt.github.io/sc1911-anmeldung/verwaltung.html",
+    icon: "🗳️",
+    category: "Verein"
+  },
+  {
+    id: "vereinsbudget",
+    name: "Vereinsbudget",
+    description: "Budgetübersicht, Einnahmen/Ausgaben und Belegverwaltung für den Kassierer.",
+    url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
+    icon: "💶",
+    category: "Verein"
+  },
+  {
+    id: "beleg-eingang",
+    name: "Beleg-Eingang",
+    description: "Mobiles Formular für Helfer zum Einreichen von Belegen.",
+    url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
+    icon: "🧾",
+    category: "Verein",
+    mail: true
+  },
+  {
+    id: "geschaeftsstelle",
+    name: "Geschäftsstelle",
+    description: "Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung.",
+    url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
+    icon: "🏢",
+    category: "Verein"
+  },
+  {
+    id: "spielertool-test",
+    name: "Spielertool",
+    description: "Bewertung und Förderung von Nachwuchsspielern im Vereinsbetrieb.",
+    url: "https://sc1911heiligenstadt.github.io/spielertool-test/",
+    icon: "⭐",
+    category: "Verein"
+  },
+  {
+    id: "vereinskalender",
+    name: "Vereinskalender",
+    description: "Kommende Vereinstermine im Überblick (gesperrte Hallen/Plätze, Trainingszeiten, Veranstaltungen) — Pflege durch die Geschäftsstelle.",
+    url: "https://sc1911heiligenstadt.github.io/vereinskalender/",
+    icon: "📅",
+    category: "Verein",
+    mail: true,
+    push: true
+  },
+  {
+    id: "platzbelegung",
+    name: "Platzbelegung",
+    description: "Belegungsplan für Trainingsplätze und Halle — wer nutzt wann welchen Platz.",
+    url: "https://sc1911heiligenstadt.github.io/platzbelegung/",
+    icon: "🏟️",
+    category: "Verein"
+  },
+  {
+    id: "spielersichtung",
+    name: "Spielersichtung",
+    description: "Sichtung und Bewertung von Nachwuchsspielern für Kader- und Förderentscheidungen.",
+    url: "https://sc1911heiligenstadt.github.io/spielersichtung/",
+    icon: "🔍",
+    category: "Verein"
+  },
+  {
+    id: "personalkosten",
+    name: "Personalkosten",
+    description: "Personalkosten / Aufwandsentschädigungen der Mannschaften planen und auswerten (nur für berechtigte Gruppe).",
+    url: "https://sc1911heiligenstadt.github.io/Personalkosten/",
+    icon: "💰",
+    category: "Verein"
+  },
+  {
+    id: "kadermanager",
+    name: "Kadermanager",
+    description: "Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung/Taktikboard, Spielberichte, Urlaub/Krank, Umfragen und Mannschaftskasse je Mannschaft.",
+    url: "https://sc1911heiligenstadt.github.io/kadermanager/",
+    icon: "⚽",
+    category: "Verein"
+  },
+  {
+    id: "busplan",
+    name: "Busplan",
+    description: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften. Steht ein Bus fest, melden sich drei Tage vorher die Trainer der Mannschaft von selbst — aufs Handy und per E-Mail, samt der Regeln für genau diesen Bus (nur für berechtigte Gruppe).",
+    url: "https://sc1911heiligenstadt.github.io/busplan/",
+    icon: "🚌",
+    category: "Verein",
+    // Drei Tage vor einer zugesagten Fahrt gehen Mail UND Push an die Trainer
+    // der Mannschaft (naechtlicher Lauf im landingpage-Worker).
+    mail: true,
+    push: true
+  },
+  {
+    id: "digitaler-stempel",
+    name: "Digitaler Stempel",
+    description: "PDF- und Word-Dokumente digital stempeln (Position, Größe, Drehung und Deckkraft frei wählbar) — jede Stempelung wird mit Nutzer und Zeitpunkt archiviert (nur für berechtigte Gruppe).",
+    url: "https://sc1911heiligenstadt.github.io/digitaler-stempel/",
+    icon: "🖋️",
+    category: "Verein"
+  },
+  {
+    id: "kleiderbestellung",
+    name: "Kleiderbestellung",
+    description: "Trainer:innen bestellen Vereinskleidung/-ausrüstung mit ihrer Größe aus einem Artikelkatalog; Admin verwaltet Katalog und Bestellfenster und exportiert eine Lieferanten-Bestellliste.",
+    url: "https://sc1911heiligenstadt.github.io/kleiderbestellung/",
+    icon: "👕",
+    category: "Verein"
+  },
+  {
+    id: "fahrtenbuch",
+    name: "Fahrtenbuch",
+    description: "Digitale Fahrer-Checkliste für Vereinsfahrzeuge: Fahrt mit Fahrzeug-/Fahrtdaten und Sicherheits-Checklisten erfassen, Mängel mit Fotos hochladen, unterschreiben.",
+    url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/",
+    icon: "🚐",
+    category: "Verein"
+  },
+  {
+    id: "fahrtenbuch-extern",
+    name: "Fahrtenbuch (extern)",
+    description: "Für Eltern ohne Vereinskonto: Fahrt mit einem Vereinsfahrzeug eintragen und Führerschein-Kopie hochladen — zugriffscode-geschützt statt Login.",
+    url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/extern.html",
+    icon: "🔗",
+    category: "Verein",
+    push: true
+  },
+  {
+    id: "spiele",
+    name: "Spiele",
+    description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett, Der Maulwurf als Verräterspiel, Depot-Duell als Börsenspiel mit Spielgeld und Letzte Karte als Ablegespiel in drei Spielarten (alle drei auch solo gegen KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
+    url: "https://sc1911heiligenstadt.github.io/spiele/",
+    icon: "🎮",
+    category: "Verein"
+  },
+  {
+    id: "materialbedarf",
+    name: "Materialbedarf",
+    description: "Trainer:innen melden Materialbedarf (z.B. neue Bälle, Erste-Hilfe-Set) an den Verein; Admin entscheidet über Annahme/Ablehnung und verfolgt danach Bestellung und Verteilung.",
+    url: "https://sc1911heiligenstadt.github.io/materialbedarf/",
+    icon: "🛒",
+    category: "Verein",
+    push: true
+  },
+  {
+    id: "raumnutzung",
+    name: "Raumnutzung",
+    description: "Anträge auf Raumnutzung für Veranstaltungen (Landkreis Eichsfeld) digital erfassen und daraus das ausgefüllte Original-Formular als PDF für das Liegenschaftsamt erzeugen.",
+    url: "https://sc1911heiligenstadt.github.io/raumnutzung/",
+    icon: "🏛️",
+    category: "Verein",
+    mail: true,
+    push: true
+  },
+  {
+    id: "testspielplaner",
+    name: "Testspielplaner",
+    description: "Testspiele und Leistungsvergleiche planen: Termin anfragen, Admin genehmigt nach DFBnet-Eintragung, Gegner wird nachgetragen — mit Saison-Kontingent je Trainer.",
+    url: "https://sc1911heiligenstadt.github.io/testspielplaner/",
+    icon: "🆚",
+    category: "Verein",
+    push: true
+  },
+  {
+    id: "kontakte",
+    name: "Kontakte",
+    description: "Das Telefonbuch des Vereins: Wer erreicht wen? Jede Person gibt in Trainerdaten selbst frei, ob und mit welchen Angaben sie hier erscheint — ohne Freigabe steht nichts da. Dazu die Übersicht „Wer betreut welche Mannschaft“ mit Liga und Jahrgang, zum Ausdrucken ohne Kontaktdaten.",
+    url: "https://sc1911heiligenstadt.github.io/kontakte/",
+    icon: "📇",
+    category: "Verein"
+  },
+  {
+    id: "personalakte",
+    name: "Personalakte",
+    description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten, Führerschein, Personalkosten und Kadermanager-Rolle auf einen Blick, inkl. Archivieren/Reaktivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
+    url: "https://sc1911heiligenstadt.github.io/personalakte/",
+    icon: "🗂️",
+    category: "Verein"
+  },
+  {
+    id: "fotoauftraege",
+    name: "Fotoaufträge",
+    description: "Das Social-Media-Team fragt Fotos von einer Mannschaft an; der zuständige Trainer legt per Klick einen eigenen, freigegebenen Nextcloud-Ordner für den Bilder-Upload an und bekommt einen teilbaren Link.",
+    url: "https://sc1911heiligenstadt.github.io/fotoauftraege/",
+    icon: "📸",
+    category: "Verein",
+    push: true
+  },
+  {
+    id: "abwesenheitskalender",
+    name: "Abwesenheitskalender",
+    description: "Übersicht, wer wann abwesend ist (Urlaub, Krankheit, Fortbildung u.a.) — jede:r Berechtigte trägt eigene Abwesenheiten ein, alle mit Tool-Zugriff sehen die komplette Übersicht.",
+    url: "https://sc1911heiligenstadt.github.io/abwesenheitskalender/",
+    icon: "🧳",
+    category: "Verein"
+  },
+  {
+    id: "besprechung",
+    name: "Besprechung",
+    description: "Digitaler Treffpunkt für Trainer: Sprachraum direkt im Browser, inklusive Bildschirm teilen — z. B. für die hybride Trainerversammlung.",
+    url: "https://sc1911heiligenstadt.github.io/besprechung/",
+    icon: "🎙️",
+    category: "Verein",
+    newTab: true
+  },
+  {
+    id: "dokumentenvorlagen",
+    name: "Dokumentenvorlagen",
+    description: "Word-Vorlagen (Trainervertrag, Anfragen, Bescheinigungen) mit Platzhaltern zentral verwalten und in einem Rutsch für viele Empfänger befüllen — Daten aus dem Trainerprofil oder, mit der Stufe „Administrieren“ für Trainerdaten, inkl. Adresse und Bankverbindung; Ausgabe als Word-Dokumente, originalgetreue PDFs über ein beiliegendes Skript (nur für berechtigte Gruppe).",
+    url: "https://sc1911heiligenstadt.github.io/dokumentenvorlagen/",
+    icon: "📄",
+    category: "Verein"
+  },
+  {
+    id: "ausbildungsplan",
+    name: "Ausbildungsplan",
+    description: "Trainingsschwerpunkte und passende Übungen für jede Altersklasse von den Bambini bis zur U23, auf Grundlage der Trainingsphilosophie Deutschland — dazu der Spieltag als Leistungsnachweis: nach dem Spiel wird je Mannschaft auf einer Ampel bewertet, wie weit das Erlernte bereits umgesetzt wird. Die Auswertung folgt wahlweise der Mannschaft oder dem Geburtsjahrgang, sodass sich die Entwicklung einer Kohorte über mehrere Jahre und Altersstufen hinweg verfolgen lässt.",
+    url: "https://sc1911heiligenstadt.github.io/ausbildungsplan/",
+    icon: "🎯",
+    category: "Verein"
+  },
+  {
+    id: "schulsport",
+    name: "Schulsport",
+    description: "Wochenplan und Nachweis der Sport- und Fußball-AGs an Schulen und im Hort. Eine AG wird einmal als Serie angelegt, die Termine des Schuljahres entstehen daraus von selbst und lassen Ferien automatisch aus. Nach jeder Einheit meldet der Übungsleiter am Handy, ob sie stattgefunden hat und wie viele Kinder da waren — daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den die Schule über einen Link auch digital gegenzeichnen kann. Ferien-Camps laufen nicht mehr hier, sondern im eigenen Werkzeug „Fußballcamp“.",
+    url: "https://sc1911heiligenstadt.github.io/schulsport/",
+    icon: "🏫",
+    category: "Verein",
+    mail: true,
+    push: true
+  },
+  {
+    id: "spieltagscrew",
+    name: "Spieltagscrew",
+    description: "Wer übernimmt bei den Heimspielen der 1. Mannschaft welchen Posten: Kassenhäuschen, Ordnungsdienst, Grill, Sprecher, Auf- und Abbau. Die Posten werden einmal als Katalog gepflegt und jedem Heimspieltag als eigene Kopie mitgegeben, dort mit benötigter Personenzahl und einem Zeitfenster relativ zum Anstoß. Wer helfen kann, trägt sich selbst ein; frei gebliebene Posten melden sich rechtzeitig von selbst aufs Handy, und zu jedem Spieltag lässt sich ein Aushang mit Namen und Uhrzeiten drucken.",
+    url: "https://sc1911heiligenstadt.github.io/spieltagscrew/",
+    icon: "🦺",
+    category: "Verein",
+    push: true
+  },
+  {
+    id: "spielstatistik",
+    name: "Spielstatistik",
+    description: "Einsätze, Minuten, Tore und Karten der Mannschaften — Saison für Saison. Ein Spiel wird einmal erfasst: Startelf und Bank, Wechsel mit Minute, Tore mit Schütze, Karten und der Grund, warum jemand fehlte. Daraus rechnet die App die gewohnte Tabelle aus Spieltagen und Spielern samt allen Summen, die Vereinsbilanz über die Jahre hinweg und den fertigen Spielbericht als Word-Datei mit Aufstellungsgrafik. Löst die bisherigen Excel-Dateien ab.",
+    url: "https://sc1911heiligenstadt.github.io/spielstatistik/",
+    icon: "📊",
+    category: "Verein"
+  },
+  {
+    id: "ablaufplan",
+    name: "Ablaufplan",
+    description: "Getaktete Tage des Vereins an einer Stelle: Medientag, Turniertag, Trainingslager, Feriencamp. Ein Ablauf besteht aus Punkten mit Uhrzeit, beteiligten Mannschaften, Ort und einer Notiz zum Mitbringen; die Ansicht ist ein Zeitstrahl mit einer Marke, wo gerade „jetzt“ ist. Wer angemeldet ist, sieht seine eigenen Punkte farbig und kann alles andere ausblenden. Eine fertige Liste lässt sich einfügen, statt jeden Punkt zu tippen, und wenn es am Tag verrutscht, schiebt ein Knopf alles ab einer Stelle um ein paar Minuten. Zum Weitergeben gibt es einen Link, der ohne Anmeldung funktioniert — für Eltern und Spieler.",
+    url: "https://sc1911heiligenstadt.github.io/ablaufplan/",
+    icon: "⏱️",
+    category: "Verein",
+    push: true
+  },
+  {
+    id: "kleiderboerse",
+    name: "Kleiderbörse",
+    description: "Vereinskleidung, aus der ein Kind herausgewachsen ist, an andere Familien weitergeben — kostenlos. Eltern stellen ihr Teil mit Foto, Größe und Zustand über einen Link ein, ganz ohne Vereinskonto; nach der Freigabe steht es in der Börse. Wer etwas haben möchte, drückt einen Knopf, und die Anfrage geht als E-Mail direkt an die anbietende Familie — Namen und Kontaktdaten stehen dabei nie in der Börse. Ist das Teil vergeben, nimmt ein Klick aus der Mail es wieder heraus.",
+    url: "https://sc1911heiligenstadt.github.io/kleiderboerse/",
+    icon: "♻️",
+    category: "Verein",
+    mail: true
+  },
+  {
+    id: "fussballcamp",
+    name: "Fußballcamp",
+    description: "Fußballcamps anlegen, auf der Vereinsseite bewerben und die Anmeldungen der Kinder sammeln. Ein Camp wird mit Zeitraum, Platzzahl und Beitrag angelegt; steht es auf „Anmeldung offen“, erscheint es von selbst als Fenster auf der Homepage. Die Eltern melden ohne Vereinskonto an — welche Felder gefragt werden, entscheidet ihr je Camp. Ist das Camp voll, läuft eine Warteliste mit. Die Bestätigungsmail trägt Beitrag, Kontoverbindung und einen Link, über den die Eltern selbst ändern oder absagen. Dazu die Aufgaben für die Helfer: je Camp-Tag, mit Selbsteintrag wie in der Spieltagscrew.",
+    url: "https://sc1911heiligenstadt.github.io/fussballcamp/",
+    icon: "🏕️",
+    category: "Verein",
+    mail: true
+  },
+  {
+    // ⚠️ Diese App ist auch OHNE Anmeldung erreichbar — Info, Ansprechpartnerin
+    // und Meldeformular. Kinder, Jugendliche und Eltern haben kein Vereinskonto.
+    // Die Kachel hier ist der Weg für Angemeldete; von außen führt der Wegweiser
+    // auf der Vereinsseite und ein QR-Code hin.
+    //
+    // ⚠️ Sichtbarkeit bewusst für ALLE Angemeldeten, Spieler eingeschlossen
+    // (Michel-Entscheidung 2026-08-29). Jugendliche sind die wichtigste
+    // Zielgruppe — sie hier auszusperren wäre genau falsch.
+    id: "kinderschutz",
+    name: "Kinder- und Jugendschutz",
+    description: "Die Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ganz oben steht unsere Kinder- und Jugendschutzbeauftragte mit Foto und Erreichbarkeit, dazu ein Knopf zum Anrufen und einer zum Mailschreiben. Wer einen Verdacht oder Vorfall melden will, tut das über ein Formular — auf Wunsch anonym, mit Quittungsnummer zum späteren Nachschauen. Dazu das Schutzkonzept im Wortlaut, der Meldeweg in sechs Schritten, häufige Fragen, externe Hilfsangebote und eine eigene Fassung in einfacher Sprache für Kinder. Eine kurze Schulung mit Quiz weist nach, wer geschult ist. Am Ende dieser Schulung bestätigen Trainerinnen und Trainer auch das Schutzkonzept mit ihrer Unterschrift — die Bestätigung landet in ihrer Trainerakte. Meldungen lesen ausschließlich die eingetragenen Beauftragten — der Administrator ausdrücklich nicht.",
+    url: "https://sc1911heiligenstadt.github.io/kinderschutz/",
+    icon: "🛟",
+    category: "Verein",
+    mail: true,
+    push: true
+  }
+];
+
+// Als "sensibel" markierte Tools (Baustein 4, Spec klare-rechte-trennung 2026-07-24):
+// werden im Sichtbarkeits-Panel in einer eigenen, benannten Sektion gruppiert und je
+// Zeile mit einem Warn-Badge versehen, damit Rechte-Zuweisungen hier besonders bewusst
+// passieren. Rein visuell -- kein Server-Zwang, keine Sperre. Enthaelt bewusst auch die
+// Nicht-Gateway-Apps (vereinsbudget/geschaeftsstelle/sc1911-anmeldung), deren
+// Schreibschutz je App separat liegt.
+const KRITISCHE_TOOLS = [
+  "trainercheckliste", "sc1911-anmeldung", "vereinsbudget", "geschaeftsstelle",
+  "spielertool-test", "personalkosten", "kadermanager", "digitaler-stempel",
+  "personalakte", "dokumentenvorlagen", "vereinsverwaltung",
+  // spielstatistik: hält je Spiel fest, warum jemand fehlte — darunter „verletzt"
+  // und „krank". Gesundheitsangaben über erwachsene Spieler, deshalb hier.
+  "spielstatistik",
+  // fussballcamp: Allergien, Medikamente und Erkrankungen von MINDERJÄHRIGEN,
+  // dazu Anschrift und Notfallnummer der Familien. Besondere Daten nach Art. 9
+  // DSGVO über Kinder — die empfindlichste Sammlung der ganzen Flotte.
+  "fussballcamp",
+  // kinderschutz: Meldungen ueber Verdachtsfaelle. Angaben nach Art. 9 DSGVO
+  // (Gesundheit, Sexualleben) und Art. 10 DSGVO (strafbare Handlungen), oft
+  // ueber Minderjaehrige. ⚠️ Die Rechte hier bedeuten NICHT dasselbe wie sonst:
+  // Bearbeiten heisst Texte pflegen. Meldungen lesen haengt AUSSCHLIESSLICH an
+  // der Beauftragten-Liste in der App selbst — auch der Administrator sieht sie
+  // sonst nicht. Wer hier Rechte vergibt, gibt keinen Zugang zu Meldungen.
+  "kinderschutz"
+];
+
+// Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
+// gepflegt und serverseitig in Nextcloud (news-Key der Config) gespeichert; renderNews()
+// läuft erst, wenn die Server-Antwort da ist. Dieses Array ist NUR noch der Fallback für
+// den Erstbetrieb (Admin hat noch nie gespeichert) bzw. einen nicht erreichbaren Worker.
+// **Bewusst leer** — vorher standen hier 13 alte Meldungen aus dem Juli 2026, die beim
+// Laden jedes Mal kurz als Karussell aufblitzten, bevor die echte Server-News sie ersetzte.
+// Wer hier wieder etwas einträgt, holt sich dieses Aufblitzen zurück.
+// Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
+//         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
+const NEWS = [];
+
+// Ziele für „Verknüpftes Tool" an einer Neuigkeit, die KEINE Kachel sind, sondern
+// ein Tab dieser Übersicht selbst (seit 2026-08-17). Anlass: die Ideen haben kein
+// eigenes Werkzeug — eine Meldung über sie konnte deshalb nicht dorthin führen,
+// obwohl der Sprung genau der Zweck des Feldes ist.
+//
+// ⚠️ Die Ids tragen das Präfix "intern:" und können damit nie mit einer Tool-Id aus
+// TOOLS kollidieren. Sie werden als `toolId` in der Meldung gespeichert — wer ein
+// Ziel hier entfernt, macht die damit verknüpften Meldungen zu ziellosen Meldungen
+// (sie bleiben lesbar, nur der Weg fällt weg).
+//
+// `tab` ist der Name der Sektion (`#tab-<name>`), auf die der Klick springt.
+// ⚠️ Ist der Tab für den Leser gesperrt, wird der Link weggelassen statt ins Leere
+// zu führen — die Bedingung dafür steht in newsZielTabOffen() in app.js und muss
+// dort für jedes neue Ziel ergänzt werden.
+const NEWS_INTERNE_ZIELE = [
+  { id: "intern:ideen", name: "Ideen", tab: "ideen" }
+];
+
+// Feste Auswahl an Reaktions-Emojis unter jeder Neuigkeit. MUSS mit
+// NEWS_REACTION_EMOJIS im admin-worker.js übereinstimmen — der Worker validiert
+// jeden Klick strikt gegen seine eigene Kopie. Reihenfolge = Anzeigereihenfolge.
+const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
+
+// Emoji-Auswahl für die Nachricht an alle Handys (seit 2026-08-07). Bewusst NICHT
+// NEWS_REACTION_EMOJIS wiederverwendet: das sind Reaktionen (Zustimmung, Applaus),
+// hier geht es um den ANLASS einer Mitteilung -- Absage, Wetter, Anfahrt, Platz.
+// Rein clientseitig, der Worker kennt die Liste nicht und muss sie nicht kennen:
+// eingefügt wird nur Text in ein Textfeld, das ohnehin frei geschrieben wird.
+// `name` steht im title und im aria-label -- ohne ihn wäre der Knopf für
+// Vorlese-Programme namenlos.
+const MITTEILUNG_EMOJIS = [
+  { e: "⚠️", name: "Achtung" },
+  { e: "❌", name: "Fällt aus" },
+  { e: "✅", name: "Findet statt" },
+  { e: "ℹ️", name: "Hinweis" },
+  { e: "📢", name: "Ankündigung" },
+  { e: "🔔", name: "Erinnerung" },
+  { e: "📅", name: "Termin" },
+  { e: "⏰", name: "Uhrzeit" },
+  { e: "⚽", name: "Fußball" },
+  { e: "🥅", name: "Tor" },
+  { e: "🏆", name: "Pokal" },
+  { e: "🏟️", name: "Stadion" },
+  { e: "🚌", name: "Bus" },
+  { e: "🚗", name: "Fahrgemeinschaft" },
+  { e: "🅿️", name: "Parken" },
+  { e: "🌧️", name: "Regen" },
+  { e: "⛈️", name: "Gewitter" },
+  { e: "❄️", name: "Schnee und Frost" },
+  { e: "☀️", name: "Sonne" },
+  { e: "🚧", name: "Baustelle" },
+  { e: "🔒", name: "Gesperrt" },
+  { e: "🔑", name: "Schlüssel" },
+  { e: "🎉", name: "Feier" },
+  { e: "🎂", name: "Geburtstag" },
+  { e: "👏", name: "Applaus" },
+  { e: "💪", name: "Anfeuern" },
+  { e: "🙏", name: "Bitte" },
+  { e: "👍", name: "Daumen hoch" },
+  { e: "📸", name: "Foto" },
+  { e: "📝", name: "Formular" },
+  { e: "🍽️", name: "Essen" },
+  { e: "💧", name: "Trinken" },
+  { e: "👕", name: "Kleidung" },
+  { e: "🚑", name: "Erste Hilfe" }
+];
+
+const APP_CHANGELOG = [
+  {
+    version: "1.0",
+    groups: [
+      {
+        title: "Anmelden und eigenes Konto",
+        items: [
+          "Echte Nutzerkonten statt eines geteilten Zugangs. Angelegt wird über Vor- und Nachname, der Nutzername entsteht daraus; das Passwort vergibt sich jeder beim ersten Anmelden selbst.",
+          "Die Anmeldung läuft zweistufig: erst der Nutzername, danach je nach Konto entweder das Passwortfeld oder das Formular „Konto einrichten“. Beide Schritte haben einen Weg zurück.",
+          "Zum Anmelden genügt auch die eigene E-Mail-Adresse. Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Max Mustermann“, „max.mustermann“, „max_mustermann“, „max-mustermann“ oder „MaxMustermann“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
+          "Steht die E-Mail-Adresse in den Trainerdaten, wird das Konto auch dann gefunden, wenn die Adresse nichts mit dem Namen zu tun hat.",
+          "Passt eine Eingabe auf mehr als ein Konto, wird bewusst nicht geraten — die Anmeldung wird dann abgelehnt, damit niemand im fremden Konto landet.",
+          "Ein neues Passwort braucht mindestens 12 Zeichen mit Groß- und Kleinbuchstaben sowie einer Zahl oder einem Sonderzeichen. Passwörter werden nie im Klartext gespeichert, und die Anmeldung gilt sieben Tage.",
+          "Wer seine Pflichtangaben in „Trainerdaten“ noch nicht vollständig hinterlegt hat, wird beim Anmelden einmal dorthin gebracht — mit einem Hinweis, was genau fehlt. Pflicht sind Vorname, Nachname, Geburtsdatum, Straße und Hausnummer, PLZ, Ort, Telefonnummer und E-Mail-Adresse; wer einen Trainervertrag bekommt, braucht zusätzlich IBAN, Bankname und die Erklärung zur Nebentätigkeit. Über „Zurück zum Dashboard“ geht es weiter, und in derselben Sitzung wird niemand ein zweites Mal geschickt.",
+          "Spielerkonten sind davon nicht betroffen: Sie sehen die Trainerdaten gar nicht.",
+          "„Abmelden“ steht oben rechts neben dem eigenen Namen und ist damit aus jedem Reiter erreichbar.",
+          "Beim allerersten Besuch, wenn es noch kein Konto gibt, öffnet sich das Formular zum Anlegen des ersten Administrators. Danach ist dieser Weg dauerhaft zu."
+        ]
+      },
+      {
+        title: "Mein Konto: Angaben, Foto und Freigaben",
+        items: [
+          "Der Reiter „Mein Konto“ zeigt Name, Nutzername, Trainerlizenz und Mannschaften, die eigenen Gruppen im Klartext, in welchen Werkzeugen man mehr als zusehen darf, wann das Passwort zuletzt geändert wurde und bis wann die Anmeldung gilt. Solange niemand angemeldet ist, heißt derselbe Reiter „Anmelden“.",
+          "Dort lässt sich auch das eigene Passwort ändern. Dabei werden alle Geräte abgemeldet — auch das eigene; eine neue Anmeldung danach ist normal.",
+          "Die Karten darunter stehen zugeklappt da. Ein Klick auf die Überschrift öffnet eine Karte, ein zweiter schließt sie wieder — so passt die Seite auf einen Blick, und Passwort und Foto sind ohne Scrollen erreichbar.",
+          "Ob und mit welchen Angaben du in der Kontaktliste des Vereins erscheinst, stellst du hier ein. Neben jedem Häkchen steht, was tatsächlich freigegeben würde: deine Nummer, deine Adresse. Ist zu einer Angabe nichts hinterlegt, sagt die Karte das, statt eine Freigabe für etwas anzubieten, das es gar nicht gibt.",
+          "Ein Bild von dir lässt sich hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen. Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein; liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
+          "Im Kadermanager erscheint dein Foto damit von selbst in der Kaderliste und auf dem Aufstellungsfeld — der Trainer muss nichts für dich hochladen. Hat er dort schon ein Bild von dir eingestellt, gilt deines. Für Spieler ohne eigenen Zugang bleibt der Weg über den Trainer bestehen.",
+          "In der Besprechung steht das Foto auf deiner Teilnehmerkachel an der Stelle, an der sonst die Initialen stehen.",
+          "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen. Administratoren können im Nutzer-Bereich ein Bild setzen oder entfernen — für Spieler ohne eigenes Gerät und als Notfallknopf bei einem unpassenden Bild.",
+          "Beim Abmelden werden die persönlichen Karten geleert und zugeklappt. An einem gemeinsam genutzten Gerät sieht der Nächste nichts mehr von dir."
+        ]
+      },
+      {
+        title: "Unterlagen zum Herunterladen",
+        items: [
+          "In der Karte „Unterlagen zum Herunterladen“ legt der Verein Dateien für dich ab. Ansehen, ausdrucken, weitergeben — alles kommt als PDF.",
+          "Zwei Bereiche: „Für dich persönlich“ (zum Beispiel dein Vertrag oder die Bestätigung fürs erweiterte Führungszeugnis) und „Für alle“ (Merkblätter, Vordrucke, Formulare).",
+          "Persönliches sieht nur der, für den es bestimmt ist — niemand sonst kann es abrufen.",
+          "Jedes bereitliegende Dokument hat zwei Knöpfe: „Ansehen“ öffnet das PDF in einem neuen Tab, „Speichern“ legt es direkt auf dem Gerät ab.",
+          "Die Geschäftsstelle sieht, wann ein Dokument angesehen oder gespeichert wurde — damit ist belegt, dass es angekommen ist. In der Karte steht das offen dabei.",
+          "Liegt etwas Neues für dich bereit, steht am Tab „Mein Konto“ eine kleine rote Zahl, und die Karte klappt von selbst auf. Die Zahl verschwindet, sobald du hineingeschaut hast.",
+          "Bereitgestellt wird in den Dokumentenvorlagen. Spielerkonten sehen den Bereich nicht."
+        ]
+      },
+      {
+        title: "Privatnachrichten an einzelne Personen",
+        items: [
+          "Über die Karte „Privatnachrichten“ kann jeder, der in irgendeinem Werkzeug Bearbeiten-Recht hat, einzelne Personen anschreiben — zum Beispiel, weil noch eine Unterlage fehlt.",
+          "Die Nachricht geht drei Wege gleichzeitig: sie bleibt im Postfach liegen, kommt als E-Mail und meldet sich auf dem Handy.",
+          "Auf die E-Mail kann man direkt antworten — die Antwort geht an den Absender, nicht an den Verein. In der App selbst gibt es keine Antwortfunktion.",
+          "Der Absender sieht, ob die Nachricht gelesen wurde, und nach dem Verschicken, wen sie wirklich erreicht hat. Wer keine E-Mail hinterlegt oder kein Handy angemeldet hat, ist schon vor dem Anhaken gekennzeichnet.",
+          "Angeschrieben werden können nur Mitarbeiterinnen und Mitarbeiter des Vereins, keine Spielerkonten. Bearbeiter erreichen höchstens zehn Personen je Nachricht, Administratoren mehr — für eine Nachricht an alle bleibt die Rundnachricht im Reiter „Einstellungen“.",
+          "Wer keine Meldungen aufs Handy möchte, schaltet unter „Benachrichtigungen aufs Handy“ den Punkt „Persönliche Nachrichten“ aus. Die E-Mail kommt weiterhin.",
+          "Der Administrator sieht in den Einstellungen ein Protokoll: wer wann an wen geschrieben hat. Der Inhalt steht dort bewusst nicht — weder Überschrift noch Text.",
+          "Nachrichten verschwinden von selbst: gelesene nach 90 Tagen, ungelesene nach einem Jahr. Löschen kann jeder seine eigenen jederzeit.",
+          "Liegt eine ungelesene Nachricht bereit, steht eine kleine rote Zahl am Tab „Mein Konto“ — sie zählt zusammen mit bereitliegenden Unterlagen und verschwindet, sobald du die Nachricht als gelesen markierst.",
+          "Lange Listen werden nach 20 Einträgen gekürzt, ein Knopf zeigt den Rest. Ungelesene Nachrichten stehen dabei immer da, auch wenn sie älter sind.",
+          "Achtung: Überschrift und Text stehen sichtbar auf dem Sperrbildschirm des Empfängers und in seinem Postfach. Nichts Vertrauliches hineinschreiben — die Schreibmaske sagt das noch einmal an."
+        ]
+      },
+      {
+        title: "Aktivitätspunkte",
+        items: [
+          "Unter „Mein Konto“ steht ein Punktestand: Wer mit den Vereins-Werkzeugen arbeitet, sammelt dabei Punkte.",
+          "Punkte gibt es fürs Tun, nicht fürs Angemeldetsein — ein offener Tab allein zählt nicht. Am meisten bringt ein abgeschlossener Vorgang: eine erledigte Aufgabe, ein gestellter Antrag, eine geleistete Unterschrift.",
+          "Dazu kommen: 10 Punkte für jeden Tag, an dem überhaupt etwas passiert ist, 5 Punkte fürs Zu- oder Absagen eines Termins, 20 Punkte für einen Passwortwechsel (höchstens alle drei Monate) und 10 Punkte fürs Wiederkommen, nachdem die Anmeldung abgelaufen war.",
+          "Wochenweise: 10 Punkte für jede Woche, in der du drangeblieben bist — also auch in der Woche davor schon aktiv warst —, und 10 Punkte für jede Woche mit mindestens drei verschiedenen Werkzeugen. Bewusst wochenweise: eine Tagesserie würde jeden Urlaub bestrafen. Die Serie hält auch über Silvester, weil nach der amtlichen Kalenderwoche gerechnet wird.",
+          "Einmalig: 40 Punkte, sobald die Trainer-Unterlagen vollständig sind — Vertrag, Kodex, Jugendschutz und der Rest, der höchste Einzelwert überhaupt —, sowie je 15 Punkte fürs Hinterlegen eines Fotos und fürs Einschalten der Benachrichtigungen.",
+          "Diese Zugaben zählen immer, auch an einem Tag, an dem die Obergrenze von 100 Punkten schon erreicht ist.",
+          "Deinen Stand siehst nur du selbst; es gibt keine für alle sichtbare Rangliste. Administratoren sehen zusätzlich, wer welches Werkzeug wie oft nutzt — daran hängt die Frage, welches Werkzeug eigentlich niemand mehr braucht.",
+          "Wozu die Punkte einmal gut sein werden, entscheidet der Verein später. Das System wird erprobt, die Regeln können sich also noch ändern; neu gerechnet wird dabei die Zeit, für die noch Einzelaufzeichnungen vorliegen.",
+          "In der Karte lässt sich einsehen, was gespeichert ist. Wer nicht mitzählen möchte, schaltet die Erfassung dort ab — die bisherigen Aufzeichnungen werden dabei gelöscht.",
+          "Spielerkonten nehmen nicht teil und werden auch nicht erfasst."
+        ]
+      },
+      {
+        title: "Die Übersicht der Werkzeuge",
+        items: [
+          "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel trägt ihr eigenes Symbol, damit sie sich beim Überfliegen der Startseite wiederfinden lässt.",
+          "Über den Werkzeugen steht ein Umschalter: Kacheln oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
+          "Der Knopf „Anordnen“ schaltet das Verschieben ein. Erst dann erscheinen die Greifpunkte ⠿ — in der Kachelansicht oben links, in der Listenansicht am Anfang der Zeile —, und erst dann lassen sich die Werkzeuge innerhalb ihrer Kategorie umsortieren, mit Maus wie mit dem Finger. Solange angeordnet wird, führt kein Klick versehentlich in ein Werkzeug.",
+          "Ansicht und Reihenfolge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich.",
+          "Neben dem Umschalter steht ein Suchfeld. Es ist gleich da — nichts aufklappen, einfach hineintippen. Gesucht wird ausschließlich im Namen des Werkzeugs; mehrere Wörter grenzen weiter ein, die Reihenfolge ist egal. Groß- und Kleinschreibung sowie Umlaute sind dabei egal: „platze“ und „plaetze“ finden beide die Platzbelegung.",
+          "Zurücknehmen lässt sich die Suche mit dem ✕ im Feld oder mit der Escape-Taste. Gespeichert wird sie nicht: beim nächsten Aufruf steht die vollständige Übersicht da.",
+          "Zwei Knöpfe daneben filtern die Übersicht: „✉️ Mail“ zeigt nur die Werkzeuge, die E-Mails nach außen verschicken, „🔔 Push“ nur die, die sich auf dem Handy melden. Beide zusammen gedrückt zeigt die Werkzeuge, die beides tun; ein zweiter Druck nimmt einen Filter zurück. Der Filter lässt sich mit der Suche kombinieren und wird beim Abmelden zurückgenommen.",
+          "Suchen und Filtern gehen bewusst nicht gleichzeitig mit „Anordnen“ — beim Verschieben in einer gefilterten Liste würde die eigene Reihenfolge der ausgeblendeten Werkzeuge verloren gehen.",
+          "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
+          "Die Trainerdaten-Kachel zeigt an, ob die eigenen Pflichtangaben vollständig sind. Gezählt werden Anschrift, Telefon und E-Mail, bei allen mit Trainervertrag zusätzlich IBAN, Bankname und die Erklärung zur Nebentätigkeit; wer „andere Einnahmen“ angekreuzt hat, muss auch deren Höhe angegeben haben. Der BIC bleibt freiwillig. Wer keinen Trainervertrag bekommt, sieht eine Bankverbindung im Formular gar nicht.",
+          "Einzelne Kacheln sind bewusst öffentlich, weil sie Leute erreichen sollen, die noch kein Vereinskonto haben: der Mitgliedsantrag, die Anmeldung für den Nachwuchs, der externe Fahrtenbuch-Link und der Kinder- und Jugendschutz. Diese Links lassen sich weitergeben und auf der Vereinsseite verlinken.",
+          "Unter den Kacheln steht ein Bereich „🔗 Nützliche Links“ mit Adressen anderer Webseiten — zum Beispiel dem Fußball-Verband oder der Vereins-Homepage. Gepflegt wird er von Administratoren unter Einstellungen → „Links auf der Startseite“: Name, Adresse, Symbol und eine kurze Erklärung, die Reihenfolge über ↑ und ↓. Die Links sind für jeden Besucher sichtbar, auch ohne Anmeldung — dort gehört also nichts Internes hinein. Solange kein Link eingetragen ist, bleibt der Bereich ganz weg.",
+          "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung. Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",
+          "Kacheln, Verlinkungen aus Neuigkeiten und das Termine-Widget öffnen im selben Tab; jedes Werkzeug hat oben einen Weg zurück zum Dashboard.",
+          "Der Reiter „Info“ beschreibt, wofür die einzelnen Reiter da sind, was die App mit den Eingaben macht und wo etwas anderes hingehört. Er ist nur für Angemeldete sichtbar."
+        ]
+      },
+      {
+        title: "Neuigkeiten",
+        items: [
+          "Über den Kacheln laufen die Vereinsneuigkeiten als Karussell: eine Meldung sichtbar, per Pfeil blätterbar, mit Positionsanzeige.",
+          "Gepflegt werden sie im Reiter „Einstellungen“ — anlegen, ändern, löschen, mit Typ, Datum, Titel, Text und wahlweise einer Verknüpfung. Verknüpfen lässt sich ein Werkzeug oder der Ideen-Tab; ein Klick auf die Meldung führt dann direkt dorthin. Spielerkonten sehen den Ideen-Tab nicht — für sie steht eine solche Meldung ohne Link da, statt ins Leere zu führen.",
+          "Jede Meldung lässt sich mit einem Emoji bereagieren. Eine Reaktion je Person und Meldung; ein erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt. Wer mit der Maus über ein Emoji fährt, sieht die Namen der Personen, die so reagiert haben; am Handy bleibt es beim Zähler.",
+          "An eine Meldung lassen sich bis zu vier Bilder oder Videos hängen (JPEG, PNG, GIF, WebP, MP4, WebM — je bis 10 MB). Sie erscheinen als kleine Vorschau unter der Meldung; ein Klick öffnet sie formatfüllend.",
+          "Für längere Videos gibt es zusätzlich ein Link-Feld — etwa für YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nie ungefragt eingebettet.",
+          "Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar — genau wie die Meldungen selbst. Wird eine Meldung gelöscht, sind ihre Bilder sofort nicht mehr erreichbar.",
+          "Neuigkeiten sind Vereinsinterna und erscheinen erst nach dem Anmelden, samt Zählern und Namen. Wer nicht angemeldet ist, bekommt sie gar nicht erst übertragen.",
+          "Eine Meldung kann zusätzlich als Push-Nachricht rausgehen — dafür gibt es beim Anlegen ein Häkchen. Es ist immer aus, bis es jemand setzt: eine Push-Nachricht lässt sich nicht zurückholen. Vor dem Versand fragt die Seite noch einmal nach und zeigt, was auf den Handys stehen wird. Wählbar ist, wer sie bekommt: alle Mitarbeiter ohne Spielerkonten, oder wirklich alle Konten.",
+          "Meldungen verschwinden 14 Tage nach ihrem Datum automatisch — samt angehängter Bilder und Videos und der Reaktionen darauf. Wer eine Meldung länger stehen lassen will, setzt ihr Datum neu; dann läuft die Frist von vorn."
+        ]
+      },
+      {
+        title: "Bildschirmvideos für die Neuigkeiten",
+        items: [
+          "Beim Schreiben einer Meldung gibt es neben „Bild oder Video hinzufügen“ auch „Bildschirmvideo aufnehmen“: eine kurze Vorführung selbst aufzeichnen, statt sie in Worten zu beschreiben.",
+          "Unter dem Mauszeiger liegt im Video ein Kreis, und jeder Klick hinterlässt einen kurzen roten Ring — so ist beim Zusehen wirklich zu erkennen, wo gedrückt wurde. Bei einer reinen Bildschirmaufnahme zeichnet der Browser den Mauszeiger nicht mit; ohne diesen Kreis wäre gar nicht zu sehen, wohin die Maus zeigt.",
+          "Aufnehmen lässt sich ein einzelnes Vereins-Werkzeug, das Dashboard, die Tools-Übersicht selbst, oder frei ein beliebiges Fenster des Rechners. Die Klick-Kreise gibt es bei den ersten dreien — von Klicks außerhalb des Browsers erfährt eine Internetseite grundsätzlich nichts.",
+          "Beginnt die Aufnahme im Rahmen auf dem Dashboard, lässt sich von dort in ein Werkzeug klicken und die Aufnahme läuft mit — so wird ein ganzer Weg am Stück gezeigt, von der Kachel bis in die App. Die Werkzeuge stehen dabei in derselben Reihenfolge zur Wahl, in der sie auch auf der eigenen Übersicht liegen.",
+          "Die Länge ist begrenzt und die Bildqualität wird vorher passend eingestellt, damit das fertige Video sicher unter die Anhang-Grenze von 10 MB passt. Während der Aufnahme laufen Zeit und Größe in einer Leiste am unteren Rand mit; diese Leiste wird aus dem Bild herausgeschnitten und steht nicht im fertigen Video.",
+          "Die Aufnahme beginnt immer oben auf der Übersicht, obwohl der Knopf im Einstellungen-Bereich steht — sonst wäre das erste Bild jeder Vorführung das Pflege-Formular. Nach dem Beenden geht es automatisch zurück zum angefangenen Meldungs-Entwurf.",
+          "Ist die Aufnahme fertig, lässt sie sich ansehen und mit einem Knopf direkt an die Meldung hängen — oder herunterladen, wenn sie woanders gebraucht wird.",
+          "Aufgenommen wird als MP4, damit das Video auch auf älteren iPhones abspielt. Auf dem Handy selbst gibt es das Aufnehmen nicht: Bildschirmaufnahme im Browser können nur die Rechner-Browser."
+        ]
+      },
+      {
+        title: "Nächste Termine",
+        items: [
+          "Das Widget zeigt bis zu acht anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten Einträge aus dem Abwesenheitskalender, sofern man darauf Zugriff hat.",
+          "Private Termine stehen in einem eigenen Bereich darunter und nur bei denen, die sie angelegt haben oder mit denen sie geteilt wurden.",
+          "Hat laut Trainerdaten jemand Geburtstag, steht das am Tag selbst ganz oben im Widget — ohne Geburtsjahr.",
+          "Zu Terminen mit Umfrage lässt sich direkt aus dem Dashboard zusagen.",
+          "Über den Terminen steht der nächste Ablauf aus dem Ablaufplan samt Datum und Anzahl der Punkte; ein Klick führt hinein. Es ist bewusst nur der eine nächste Ablauf und nur eine Zeile — jeder Punkt einzeln hätte die Terminliste daneben verdrängt."
+        ]
+      },
+      {
+        title: "Meine ToDos und der Materialcontainer-Code",
+        items: [
+          "Der Knopf „Meine ToDos“ im Kopfbereich öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
+          "Der Zähler am Knopf meldet, was offen ist. Er wird rot, wenn etwas überfällig ist.",
+          "Hier steht nur, was man sich selbst notiert. Was einem anderen aufgetragen wird, gehört in die Vereinsaufgaben — dorthin führt ein Knopf.",
+          "Der Knopf „Materialcontainercode“ zeigt den Code des Zahlenschlosses am Materialcontainer. Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",
+          "Der Code wird erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert. An unangemeldete Besucher geht er nie, und Spielerkonten bekommen ihn nicht — bei rund 200 Konten wäre das das Gegenteil eines Schlosses."
+        ]
+      },
+      {
+        title: "Unterschriften anfordern",
+        items: [
+          "Der Knopf „Unterschriften anfordern“ im Kopfbereich trägt den Unterschriften-Weg: ein PDF an eine Person schicken, die es am Bildschirm unterschreiben muss.",
+          "Der Absender legt fest, wo die Unterschrift stehen soll. Tut er es nicht, darf der Unterzeichner die Stelle selbst wählen; wählt niemand eine, kommt eine Nachweisseite ans Ende. Wer die Stelle schon beim Anfordern setzt, nimmt dem Unterzeichner diese Wahl ab.",
+          "Ein Unterschriftsfeld ist immer breiter als hoch; ein schmales, hohes Rechteck wird abgelehnt. Die Unterschrift wird ins Feld eingepasst statt darauf gestreckt — das Blatt sieht so aus wie die Vorschau vor dem Absenden.",
+          "Unterschrieben wird per Freihand-Pad in der eigenen Sitzung. Den Zeitstempel setzt der Server — dadurch ist die Unterschrift an die Person gebunden.",
+          "Nur PDF, hart geprüft. Ein unterschriebenes Word-Dokument bliebe editierbar und wäre als Nachweis wertlos.",
+          "Bei mehreren Empfängern unterschreibt jeder eine eigene Kopie. Ablehnen ist möglich, verlangt aber eine Begründung.",
+          "Auf Wunsch wird der Empfänger zusätzlich per E-Mail benachrichtigt. Das ist ein Häkchen je Vorgang und steht bei jedem Öffnen wieder auf aus; der Betreff nennt den Dokumenttitel bewusst nicht.",
+          "Den Knopf sieht nur, wer Unterschriften anfordern darf — oder wer selbst ein offenes Dokument hat. Nach dem Unterschreiben verschwindet er wieder.",
+          "Das unterschriebene Dokument bleibt erhalten, auch wenn die zugehörige Erinnerung nach 14 Tagen abläuft. Einsehen dürfen es die Beteiligten und Administratoren."
+        ]
+      },
+      {
+        title: "Ideen und Feedback & Hilfe",
+        items: [
+          "Im Reiter „💡 Ideen“ steht, was wir im Verein anpacken sollten: Überschrift eintippen, absenden, fertig. Der Text darunter ist freiwillig.",
+          "Gemeint ist alles rund um den Verein — ein Fest, eine Aktion, etwas für die Jugend, für die Mitglieder oder ums Gelände. Was an den Werkzeugen selbst hakt oder fehlt, gehört in „Feedback & Hilfe“.",
+          "Alle angemeldeten Mitarbeiter sehen alle Ideen — man erkennt also sofort, ob jemand dasselbe schon vorgeschlagen hat. Spielerkonten sehen den Reiter nicht.",
+          "Mit 👍 kannst du einer Idee zustimmen. Sichtbar ist nur die Zahl, nie wer geklickt hat.",
+          "Wer möchte, kreuzt „Anonym einreichen“ an. Den anderen wird der Name dann nicht angezeigt — die Vereinsleitung sieht ihn, damit Rückfragen möglich bleiben.",
+          "Jede Idee hat einen Zustand: Neu, In Arbeit, Umgesetzt oder Nicht geplant. Umgesetztes und Abgelehntes rutscht in einen zugeklappten Block ans Ende der Liste.",
+          "Solange deine Idee auf „Neu“ steht, kannst du sie noch ändern oder zurückziehen. Sobald daran gearbeitet wird, steht sie fest.",
+          "Eine Antwort der Vereinsleitung liest nur, wer die Idee eingereicht hat — sie steht bei der Idee im Reiter. Es gibt dazu bewusst keine Push-Nachricht, schau also ab und zu rein.",
+          "Im Reiter „Feedback & Hilfe“ meldest du, was an den Werkzeugen stört oder kaputt ist. Auf jede Einreichung kann geantwortet werden — direkt beim Eintrag im Einstellungen-Bereich.",
+          "Wer etwas eingereicht hat, findet die Antwort unter „Meine Einreichungen“, zusammen mit dem eigenen Text und dem Stand (offen oder erledigt). Zur Antwort kommt eine Push-Nachricht aufs Handy, einzeln abschaltbar wie jeder andere Anlass.",
+          "Eine Antwort lässt sich nachträglich ändern; das Leeren des Feldes nimmt sie wieder zurück. Eine erneute Push-Nachricht geht nur raus, wenn wirklich neu geantwortet wurde."
+        ]
+      },
+      {
+        title: "Benachrichtigungen aufs Handy",
+        items: [
+          "Die Toolbox kann sich direkt auf dem Gerät melden, ohne den Umweg über eine E-Mail. Eingeschaltet wird das im Reiter „Mein Konto“ unter „Benachrichtigungen aufs Handy“ — für jedes Gerät einmal.",
+          "Jeder Anlass ist einzeln an- und abschaltbar: ein im Vereinskalender geteilter oder geänderter Termin, eine Vereinsaufgabe samt Rückfragen und Statusmeldungen, ein Dokument, das auf deine Unterschrift wartet, eine persönliche Nachricht, eine Antwort auf deine Einreichung, sowie Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport, Spieltagscrew und das Fahrtenbuch.",
+          "Der Ablaufplan erinnert 15 Minuten vor dem eigenen Punkt, wenn eine beteiligte Mannschaft im Profil steht.",
+          "Der Busplan meldet sich drei Tage bevor eine Mannschaft ihren Bus hat, mit den Regeln des zugesagten Busses — an ihre Trainer. Der Schalter betrifft nur die Handy-Nachricht, die E-Mail kommt weiterhin. Wer erinnert wird, richtet sich nach den Mannschaften im eigenen Profil; steht dort nichts, kommt auch nichts an, und der Busplan zeigt in der Übersicht an, für welche Mannschaft das gerade der Fall ist.",
+          "Die Nachricht nennt nie einen Namen, einen Termin- oder Dokumenttitel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können. Was drinsteht, sieht man nach dem Antippen in der App.",
+          "Nachrichten gehen mit hoher Dringlichkeit raus, damit das Handy sie nicht im Energiesparmodus zurückhält und gesammelt zustellt.",
+          "Die E-Mails bestehen unverändert weiter. Benachrichtigungen kommen dazu, sie ersetzen nichts — wer sie nicht einschaltet, merkt keinen Unterschied.",
+          "In der Liste der angemeldeten Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus.",
+          "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt — Apple bietet Benachrichtigungen im normalen Safari-Fenster nicht an. Nötig ist außerdem iOS 16.4 oder neuer, also ein iPhone 8 oder jünger. Auf Android und am Rechner genügt der Browser.",
+          "Wird die Abfrage einmal abgelehnt, lässt sie sich nicht erneut stellen — das erlaubt nur der Browser selbst. In dem Fall steht in der Karte, wo es sich wieder freischalten lässt.",
+          "Die Schalter werden vom Server geliefert. Kommt ein Anlass dazu, erscheint er dort von selbst."
+        ]
+      },
+      {
+        title: "Nachricht an alle Handys",
+        items: [
+          "Administratoren können im Einstellungen-Bereich eine eigene Push-Nachricht schreiben und sofort verschicken — für Kurzfristiges, das zu keinem Werkzeug gehört: Training fällt aus, Platz gesperrt, Halle zu.",
+          "Zur Wahl steht, ob nur die Mitarbeiter oder alle Konten einschließlich der Spieler angeschrieben werden.",
+          "Unter dem Empfängerkreis steht „Eingrenzen“. Dort lassen sich einzelne Gruppen anhaken (Geschäftsstelle, Trainer, Vorstand …) und zusätzlich einzelne Personen — mit Suchfeld, weil die Liste alle Konten führt. Ohne Haken geht die Nachricht an den ganzen gewählten Kreis.",
+          "Die Haken können den Kreis nur verkleinern, nie erweitern. Wer ein Spielerkonto auswählt, während oben „Mitarbeiter — ohne Spielerkonten“ steht, erreicht es nicht — beim Umschalten des Kreises wird es aus der Auswahl genommen und das steht auch da.",
+          "Eine Auswahl, die niemanden trifft (leere Gruppe), wird abgelehnt statt stillschweigend an alle zu gehen — der häufigste und teuerste Bedienfehler an dieser Stelle.",
+          "Nach dem Absenden fällt die Eingrenzung zurück auf „alle im gewählten Kreis“: sie gilt für die eine Nachricht und soll die nächste nicht heimlich beschneiden.",
+          "Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden, und wie viele es insgesamt sind — „erreicht 15 von 87 Personen“. Eine Zahl ohne Vergleich klingt nach einer vollständigen Zustellung, und genau das ist sie meistens nicht. Die Sicherheitsabfrage nennt dieselbe Zahl noch einmal, denn zurückholen lässt sich eine Push-Nachricht nicht.",
+          "Darunter lassen sich zwei Listen aufklappen: wer die Nachricht bekommt und wer nicht. Die zweite ist die wichtigere — an ihr ist zu sehen, wen man ansprechen muss, damit er die Benachrichtigungen einschaltet. Beide Listen sieht nur, wer die Nachricht auch verschicken darf.",
+          "Eine Push-Nachricht erreicht nur, wer die Übersicht als App auf dem Startbildschirm abgelegt und danach in seinem Konto die Benachrichtigungen eingeschaltet hat. Auf dem iPhone gibt es Push ausschließlich für abgelegte Apps, im Safari-Fenster gar nicht.",
+          "Unter der Überschrift und unter dem Text steht je ein Knopf „🙂 Emoji“. Ein Druck darauf klappt eine Auswahl auf; ein Druck auf ein Zeichen setzt es genau dort ein, wo die Schreibmarke gerade steht. Zur Wahl stehen die Zeichen, um die es in einer kurzfristigen Mitteilung tatsächlich geht: Achtung, Fällt aus, Findet statt, Termin, Uhrzeit, Bus, Parken, Regen, Gewitter, Frost, Gesperrt, Feier und weitere.",
+          "Ein Emoji zählt wie zwei Zeichen. Passt es nicht mehr in die 100 bzw. 200 Zeichen, sagt die App das — angehängt und dann vom Server halbiert würde daraus auf dem Sperrbildschirm ein leeres Kästchen.",
+          "Unter „Zuletzt verschickt“ stehen die drei neuesten Nachrichten mit Absender, Zeitpunkt, erreichter Anzahl und der Eingrenzung. Protokolliert werden 30 — eine Push-Nachricht lässt sich nicht zurückholen, wer wann was an alle geschickt hat, ist der Nachweis dahinter.",
+          "Empfangen wird sie nur von denen, die im Reiter „Mein Konto“ den Schalter „Mitteilungen des Vereins“ anhaben. Er ist wie alle anderen von Anfang an eingeschaltet und lässt sich einzeln abstellen."
+        ]
+      },
+      {
+        title: "Nutzer und Gruppen verwalten",
+        items: [
+          "Nutzer bearbeiten, löschen oder ihr Passwort zurücksetzen. Dem letzten Administrator lässt sich der Status nicht entziehen, und löschen lässt er sich auch nicht.",
+          "Wird ein Vor- oder Nachname korrigiert, zieht der Anmeldename automatisch mit um. Kollidiert er mit einem bestehenden Konto, bleibt er unverändert und es kommt ein Warnhinweis.",
+          "Text-Massenimport für größere Listen: ein Name je Zeile. Alle durchlaufen danach den normalen Erstanmelde-Weg.",
+          "Die Nutzerliste hat genau zwei Abschnitte, Personal und Spieler, damit jedes Konto an genau einer Stelle steht. Darüber filtern eine Namenssuche und eine Gruppenauswahl.",
+          "Beim Anlegen wird mitgeschrieben, ob ein Trainervertrag vorgesehen ist. Ohne das Häkchen „Vertrag benötigt“ und ohne Mitgliedschaft in der Gruppe „Trainer“ steht der Eintrag in den Trainerdaten sofort auf „Nur Kontaktdaten“, und die Vertragsfelder sind dort ausgeblendet — Geschäftsstelle und Vorstand bekommen also keine Bankverbindung und keine Anlage 1 vorgelegt.",
+          "Gruppen anlegen und Mitglieder zuordnen, direkt in der Nutzerliste oder in der Gruppenverwaltung.",
+          "Ein Knopf „Umbenennen“ korrigiert einen Tippfehler im Gruppennamen. Geändert wird ausschließlich die Beschriftung — Mitglieder, Sichtbarkeiten, Bearbeiten- und Administrieren-Rechte bleiben unangetastet, intern führt die Gruppe weiter denselben unveränderlichen Schlüssel.",
+          "Die Gruppen „Trainer“ und „Spieler“ sind geschützt: Umbenennen und Löschen sind für sie nicht möglich, und ein zweiter Eintrag mit demselben Namen lässt sich nicht anlegen. Sie werden im ganzen Gateway an ihrem Namen erkannt — wer sie umbenennt, schaltet still die Vertragspflicht ab. Alle anderen Gruppen bleiben frei änderbar.",
+          "Der Knopf „📊 Admin-Dashboard“ steht ganz oben im Reiter „Einstellungen“ und zeigt die Quoten des Vereins sowie die zehn jüngsten Anmeldungen. In der Aktivitäts-Auswertung stehen je Person alle Werkzeuge, die sie im Monat benutzt hat, das Häufigste zuerst."
+        ]
+      },
+      {
+        title: "Die drei Rechte-Stufen",
+        items: [
+          "Je Werkzeug und Gruppe gibt es Sehen, Bearbeiten und Administrieren.",
+          "Sehen wird über ein Dropdown mit vier Zuständen gesteuert: versteckt, öffentlich, alle angemeldeten Nutzer oder nur bestimmte Gruppen.",
+          "Bearbeiten erlaubt das Ändern von Daten und schließt Export, Druck und PDF ein.",
+          "Administrieren schaltet die app-internen Verwaltungsfunktionen frei — etwa den vollen Trainerdaten-Zugriff samt Bankverbindung oder die Rechte-Matrix im Kadermanager. Dafür muss niemand globaler Administrator sein.",
+          "Administrieren schließt Bearbeiten ein, und wer bearbeiten oder administrieren darf, sieht das Werkzeug automatisch. „Bearbeiten ohne Sehen“ lässt eine App nicht länger unsichtbar.",
+          "Als sensibel eingestufte Werkzeuge stehen im Sichtbarkeits-Bereich in einer eigenen aufklappbaren Sektion ganz oben und tragen ein Warnzeichen, damit ihre Rechtevergabe bewusst passiert. Alle übrigen stehen darunter in der Sektion „Weitere Tools“. Innerhalb beider Sektionen sind die Werkzeuge alphabetisch sortiert.",
+          "Welches Werkzeug als sensibel gilt, legt ein Häkchen je Zeile fest — dafür braucht es keine Code-Änderung. Beim Fußballcamp zum Beispiel bekommt jemand mit Sehen-Recht die Gesundheitsangaben der Kinder gar nicht erst geschickt.",
+          "Entfernt man einer Gruppe die letzte Zuordnung, wird das Werkzeug wieder versteckt statt für alle sichtbar. Eine gelöschte Gruppe verschwindet automatisch aus allen Zuordnungen.",
+          "Lassen sich die gespeicherten Rechte gerade nicht laden, steht ein roter Kasten über der Liste und Speichern ist gesperrt — im Sichtbarkeits-Panel wie im Bereich „Apps“ einer Gruppe. Ein Knopf „Erneut laden“ holt sie nach.",
+          "„💾 Rechte sichern“ lädt alle Rechte als Datei auf den eigenen Rechner — Sehen, Bearbeiten, Administrieren und Auto-Eintrag für jedes Werkzeug. Am besten nach jeder größeren Änderung. „Sicherung einspielen“ ist der Weg zurück: Datei auswählen, die Abfrage nennt Datum und Anzahl, danach ist der alte Stand wieder da. Gruppen, die es zwischenzeitlich nicht mehr gibt, werden vorher beim Namen genannt.",
+          "Mit der Testansicht im Reiter „Einstellungen“ sieht ein Administrator die Übersicht so, wie eine bestimmte Gruppe sie sieht. Das orange Zeichen „🎭 Testansicht ✕“ oben in der Kopfzeile beendet sie mit einem Klick, von jedem Reiter aus; der Reiter „Einstellungen“ bleibt währenddessen sichtbar, zeigt aber nur die Auswahl."
+        ]
+      },
+      {
+        title: "Mannschaften des Vereins",
+        items: [
+          "Im Bereich „Mannschaften“ in den Einstellungen steht jede Mannschaft genau einmal — mit Kurznamen (B1), langem Namen (B-Junioren 1) und Liga.",
+          "An jeder Mannschaft hängen die Leute, die sie betreuen, mit ihrer Rolle: Trainer, Co-Trainer, Torwarttrainer oder Betreuer. So sieht man sofort, welche Mannschaft noch niemanden hat.",
+          "Die Liste gilt je Saison. Beim Saisonwechsel einmal „Saison kopieren“ drücken und anpassen — der alte Stand bleibt zum Nachschlagen stehen.",
+          "„Vorschlag aus den Profilen“ liest, was heute in den Trainerprofilen steht, fasst gleiche Mannschaften zusammen und schlägt Kurznamen vor. Einträge, die nach einem Altersbereich oder einer Rolle aussehen statt nach einer Mannschaft, werden rot markiert.",
+          "Der Schalter „Trainerprofile aus dieser Liste füllen“ ist zunächst AUS. Erst einschalten, wenn die Liste steht: ab dann wird das Feld „Mannschaft(en)“ beim Nutzer berechnet statt getippt — und wer an keiner Mannschaft hängt, hat auch im Profil keine mehr.",
+          "Altersstufe und Nummer kommen aus dem Kurznamen: Wer „D2“ schreibt, bekommt automatisch D-Junioren und die 2, und die Zeile steht da, wo man sie sucht. Namen ohne erkennbares Muster (zum Beispiel „Alte Herren“) behalten die Stufe, die von Hand eingestellt wird.",
+          "Das Feld „Jahrgänge“ bleibt im Normalfall leer: dann steht der Jahrgang von selbst da, gerechnet aus Saison und Altersstufe. Bei den A-Junioren sind das in der Saison 2026/27 die Jahrgänge 2008 und 2009 — und in der nächsten Saison von allein 2009 und 2010. Ausgefüllt wird das Feld nur dort, wo sich nichts rechnen lässt: bei den Herren, bei den Mädchen oder bei einem Bambini-Kader über drei Jahrgänge. Ein Eintrag von Hand hat immer Vorrang.",
+          "Das Häkchen „In Übersichten anzeigen“ steht per Vorgabe. Nimmt man es weg, verschwindet die Mannschaft aus „Wer betreut welche Mannschaft“ im Werkzeug „Kontakte“ — bleibt aber vollständig in der Liste stehen und behält ihre Trainer. Gedacht ist das für Einträge, die keine echte Mannschaft sind, etwa „U12-U15“.",
+          "⚠️ Das ist ausdrücklich etwas anderes als „Archiviert“. Archivieren heißt aufgelöst und nimmt der Mannschaft auch die Trainer-Zuordnung — wer sie betreut hat, verliert sie in seinem Profil und damit flottenweit Filter und Rechte. Das Häkchen rührt daran nicht."
+        ]
+      },
+      {
+        title: "Gemeinsame Anmeldung für alle Werkzeuge",
+        items: [
+          "Alle Vereins-Apps, die ihre Daten in derselben Nextcloud ablegen, nutzen diese eine Anmeldung. Kein eigenes Verbindungsformular, kein zusätzliches Passwort auf dem Gerät.",
+          "Der Server prüft bei jedem Zugriff Anmeldung und Gruppenrechte und greift dann selbst auf die Cloud zu. Die Zugangsdaten dazu liegen nur dort.",
+          "Ändern zwei Geräte gleichzeitig dieselbe Datei, wird das erkannt und gemeldet, statt still zu überschreiben.",
+          "Auch der gesamte E-Mail-Versand der Flotte läuft über diese Stelle — keine App verschickt selbst. Nachrichten an viele Empfänger gehen in Gruppen gleichzeitig raus; jeder bekommt weiterhin genau eine eigene Nachricht, und eine fehlerhafte Adresse zieht die anderen nicht mit."
+        ]
+      },
+      {
+        title: "Am Handy und als App auf dem Startbildschirm",
+        items: [
+          "Die Übersicht ist für das Handy gebaut; die Kacheln stapeln sich auf schmalen Bildschirmen, und die Kopfknöpfe tragen dort kürzere Beschriftungen.",
+          "Eingabefelder sind mindestens 16 Pixel groß, damit der iPhone-Browser beim Antippen nicht ungefragt in die Seite hineinzoomt und verschoben stehen bleibt.",
+          "Angemeldete Nutzer finden im Kopfbereich den Knopf „Als App ablegen“. Danach startet die Toolbox wie eine eigene App, ohne Browser-Adressleiste.",
+          "Auf Android übernimmt das der Systemdialog. Auf dem iPhone geht es nur über Safari von Hand — der Knopf öffnet dort eine Anleitung: Teilen-Symbol, dann „Zum Home-Bildschirm“.",
+          "Ist die App abgelegt, verschwindet der Knopf. Er erscheint auch gar nicht erst, wo der Browser nichts anbieten kann."
+        ]
+      }
+    ]
+  }
+];

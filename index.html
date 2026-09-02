@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🧰 Tools-Übersicht</title>
+<meta name="theme-color" content="#1a56a0" />
+<!-- Manifest, Icons und Service Worker liegen auf der WURZEL, nicht in diesem
+     Ordner: ein Manifest kann keinen Geltungsbereich oberhalb seines eigenen
+     Verzeichnisses beanspruchen. Laege es unter /ToolsUebersicht/, umfasste die
+     abgelegte App nur diesen Pfad und jeder Klick auf eine Kachel fuehrte
+     heraus in den Browser -- auf dem iPhone in ein eigenes Safari-Fenster.
+     Quelle der Dateien: Repo sc1911heiligenstadt/sc1911heiligenstadt.github.io. -->
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" href="/favicon.png" type="image/png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="SC 1911" />
+<link rel="stylesheet" href="style.css?v=1.0" />
+</head>
+<body>
+
+<header>
+  <!-- Das Wappen stand bis 2026-09-02 ganz rechts in .header-right. Michel-Vorgabe:
+       es gehört nach VORNE an den Titel, an die Stelle des 🧰-Emojis, und eine
+       Stufe größer. Bewusst NUR in dieser App -- die übrigen Tools der Flotte
+       behalten das Wappen rechts. Das 🧰 bleibt im <title> stehen: dort ist es das
+       einzige Erkennungszeichen im Browser-Reiter. -->
+  <h1><img class="header-logo" src="https://sc1911heiligenstadt.github.io/logo.svg" alt="1. SC 1911 Heiligenstadt e.V." />Tools-Übersicht</h1>
+  <!-- margin-right:auto (in style.css) sitzt am WRAPPER, nicht an den Knoepfen: beide
+       koennen je nach Konto einzeln ausgeblendet sein, und ein Layout-Anker an einem
+       versteckten Element traegt nicht.
+       ⚠️ Hier stand bis 2026-08-13 ausserdem der goldene Admin-Dashboard-Knopf
+       (Michel-Vorgabe: er gehoert in die Einstellungen, siehe #tab-admin). Mit ihm
+       ist auch sein margin-right:auto entfallen -- das Auto-Margin an .header-btns
+       traegt jetzt allein, die Gruppe klebt weiter am Titel. -->
+  <div class="header-btns">
+    <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
+    <!-- Der Zähler ersetzt die Karte auf der Startseite: ohne ihn sähe man beim
+         Aufrufen der Seite gar nicht mehr, dass etwas offen ist. Er zählt hier
+         ausschließlich die Dokumente, die auf die eigene Unterschrift warten --
+         die persönlichen ToDos haben ihren eigenen Knopf rechts. -->
+    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Unterschriften anfordern und selbst unterschreiben">✍ Unterschriften<span class="btn-lang" id="dok-btn-lang"> anfordern</span><span class="header-zaehler" id="dokumente-kopf-zaehler" style="display:none;"></span></button>
+    <!-- Steht hier nur, solange die App noch NICHT auf dem Startbildschirm liegt
+         (siehe appAblegenMoeglich in app.js) -- ein Knopf, den man je Geraet genau
+         einmal braucht, darf die ohnehin enge Kopfzeile nicht dauerhaft belasten.
+         Die beiden .btn-lang kuerzen ihn unter 860px auf "📲 App". -->
+    <button type="button" class="header-code-btn" id="btn-app-ablegen" style="display:none;" title="Diese Übersicht als App auf dem Startbildschirm ablegen">📲 <span class="btn-lang">Als </span>App<span class="btn-lang"> ablegen</span></button>
+  </div>
+  <div class="header-right">
+    <!-- Die persönliche Liste steht bewusst auf der ANDEREN Seite der Kopfzeile
+         (Michel-Vorgabe 2026-07-29): sie hat mit den Unterschriften nichts zu tun,
+         und zwei benachbarte Knöpfe hätten genau die Vermischung fortgeschrieben,
+         die das Aufteilen beenden soll. -->
+    <button type="button" class="header-code-btn" id="btn-todos-oeffnen" style="display:none;" title="Eigene ToDos anlegen und abhaken">📝 <span class="btn-lang">Meine </span>ToDos<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
+    <div class="header-user" id="header-user" style="display:none;"></div>
+    <button type="button" class="header-logout-btn" id="btn-logout" style="display:none;">Abmelden</button>
+  </div>
+</header>
+
+<nav>
+  <button data-tab="uebersicht" class="active">Dashboard</button>
+  <button data-tab="feedback">Feedback & Hilfe</button>
+  <!-- Ideen (seit 2026-08-16). Nur für angemeldetes Personal — Spielerkonten
+       bekommen auf jede Ideen-Aktion 403, für sie hätte der Tab nichts zu zeigen.
+       Default versteckt wie nav-info, damit er beim Erstladen nicht kurz
+       aufblitzt, bevor die Sitzung geprüft ist. -->
+  <button data-tab="ideen" id="nav-ideen" style="display:none;">💡 Ideen</button>
+  <div class="nav-right">
+    <!-- Beschriftung wechselt mit dem Anmeldestatus (renderNavTabs) -->
+    <!-- Die rote Zahl meldet neue Unterlagen im Downloadbereich. Sie steht im
+         Knopf, damit sie mit ihm zusammen aus- und eingeblendet wird. -->
+    <!-- ⚠️ Die Beschriftung steht in einem EIGENEN Span. renderNavTabs() setzte
+         früher `textContent` am Knopf selbst — das hätte das Abzeichen daneben
+         bei jedem Rendern mit weggeräumt. -->
+    <button data-tab="konto" id="nav-konto"><span id="nav-konto-text">Anmelden</span><span class="nav-badge" id="nav-konto-badge" style="display:none;"></span></button>
+    <!-- Nur für Admins. Default versteckt, damit ein Fehler beim Rendern den Tab
+         nicht versehentlich für alle öffnet. -->
+    <button data-tab="admin" id="nav-admin" style="display:none;">Einstellungen</button>
+    <!-- Nur für Angemeldete. Diese Seite ist die einzige, die ein nicht angemeldeter
+         Besucher überhaupt erreicht — die Änderungsliste im Info-Tab beschreibt aber
+         Anmeldewege und interne Abläufe. Default versteckt, damit der Tab beim
+         Erstladen nicht kurz aufblitzt, bevor die Sitzung geprüft ist. -->
+    <button data-tab="info" id="nav-info" style="display:none;">Info</button>
+  </div>
+</nav>
+
+<div class="page-body">
+  <!-- Linke Dashboard-Spalte. Trug bis 2026-07-28 zusätzlich die Aufgabenkarte —
+       die ist auf Michels Wunsch komplett ins Fenster "Meine Aufgaben" gezogen
+       (Kopf-Knopf), hier bleiben nur die Termine. Der Container-Aufbau bleibt
+       trotzdem, damit die Sichtbarkeitslogik unverändert greift. -->
+  <aside id="calendar-widget" class="calendar-widget" style="display:none;">
+    <div id="termine-widget-inhalt"></div>
+  </aside>
+
+  <main>
+
+  <section class="tab-section active" id="tab-uebersicht">
+    <div id="news-banner" class="news-banner" style="display:none;"></div>
+    <!-- Ansicht und Anordnung der Kacheln. Steht bewusst HIER und nicht in der
+         Kopfzeile: die ist am Handy schon so eng, dass ein weiterer Knopf eine
+         ganze Zeile kostet (siehe CLAUDE.md, Abschnitt "Als App ablegen"), und
+         die Leiste betrifft ohnehin nur diesen Tab. Nur fuer Angemeldete
+         sichtbar -- die Einstellung wird am Konto gespeichert. -->
+    <div class="ansicht-leiste" id="ansicht-leiste" style="display:none;">
+      <div class="ansicht-umschalter" role="group" aria-label="Ansicht der Werkzeuge">
+        <!-- Beschriftung bewusst OHNE .btn-lang: die Klasse faellt unter 860px
+             global weg, und ▦ bzw. ☰ allein sagt niemandem etwas. Die Leiste hat
+             eine eigene Zeile, der Platz reicht auch am Handy. -->
+        <button type="button" class="ansicht-btn" id="btn-ansicht-kacheln" aria-pressed="true" title="Werkzeuge als Kacheln anzeigen">▦ Kacheln</button>
+        <button type="button" class="ansicht-btn" id="btn-ansicht-liste" aria-pressed="false" title="Werkzeuge als Liste anzeigen">☰ Liste</button>
+      </div>
+      <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern">✏️ Anordnen</button>
+      <!-- Das Suchfeld steht offen da, es gibt keinen Knopf zum Aufklappen mehr
+           (Michel-Vorgabe 2026-08-13): ein Knopf, der nur ein Feld einblendet,
+           kostet einen Klick und verrät nicht, dass man suchen kann.
+
+           ⚠️ Suchen und Anordnen schliessen sich weiterhin gegenseitig aus: eine
+           gefilterte Liste beim Verschieben wuerde die ausgeblendeten Werkzeuge
+           aus der gespeicherten Reihenfolge kippen (saveToolOrder liest die IDs
+           aus dem DOM). Wer tippt, beendet damit den Anordnen-Modus, und wer
+           "Anordnen" drueckt, leert damit die Suche. Das Feld wird dafuer NICHT
+           gesperrt -- ein totes Feld schluckt die Eingabe kommentarlos. -->
+      <div class="ansicht-suche" id="ansicht-suche-feld">
+        <span class="ansicht-suche-lupe" aria-hidden="true">🔎</span>
+        <input type="search" id="ansicht-suche-eingabe" placeholder="Werkzeug suchen…" autocomplete="off" aria-label="Werkzeuge durchsuchen" />
+        <button type="button" class="ansicht-suche-x" id="btn-ansicht-suche-schliessen" title="Suche zurücknehmen" aria-label="Suche zurücknehmen" style="display:none;">✕</button>
+      </div>
+      <!-- Filter nach den beiden Kennzeichen der Kacheln (seit 2026-08-17):
+           ✉️ verschickt E-Mails nach aussen, 🔔 meldet sich auf dem Handy. Beide
+           Symbole standen bisher nur auf der Karte und erklaerten sich ueber einen
+           title-Tooltip -- den es am Handy nicht gibt. Hier sind sie anklickbar und
+           damit auch ohne Maus zu gebrauchen.
+
+           ⚠️ Sie stehen RECHTS neben dem Suchfeld (Michel-Vorgabe 2026-08-17, nachdem
+           die erste Fassung sie links davor gesetzt hatte). Das ist nicht nur Optik:
+           die Reihenfolge im Markup ist am Handy zugleich die Umbruch-Reihenfolge --
+           links davor bekaemen Feld und Knoepfe unter 560px getauschte Plaetze in der
+           zweiten Zeile.
+
+           ⚠️ Die beiden Filter VERKLEINERN gemeinsam: wer beide drueckt, sieht die
+           Werkzeuge, die beides tun. Ein Filter, der den Kreis erweitert, waere das
+           Gegenteil dessen, was ein Filter verspricht -- gleiche Linie wie das
+           Eingrenzen im Rundnachricht-Panel.
+
+           ⚠️ Wie die Suche schliesst der Filter den Anordnen-Modus aus:
+           saveToolOrder() liest die Tool-IDs aus dem DOM, in einer gefilterten Liste
+           zu verschieben kippt die ausgeblendeten Werkzeuge aus der gespeicherten
+           Reihenfolge. -->
+      <div class="ansicht-filter" role="group" aria-label="Werkzeuge nach Meldeweg filtern">
+        <!-- ⚠️ Das Wort steckt in einem eigenen span, weil es unter 560px wegfaellt
+             (siehe .ansicht-filter-btn in style.css) -- mit den Woertern braucht das
+             Paar am Handy eine eigene Zeile. Bewusst NICHT die Flottenklasse .btn-lang:
+             die faellt schon unter 860px und damit auch auf dem Tablet, wo der Platz
+             reicht. Das aria-label traegt die Bedeutung in beiden Faellen. -->
+        <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-mail" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die E-Mails verschicken" title="Nur Werkzeuge zeigen, die E-Mails nach außen verschicken">✉️<span class="filter-wort"> Mail</span></button>
+        <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-push" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken" title="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken">🔔<span class="filter-wort"> Push</span></button>
+      </div>
+      <span class="ansicht-hinweis" id="ansicht-hinweis" style="display:none;">Am Greifpunkt ⠿ verschieben — innerhalb der eigenen Kategorie.</span>
+      <span class="ansicht-status" id="ansicht-status" aria-live="polite"></span>
+    </div>
+    <div id="tool-groups"></div>
+    <div class="empty-state" id="uebersicht-empty" style="display:none;">
+      <p id="uebersicht-empty-text" style="margin:0;">Aktuell sind keine Tools sichtbar.</p>
+      <button type="button" class="btn" id="btn-empty-login" style="display:none; margin-top:14px;">Jetzt anmelden</button>
+    </div>
+    <!-- Linksammlung (seit 2026-08-14). Steht UNTER den Kacheln: die Werkzeuge des
+         Vereins sind die Hauptsache, fremde Webseiten der Zusatz.
+         ⚠️ Sichtbar fuer JEDEN Besucher, auch ohne Konto (Michel-Entscheidung
+         2026-08-14) -- deshalb liefert der Worker sie im oeffentlichen Teil des GET
+         aus, nicht im angemeldet-Zweig wie die Neuigkeiten. Der ganze Bereich
+         bleibt weg, solange kein Link gepflegt ist. -->
+    <section class="links-bereich" id="links-bereich" style="display:none;">
+      <h2 class="links-titel">🔗 Nützliche Links</h2>
+      <div class="links-liste" id="links-liste"></div>
+    </section>
+
+    <!-- Wegweiser zum Ideen-Tab (seit 2026-08-16). Bewusst nur ein Hinweis und
+         kein zweiter Inhalt: die Ideen selbst stehen im eigenen Tab, hier soll
+         die Startseite nicht länger werden. Ohne diese Zeile findet den Tab in
+         den ersten Wochen fast niemand (Michel-Entscheidung).
+         Sichtbar nur für angemeldetes Personal — dieselbe Bedingung wie der
+         Nav-Tab, gepflegt in renderIdeenHinweis(). -->
+    <section class="ideen-hinweis" id="ideen-hinweis" style="display:none;">
+      <span class="ideen-hinweis-text">💡 Du hast eine Idee für den Verein? Schreib sie auf.</span>
+      <button type="button" class="btn small" id="btn-ideen-hinweis">Zu den Ideen</button>
+    </section>
+  </section>
+
+  <section class="tab-section" id="tab-feedback">
+    <div class="empty-state" id="feedback-empty" style="display:none;">
+      <p style="margin:0;">Melde dich an, um Feedback zu geben, einen Wunsch zu äußern oder Hilfe zu bekommen.</p>
+      <button type="button" class="btn" id="btn-feedback-empty-login" style="margin-top:14px;">Jetzt anmelden</button>
+    </div>
+
+    <div id="feedback-content" style="display:none;">
+      <div class="card" id="wiki-ask-card" style="display:none;">
+        <h2>📚 Frag zuerst das Toolbox Wiki</h2>
+        <p class="muted" style="margin-bottom:14px;">Der Wissens-Assistent beantwortet Fragen zu Vereinsunterlagen und zur Bedienung der Tools — oft schneller, als auf eine Antwort zu warten. <a href="https://sc1911heiligenstadt.github.io/Vereinswiki/">Dokumente ansehen/verwalten →</a></p>
+        <div class="form-field">
+          <label for="wiki-frage-input">Deine Frage</label>
+          <textarea id="wiki-frage-input" rows="3" placeholder="z. B. Wie trage ich eine Fahrt im Fahrtenbuch ein?"></textarea>
+        </div>
+        <div style="margin-top:12px;">
+          <button class="btn" id="btn-wiki-frage" type="button">Fragen</button>
+        </div>
+      </div>
+
+      <div class="card answer-card" id="wiki-antwort-card" style="display:none;">
+        <div class="answer-question" id="wiki-antwort-frage"></div>
+        <div class="answer-text" id="wiki-antwort-text"></div>
+        <p class="muted answer-meta" id="wiki-antwort-meta" style="margin-top:12px;"></p>
+      </div>
+
+      <div class="card">
+        <h2>Feedback &amp; Wünsche</h2>
+        <p class="muted" style="margin-bottom:14px;">Sag uns, was dir auffällt, oder wünsch dir eine neue Funktion — dein Name wird mit übermittelt, damit wir bei Rückfragen wissen, an wen wir uns wenden.</p>
+        <form id="feedback-form" class="form-grid" style="align-items:flex-end;">
+          <div class="form-field">
+            <label>Typ</label>
+            <select id="feedback-type" class="form-select">
+              <option value="feedback">Feedback</option>
+              <option value="wunsch">Wunsch</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Tool (optional)</label>
+            <select id="feedback-tool" class="form-select"><option value="">— Allgemein —</option></select>
+          </div>
+          <div class="form-field" style="grid-column:1 / -1;">
+            <label>Text</label>
+            <textarea id="feedback-text" rows="4" maxlength="2000" required></textarea>
+          </div>
+          <div class="form-field">
+            <button type="submit" class="btn" id="btn-feedback-submit">Absenden</button>
+          </div>
+        </form>
+        <p class="muted" id="feedback-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+        <p class="muted" id="feedback-success" style="display:none; color:#2d8c4e; margin-top:10px;">Danke, dein Feedback wurde übermittelt.</p>
+      </div>
+
+      <!-- Eigene Einreichungen samt Antwort. Ohne diese Karte fuehrte die
+           Push-Nachricht ins Leere: list-feedback ist admin-only. -->
+      <div class="card" id="meine-feedbacks-card" style="display:none;">
+        <h2>Meine Einreichungen</h2>
+        <p class="muted" style="margin-bottom:14px;">Was du eingereicht hast und was darauf geantwortet wurde.</p>
+        <div id="meine-feedbacks-liste"></div>
+      </div>
+
+      <div class="card">
+        <h2>Hilfe</h2>
+        <p class="muted" style="margin-bottom:14px;">Dringende Frage oder direkter Kontakt gewünscht? Schreib Michel auf WhatsApp.</p>
+        <a class="btn-link" id="feedback-whatsapp-link" href="#" target="_blank" rel="noopener">💬 Auf WhatsApp schreiben</a>
+      </div>
+
+      <!-- Der Typ „Wunsch“ oben bleibt bewusst bestehen (Michel-Entscheidung
+           2026-08-16), obwohl der Ideen-Tab dasselbe abdeckt und zusätzlich für
+           alle sichtbar ist. Damit niemand die zweite Möglichkeit übersieht,
+           steht hier der Weg dorthin. -->
+      <div class="card">
+        <h2>💡 Ideen für den Verein</h2>
+        <p class="muted" style="margin-bottom:14px;">Hier auf dieser Seite geht es um die Werkzeuge: was hakt, was fehlt, was du dir an ihnen wünschst. Hast du dagegen eine Idee <strong>für den Verein</strong> — ein Fest, eine Aktion, etwas für die Jugend, für die Mitglieder oder ums Gelände —, dann gehört sie in die Ideenliste. Dort sehen alle deine Idee und können ihr zustimmen.</p>
+        <button type="button" class="btn" id="btn-feedback-zu-ideen">💡 Zu den Ideen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Ideen (seit 2026-08-16) ---------- -->
+  <section class="tab-section" id="tab-ideen">
+    <div class="empty-state" id="ideen-empty" style="display:none;">
+      <p style="margin:0;">Melde dich an, um Ideen für den Verein zu sehen und selbst welche aufzuschreiben.</p>
+      <button type="button" class="btn" id="btn-ideen-empty-login" style="margin-top:14px;">Jetzt anmelden</button>
+    </div>
+
+    <div id="ideen-content" style="display:none;">
+      <div class="card">
+        <h2>Neue Idee</h2>
+        <p class="muted" style="margin-bottom:14px;">Was sollten wir im Verein anpacken? Ein Fest, eine Aktion, etwas für die Jugend, für die Mitglieder oder ums Gelände — ein Satz reicht. Alle Angemeldeten sehen deine Idee und können ihr zustimmen; was viele wollen, wird eher umgesetzt.</p>
+        <form id="idee-form" class="form-grid">
+          <div class="form-field" style="grid-column:1 / -1;">
+            <label for="idee-titel">Überschrift</label>
+            <input type="text" id="idee-titel" maxlength="120" placeholder="z. B. Sommerfest für alle Mannschaften" required />
+          </div>
+          <div class="form-field" style="grid-column:1 / -1;">
+            <label for="idee-text">Mehr dazu (freiwillig)</label>
+            <textarea id="idee-text" rows="3" maxlength="2000" placeholder="Warum wäre das gut? Wie stellst du dir das vor?"></textarea>
+          </div>
+          <!-- ⚠️ NICHT in .form-field: dort greift input { width: 100% } und macht
+               aus dem Kästchen einen Balken quer durch die Karte (dieselbe Falle
+               wie bei .push-schalter und .news-push-feld). -->
+          <div class="idee-anonym-feld" style="grid-column:1 / -1;">
+            <label class="idee-anonym-label">
+              <input type="checkbox" id="idee-anonym" />
+              <span>Anonym einreichen</span>
+            </label>
+            <p class="muted idee-anonym-hinweis">Dein Name wird den anderen dann nicht angezeigt. Die Vereinsleitung sieht ihn.</p>
+          </div>
+          <div class="form-field">
+            <button type="submit" class="btn" id="btn-idee-absenden">Idee absenden</button>
+            <button type="button" class="btn secondary" id="btn-idee-abbrechen" style="display:none;">Abbrechen</button>
+          </div>
+        </form>
+        <p class="muted" id="idee-form-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+        <p class="muted" id="idee-form-ok" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+      </div>
+
+      <div class="card">
+        <h2>Ideen</h2>
+        <div id="ideen-liste"></div>
+        <p class="muted" id="ideen-status" style="margin-top:10px;">Wird geladen …</p>
+      </div>
+
+      <!-- Erledigtes steht unten und zugeklappt (Michel-Entscheidung): die
+           Hauptliste bleibt kurz, und trotzdem sieht jeder, dass etwas passiert
+           ist. Der ganze Block bleibt weg, solange nichts abgeschlossen ist. -->
+      <details class="card collapsible" id="ideen-erledigt-panel" style="display:none;">
+        <summary id="ideen-erledigt-titel">Umgesetzt &amp; nicht geplant</summary>
+        <div id="ideen-erledigt-liste" style="margin-top:14px;"></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ---------- Info ---------- -->
+  <section class="tab-section" id="tab-info">
+    <div class="card">
+      <h2>Über die Tools-Übersicht <span class="version-badge" id="version-badge-2"></span></h2>
+      <p class="muted">
+            Zentrale Startseite aller Vereins-Tools — Anmeldung, Sichtbarkeit und Neuigkeiten.
+            Hier meldet man sich einmal an, danach sind alle Werkzeuge offen, für die das eigene Konto
+            freigeschaltet ist. Die Kacheln lassen sich als Liste anzeigen und selbst anordnen; die
+            Reihenfolge hängt am Konto, nicht am Browser. Dazu: die Flotte als App auf dem
+            Startbildschirm ablegen, Benachrichtigungen aufs Handy je Anlass einzeln schalten, eigene
+            ToDos, Unterschriften anfordern und das Konto-Foto, das im Kadermanager und in der
+            Besprechung erscheint.
+          </p>
+    </div>
+    <div class="card">
+      <h2>Änderungen</h2>
+      <div id="changelog-list"></div>
+    </div>
+  
+    <div class="card" id="ds-info-karte">
+      <h2>Datenschutz</h2>
+      <p>Diese Übersicht und die von hier verlinkten Werkzeuge gehören zu den
+      internen Anwendungen des 1. SC 1911 Heiligenstadt. Die dort erfassten Daten
+      werden ausschließlich für die Vereinsarbeit verwendet und liegen auf Servern
+      in Deutschland, die ein Auftragsverarbeiter für den Verein betreibt.</p>
+      <p>Verantwortlich ist der 1. SC 1911 Heiligenstadt, Leineberg 2,
+      37308 Heilbad Heiligenstadt, Telefon 03606 612206,
+      <a href="mailto:info@sc1911-heiligenstadt.de">info@sc1911-heiligenstadt.de</a>.
+      Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
+      Datenübertragbarkeit und Widerspruch lassen sich unter dieser Anschrift
+      geltend machen. Beschwerden nimmt der Thüringer Landesbeauftragte für den
+      Datenschutz und die Informationsfreiheit entgegen.</p>
+      <!-- Push-Benachrichtigungen (seit 2026-08-03): neuer Empfaenger, deshalb
+           auskunftspflichtig. Steht bewusst NUR hier -- eingeschaltet wird der
+           Dienst ausschliesslich in dieser App, nicht in den 34 anderen. -->
+      <p><strong>Benachrichtigungen auf dem Gerät.</strong> Wer im Tab „Mein Konto“
+      Benachrichtigungen einschaltet, meldet damit sein Gerät beim Zustelldienst
+      seines Browser-Herstellers an — auf dem iPhone bei Apple, auf Android und in
+      Chrome bei Google. Dabei entsteht eine Geräteadresse, die der Verein
+      speichert, um Nachrichten dorthin schicken zu können; Apple beziehungsweise
+      Google erfahren, dass an dieses Gerät etwas zugestellt wird. <strong>Den Inhalt
+      der Nachricht können sie nicht lesen</strong> — er wird auf dem Vereinsserver
+      verschlüsselt und erst auf dem Gerät wieder entschlüsselt. Die Nachrichten
+      selbst nennen weder Namen noch Termin- oder Dokumenttitel. Das Abmelden ist
+      jederzeit an derselben Stelle möglich und löscht die Geräteadresse.</p>
+      <!-- Aktivitätspunkte (seit 2026-08-04). Muss stehen, BEVOR das erste
+           Ereignis geschrieben wird -- es ist eine Verhaltensdatenverarbeitung,
+           und ein Teil der Betroffenen ist beim Verein angestellt oder bekommt
+           eine Übungsleiterpauschale. Wie beim Push-Absatz gilt der Text nur für
+           diese Seite: gezählt wird zwar die Nutzung aller Tools, erfasst und
+           abgeschaltet wird sie aber ausschließlich hier.
+
+           ⚠️ Korrigiert am 2026-08-04. Hier stand "ein Punktestand, den nur du
+           selbst siehst; eine Rangliste oder einen Vergleich zwischen Personen
+           gibt es nicht" -- das war unzutreffend, solange `aktivitaet-auswertung`
+           jedem Admin `username`, Punktzahl UND die Nutzung je Werkzeug liefert.
+           Michel-Entscheidung: die Auswertung bleibt (sie beantwortet "welches
+           Tool nutzt eigentlich niemand"), dafür sagt der Text jetzt, was sie
+           zeigt. Wer die Auswertung je enger zieht, zieht diesen Satz mit. -->
+      <p><strong>Aktivitätspunkte.</strong> Für Konten des Vereinspersonals (nicht für
+      Spielerkonten) hält der Verein fest, <strong>wann welches Werkzeug benutzt wurde</strong> —
+      Zeitpunkt auf fünf Minuten genau, das betroffene Werkzeug und die Art des Vorgangs,
+      nicht dessen Inhalt. Daraus entsteht ein Punktestand, den außer dir nur die
+      <strong>Administratoren der Tools-Übersicht</strong> sehen; ihnen wird dabei auch
+      angezeigt, wer welches Werkzeug wie oft benutzt hat. Eine für alle sichtbare
+      Rangliste gibt es nicht. Zweck ist, die Arbeit
+      mit den Vereins-Tools zu würdigen und zu erkennen, welche Werkzeuge gebraucht werden.
+      Grundlage ist das berechtigte Interesse des Vereins. Die <strong>Einzelaufzeichnungen
+      werden nach 13 Monaten gelöscht</strong> und nur noch als Monatssumme fortgeführt. Im
+      Tab „Mein Konto“ lässt sich einsehen, was gespeichert ist, und die Erfassung mit dem
+      Schalter <em>Nicht mitzählen</em> jederzeit beenden — die bis dahin gespeicherten
+      Aufzeichnungen werden dabei gelöscht.</p>
+      <!-- Ideen (seit 2026-08-16). Auskunftspflichtig, weil hier zum ersten Mal
+           ein frei geschriebener Beitrag samt Namen für die ganze Belegschaft
+           sichtbar wird -- Feedback und Wünsche liest bis heute nur der Admin.
+           ⚠️ Der Absatz muss ehrlich beschreiben, was „anonym" wirklich bedeutet
+           (der Name wird gespeichert und dem Admin gezeigt) und dass umgekehrt
+           bei der Zustimmung NIEMAND die Namen sieht, auch kein Admin. Wer eines
+           von beidem je ändert, zieht diesen Absatz mit. -->
+      <p><strong>Ideen.</strong> Wer im Tab „💡 Ideen“ eine Idee einreicht, dessen
+      <strong>Name steht für alle angemeldeten Mitarbeiter dabei</strong>, zusammen mit dem
+      geschriebenen Text und dem Datum. Wird beim Einreichen <em>Anonym</em> angekreuzt,
+      wird der Name den anderen nicht angezeigt — <strong>gespeichert wird er trotzdem</strong>
+      und die Administratoren der Tools-Übersicht sehen ihn, damit Rückfragen möglich
+      bleiben und niemand unter fremdem Namen schreiben kann. Bei der Zustimmung
+      („Daumen hoch“) ist es umgekehrt: gespeichert wird, wer zugestimmt hat, angezeigt
+      wird aber <strong>nur die Anzahl — auch den Administratoren</strong>. Zweck ist es,
+      Anregungen für die Vereinsarbeit zu sammeln; Grundlage ist das berechtigte Interesse
+      des Vereins.
+      Eine eigene Idee lässt sich selbst löschen, solange noch nicht an ihr gearbeitet wird;
+      danach und für die Zustimmung genügt eine Nachricht an die oben genannte Anschrift.</p>
+      <!-- Privatnachrichten (seit 2026-08-30). Auskunftspflichtig aus drei
+           Gründen, die alle in den Absatz gehören: der geschriebene Text verlässt
+           den Verein Richtung Mailversender und liegt dort im Versandprotokoll;
+           der Empfänger sieht die Mailadresse des Absenders (Antwort-Adresse);
+           und der Administrator sieht die Verbindungsdaten, obwohl es
+           „Privatnachricht" heißt.
+           ⚠️ Der Satz zum Administrator ist die Gegenprobe zum Panel-Text im
+           Einstellungen-Tab: wer das Protokoll je um Titel oder Text erweitert,
+           muss BEIDE Stellen mitziehen, sonst steht hier eine Unwahrheit. -->
+      <p><strong>Privatnachrichten.</strong> Wer in einem Werkzeug Bearbeiten-Recht hat,
+      kann anderen Mitarbeiterinnen und Mitarbeitern über den Tab „Mein Konto“ eine
+      Nachricht schicken. Gespeichert werden Absender, Empfänger, Überschrift, Text,
+      Zeitpunkt und ob die Nachricht gelesen wurde; dieselbe Nachricht geht zusätzlich
+      als E-Mail und — wenn eingeschaltet — auf das Gerät. <strong>Der Text verlässt
+      dabei den Verein</strong>: er steht in der E-Mail und damit im Versandprotokoll
+      unseres Mailversenders, und er erscheint auf dem Sperrbildschirm des Empfängers.
+      Antwortet der Empfänger auf die E-Mail, geht die Antwort an die
+      <strong>E-Mail-Adresse des Absenders</strong>, die dieser dafür offenlegt.
+      Den <strong>Administratoren der Tools-Übersicht</strong> wird angezeigt, wer wann
+      an wen geschrieben hat — <strong>nicht der Inhalt</strong>, weder Überschrift noch
+      Text. Zweck ist es, auf Fehlendes hinzuweisen und die Vereinsarbeit abzustimmen;
+      Grundlage ist das berechtigte Interesse des Vereins. <strong>Gelesene Nachrichten
+      werden nach 90 Tagen gelöscht, ungelesene nach einem Jahr</strong>; jede eigene
+      Nachricht lässt sich jederzeit selbst früher löschen.</p>
+      <p><a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung des Vereins</a>
+      &middot;
+      <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a></p>
+    </div>
+</section>
+
+  <!-- Eigenes Konto und alle Anmeldewege. Bewusst NICHT im Einstellungen-Tab:
+       der ist seit dem Umbau admin-only, der Login muss aber jedem offenstehen. -->
+  <section class="tab-section" id="tab-konto">
+
+    <!-- Bootstrap: nur sichtbar, solange noch kein Nutzer existiert -->
+    <div class="pin-gate" id="admin-bootstrap-panel" style="display:none;">
+      <div class="card">
+        <h2>Admin-Konto einrichten</h2>
+        <p class="muted" style="margin-bottom:14px;">Es existiert noch kein Nutzerkonto. Hier einmalig das erste Admin-Konto anlegen.</p>
+        <form id="bootstrap-form">
+          <div class="form-field" style="margin-bottom:10px;">
+            <label>Nutzername</label>
+            <input type="text" id="bootstrap-username" autocomplete="username" required />
+          </div>
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort</label>
+            <input type="password" id="bootstrap-password" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
+          </div>
+          <p class="muted" id="bootstrap-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-bootstrap-submit">Admin-Konto anlegen</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Login-Gate: Schritt 1, nur Nutzername -->
+    <div class="pin-gate" id="admin-login-gate">
+      <div class="card">
+        <h2>Anmelden</h2>
+        <p class="muted" style="margin-bottom:14px;">Mit Nutzername oder E-Mail-Adresse anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
+        <form id="login-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Nutzername oder E-Mail-Adresse</label>
+            <input type="text" id="login-username" autocomplete="username" required />
+            <small class="muted" style="display:block; margin-top:6px;">Egal ob „Max Mustermann“, „max.mustermann“ oder die eigene E-Mail-Adresse.</small>
+          </div>
+          <p class="muted" id="login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-login-submit">Weiter</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Login-Gate: Schritt 2, Passwort für bestehenden Account -->
+    <div class="pin-gate" id="login-password-panel" style="display:none;">
+      <div class="card">
+        <h2>Anmelden</h2>
+        <p class="muted" style="margin-bottom:14px;">Passwort für <strong id="login-password-username"></strong> eingeben.</p>
+        <form id="login-password-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort</label>
+            <input type="password" id="login-password" autocomplete="current-password" required />
+          </div>
+          <p class="muted" id="login-password-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-login-password-submit">Anmelden</button>
+          <button type="button" class="btn secondary" id="btn-login-back">Zurück</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Erstlogin: neuen Account anlegen und mit Passwort verknüpfen -->
+    <div class="pin-gate" id="first-login-panel" style="display:none;">
+      <div class="card">
+        <h2>Konto einrichten</h2>
+        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> gibt es noch keinen aktiven Zugang. Lege jetzt ein Passwort fest, um das Konto damit zu verknüpfen — danach kannst du dich immer mit diesem Nutzernamen (oder deiner E-Mail-Adresse) und dem Passwort anmelden.</p>
+        <form id="first-login-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Neues Passwort</label>
+            <input type="password" id="first-login-password" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
+          </div>
+          <p class="muted" id="first-login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-first-login-submit">Konto anlegen &amp; Passwort verknüpfen</button>
+          <button type="button" class="btn secondary" id="btn-first-login-back">Zurück</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Eigenes Konto (jeder Nutzer). Abmelden sitzt im Header, nicht hier. -->
+    <div class="card" id="admin-logged-in-panel" style="display:none;">
+      <h2>Mein Konto</h2>
+      <p class="muted" style="margin-bottom:14px;">Diese Angaben pflegt die Vereinsverwaltung. Stimmt etwas nicht, gib im Tab „Feedback &amp; Hilfe“ Bescheid.</p>
+      <dl class="konto-grid" id="konto-details"></dl>
+
+      <!-- Nutzerfoto. Steht bewusst UNTER der Angabenliste: der Hinweis darüber
+           ("pflegt die Vereinsverwaltung") gilt für das Foto gerade nicht — das
+           hinterlegt jeder selbst. -->
+      <div class="konto-foto">
+        <div class="konto-foto-vorschau" id="konto-foto-vorschau"></div>
+        <div class="konto-foto-text">
+          <h3>Mein Foto</h3>
+          <p class="muted">Ein Bild von dir, das in den Tools neben deinem Namen erscheint — im Kadermanager in Kaderliste und Aufstellung, in der Besprechung auf deiner Teilnehmerkachel.</p>
+          <div class="konto-foto-btns">
+            <button type="button" class="btn secondary small" id="btn-foto-waehlen">Bild auswählen</button>
+            <!-- Nur auf Geräten mit grobem Zeiger sichtbar (CSS): am Rechner ohne
+                 Kamera führte der Knopf bloß in denselben Dateidialog. -->
+            <button type="button" class="btn secondary small nur-touch" id="btn-foto-kamera">📷 Foto aufnehmen</button>
+            <button type="button" class="btn secondary small" id="btn-foto-entfernen" style="display:none;">Entfernen</button>
+          </div>
+          <!-- Zwei getrennte Eingaben: capture="user" springt direkt in die
+               Frontkamera, ohne Umweg über die Mediathek. Ein einzelnes Feld
+               könnte nur eines von beidem. -->
+          <input type="file" id="foto-datei" accept="image/*" style="display:none;" />
+          <input type="file" id="foto-kamera-datei" accept="image/*" capture="user" style="display:none;" />
+          <p class="muted foto-status" id="foto-status" style="display:none;"></p>
+        </div>
+      </div>
+
+      <div class="konto-passwort">
+        <button type="button" class="btn secondary small" id="btn-passwort-aendern">Passwort ändern</button>
+        <form id="passwort-form" style="display:none; margin-top:14px;">
+          <div class="form-field" style="margin-bottom:10px;">
+            <label for="passwort-alt">Bisheriges Passwort</label>
+            <input type="password" id="passwort-alt" autocomplete="current-password" required />
+          </div>
+          <div class="form-field" style="margin-bottom:14px;">
+            <label for="passwort-neu">Neues Passwort</label>
+            <input type="password" id="passwort-neu" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
+          </div>
+          <p class="muted" id="passwort-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-passwort-speichern">Passwort ändern</button>
+          <button type="button" class="btn secondary" id="btn-passwort-abbrechen">Abbrechen</button>
+        </form>
+        <p class="muted" id="passwort-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+      </div>
+    </div>
+
+    <!-- Downloadbereich (seit 2026-08-17). Lag zuerst als eigener Tab in
+         Trainerdaten und ist auf Michel-Vorgabe hierher gezogen -- es ist
+         etwas, das man abholt, kein Vertragsdatum. Dort ersatzlos entfernt,
+         nicht dupliziert. Verwaltet (Dateien hochladen, Schreiben freigeben)
+         wird weiterhin in Trainerdaten.
+         ⚠️ Steht auf Michel-Vorgabe vom 2026-08-17 als ERSTE der vier Karten,
+         über der Kontaktliste: hier liegt etwas, das auf eine Handlung wartet
+         (und das rote Abzeichen am Tab meint genau diese Karte). Die drei
+         darunter sind Einstellungen und Ansichten. -->
+    <details class="card collapsible" id="downloads-panel" style="display:none;">
+      <summary>Unterlagen zum Herunterladen</summary>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Was der Verein für dich bereitstellt — zum Ansehen, Ausdrucken oder Weitergeben.
+        Alles kommt als PDF: „Ansehen“ öffnet es in einem neuen Tab, „Speichern“ legt es
+        auf deinem Gerät ab.
+        <br />
+        <span style="font-size:12px;">Die Geschäftsstelle sieht, wann du ein Dokument
+        angesehen oder gespeichert hast — so ist belegt, dass es bei dir angekommen ist.</span>
+      </p>
+      <p class="muted" id="dl-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <!-- Persönliches steht oben: das ist das, was jemand wirklich erwartet
+           (sein Bestätigungsschreiben, sein Vertrag). Der Server liefert einen
+           persönlichen Eintrag nur an seinen Empfänger — das Ausblenden hier ist
+           Bequemlichkeit, nicht das Gate. -->
+      <div id="dl-persoenlich-block" style="display:none;">
+        <h3 style="margin:0 0 10px;">Für dich persönlich</h3>
+        <div id="dl-persoenlich-liste"></div>
+      </div>
+
+      <div id="dl-allgemein-block" style="display:none;">
+        <h3 style="margin:18px 0 10px;">Für alle</h3>
+        <div id="dl-allgemein-liste"></div>
+      </div>
+
+      <p class="muted" id="dl-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+      <!-- Nur für die, die verteilen dürfen — sonst sucht man den Ort dafür. -->
+      <p class="muted" id="dl-verteilen-hinweis" style="display:none; margin-top:14px; font-size:13px;">
+        Bereitgestellt wird in den
+        <a href="https://sc1911heiligenstadt.github.io/dokumentenvorlagen/">Dokumentenvorlagen</a>.
+      </p>
+    </details>
+
+    <!-- Privatnachrichten (seit 2026-08-30). Steht bewusst DIREKT UNTER den
+         Unterlagen: beide sind Karten, in denen etwas auf eine Handlung wartet,
+         und beide speisen dasselbe rote Abzeichen am Tab. Die Michel-Vorgabe vom
+         2026-08-17 ("Unterlagen als ERSTE") bleibt damit unangetastet.
+         ⚠️ Kein eigener Tab in der Leiste (Michel-Entscheidung): die ist am Handy
+         schon voll, und Empfangen und Senden gehören an einen Ort. -->
+    <details class="card collapsible" id="pn-panel" style="display:none;">
+      <summary>Privatnachrichten</summary>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Kurze Hinweise an einzelne Personen aus dem Verein — etwa, dass noch eine Unterlage
+        fehlt. Jede Nachricht geht zusätzlich als E-Mail und aufs Handy.
+      </p>
+      <p class="muted" id="pn-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <!-- Schreibmaske. Nur für Bearbeiter, wird per JS eingeblendet. -->
+      <div id="pn-schreiben" style="display:none;">
+        <h3 style="margin:0 0 10px;">Nachricht schreiben</h3>
+
+        <!-- ⚠️ Diese drei Sätze gehören zur Funktion, nicht zur Zierde. Der Name
+             "Privatnachricht" weckt zwei falsche Erwartungen (man könne antworten,
+             und niemand sonst sähe etwas), und der volle Text landet auf einem
+             Sperrbildschirm. Wer sie entfernt, nimmt dem Absender die Grundlage
+             seiner Wortwahl. -->
+        <div class="pn-hinweis">
+          <p>📱 <strong>Dein Text steht sichtbar auf dem Sperrbildschirm</strong> des Empfängers
+            und in seinem E-Mail-Postfach. Nichts Vertrauliches hineinschreiben.</p>
+          <p>↩️ Der Empfänger kann hier <strong>nicht antworten</strong> — er antwortet auf die E-Mail,
+            und die geht direkt an dich.</p>
+          <p>👁️ Der Administrator sieht, <strong>dass</strong> du geschrieben hast — nicht was.</p>
+        </div>
+
+        <div class="form-field" style="margin-bottom:10px;">
+          <label for="pn-titel">Überschrift</label>
+          <input type="text" id="pn-titel" maxlength="100" placeholder="z. B. Führungszeugnis fehlt noch" />
+        </div>
+        <div class="form-field" style="margin-bottom:10px;">
+          <label for="pn-text">Nachricht</label>
+          <textarea id="pn-text" rows="4" maxlength="400" placeholder="Was fehlt, und bis wann du es brauchst."></textarea>
+          <small class="muted" id="pn-text-zaehler" style="display:block; margin-top:6px;"></small>
+        </div>
+        <div class="form-field" style="margin-bottom:14px;">
+          <label for="pn-ziel">Wohin soll der Empfänger klicken?</label>
+          <select id="pn-ziel"></select>
+        </div>
+
+        <h4 class="pn-titel">An wen?</h4>
+        <input type="text" id="pn-suche" class="pn-suche" placeholder="Namen suchen …" />
+        <!-- ⚠️ KEIN .form-field um die Kästchen: dort greift input{width:100%} und
+             macht aus jeder Checkbox einen Balken (gleiche Falle wie bei den
+             Push-Schaltern und der Rundnachricht). -->
+        <div class="pn-personen" id="pn-personen"></div>
+        <p class="muted" id="pn-auswahl-stand" style="margin:8px 0 14px;"></p>
+
+        <div class="pn-knopfreihe">
+          <button type="button" class="btn" id="btn-pn-senden">Nachricht senden</button>
+          <button type="button" class="btn secondary" id="btn-pn-verwerfen">Zurücksetzen</button>
+        </div>
+        <p class="muted" id="pn-meldung" style="display:none; margin-top:10px;"></p>
+
+        <!-- Wegweiser zur Rundnachricht. Beide Wege bleiben getrennt
+             (Michel-Entscheidung), deshalb muss jeder auf den anderen zeigen —
+             sonst überlegt man bei jedem Mal, welcher Knopf der richtige ist. -->
+        <p class="muted" id="pn-rund-hinweis" style="display:none; margin-top:14px; font-size:13px;">
+          Eine Nachricht an <strong>alle</strong> geht nicht hier, sondern über die Rundnachricht
+          im Tab „Einstellungen“.
+        </p>
+
+        <div class="pn-trenner"></div>
+      </div>
+
+      <div id="pn-eingang-block">
+        <h3 style="margin:0 0 10px;">Für mich</h3>
+        <div id="pn-eingang"></div>
+      </div>
+
+      <details class="pn-details" id="pn-ausgang-block" style="display:none;">
+        <summary>Von mir verschickt</summary>
+        <div id="pn-ausgang"></div>
+      </details>
+
+      <p class="muted" id="pn-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+    </details>
+
+    <!-- Freigabe für die Kontaktliste (seit 2026-08-13). Stand bis dahin in
+         Trainerdaten und ist von dort hierher gezogen: es ist eine Einstellung am
+         eigenen Konto, kein Vertragsdatum. Gespeichert bleibt sie in
+         trainerdaten.json -- sie bezieht sich auf DIESE Felder -- weshalb diese
+         Karte Trainerdatens eigenen Worker direkt anspricht (gleicher Direktweg
+         wie die Personalakte bei den Dokumenten), nicht das Gateway hier. -->
+    <details class="card collapsible" id="kontakt-freigabe-panel" style="display:none;">
+      <summary>Kontaktliste des Vereins</summary>
+      <p class="muted" style="margin-bottom:10px; line-height:1.5;">
+        Im Werkzeug <strong>Kontakte</strong> können sich die Mitarbeiterinnen und Mitarbeiter
+        des Vereins gegenseitig erreichen. Du entscheidest selbst, ob und mit welchen Angaben
+        du dort erscheinst — von uns aus steht dort nichts über dich.
+      </p>
+      <p class="muted" style="margin-bottom:14px; line-height:1.5;">
+        Deine Freigabe gilt nur für <strong>angemeldete Personen des Vereins</strong>. Nach
+        außen wird nichts veröffentlicht, und Bankverbindung, Geburtsdatum und Dokumente sind
+        dort grundsätzlich nie zu sehen. Du kannst jedes Häkchen jederzeit wieder entfernen —
+        die Angabe verschwindet dann sofort aus der Liste.
+      </p>
+      <p class="muted" id="kf-status" style="margin-bottom:14px;">Wird geladen …</p>
+
+      <div id="kf-felder-wrap" style="display:none;">
+        <label class="kf-check kf-haupt">
+          <input type="checkbox" id="kf-name" />
+          <span><strong>Ich möchte in der Kontaktliste stehen</strong>
+            <span class="kf-wert" id="kf-wert-name"></span></span>
+        </label>
+        <p class="muted kf-hinweis">
+          Ohne dieses Häkchen erscheinst du gar nicht in der Liste — auch dann nicht, wenn du
+          unten etwas angekreuzt hast.
+        </p>
+        <div id="kf-felder">
+          <label class="kf-check">
+            <input type="checkbox" id="kf-telefon" />
+            <span>Telefonnummer zeigen <span class="kf-wert" id="kf-wert-telefon"></span></span>
+          </label>
+          <label class="kf-check">
+            <input type="checkbox" id="kf-email" />
+            <span>E-Mail-Adresse zeigen <span class="kf-wert" id="kf-wert-email"></span></span>
+          </label>
+          <label class="kf-check">
+            <input type="checkbox" id="kf-adresse" />
+            <span>Anschrift zeigen <span class="kf-wert" id="kf-wert-adresse"></span></span>
+          </label>
+        </div>
+        <p class="muted" id="kf-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+        <!-- ⚠️ NICHT `.btn-row`: diese Klasse gibt es in DIESEM Repo gar nicht (sie
+             stammt aus den App-Repos und war hier wirkungslos, das <div> blieb
+             `display: block`). Deshalb eine eigene Reihe. -->
+        <div class="kf-knopfreihe">
+          <button type="button" class="btn" id="btn-kf-speichern">Freigabe speichern</button>
+          <!-- ⚠️ `btn-link`, NICHT `btn`: die Knopf-Optik haengt hier am ELEMENT
+               (`button.btn`), ein <a class="btn"> saehe wie ein normaler Link aus. -->
+          <a class="btn-link secondary" id="kf-link-kontakte" href="https://sc1911heiligenstadt.github.io/kontakte/">📇 Zur Kontaktliste</a>
+        </div>
+      </div>
+    </details>
+
+    <!-- Push-Benachrichtigungen (seit 2026-08-03). Bewusst hier und nicht als
+         Kopf-Knopf: die Kopfzeile ist am Handy am Anschlag, und vor allem ist
+         das eine dauerhafte Einstellung, die man auch wiederfinden muss -- zum
+         Abstellen und zum Einschalten auf einem zweiten Geraet. -->
+    <details class="card collapsible" id="push-panel" style="display:none;">
+      <summary>Benachrichtigungen aufs Handy</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Statt oder zusätzlich zur E-Mail meldet sich die App direkt auf dem Gerät, wenn ein
+        Termin geteilt wird, eine Aufgabe für dich hereinkommt oder ein Dokument auf deine
+        Unterschrift wartet. Die Nachricht nennt nie Namen oder Titel — nur worum es geht.
+      </p>
+
+      <!-- Zustand 1+2: Plattform kann nichts, oder auf dem iPhone fehlt die abgelegte App -->
+      <p class="muted" id="push-hinweis" style="display:none;"></p>
+
+      <!-- Zustand 3: moeglich, noch nicht eingeschaltet -->
+      <button type="button" class="btn" id="btn-push-ein" style="display:none;">Einschalten</button>
+
+      <!-- Zustand 4: angemeldet -->
+      <div id="push-eingerichtet" style="display:none;">
+        <h3 class="push-titel">Wobei soll sich die App melden?</h3>
+        <!-- Die Schalter kommen aus der Anlass-Liste des Workers (push-status),
+             nicht aus diesem Markup: ein neuer Anlass soll nur einen
+             Listeneintrag im Worker kosten, keinen Pages-Deploy.
+             ⚠️ KEIN .form-field um die Kaestchen: dort greift input{width:100%}
+             und macht aus der Checkbox einen Balken. -->
+        <div class="push-schalter" id="push-schalter"></div>
+
+        <h3 class="push-titel">Angemeldete Geräte</h3>
+        <ul class="push-geraete" id="push-geraete"></ul>
+      </div>
+
+      <p class="muted" id="push-meldung" style="display:none; margin-top:10px;"></p>
+    </details>
+
+    <!-- Aktivitätspunkte (seit 2026-08-04). Steht bewusst unter den
+         Benachrichtigungen: das hier ist nichts, was man einstellt, sondern etwas,
+         das man sich ansieht. Für Spielerkonten bleibt die Karte ausgeblendet —
+         sie werden gar nicht erst erfasst. -->
+    <details class="card collapsible" id="punkte-panel" style="display:none;">
+      <summary>Meine Punkte</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Für die Arbeit mit den Vereins-Tools sammelst du Punkte. Wozu sie einmal gut sein
+        werden, entscheidet der Verein später — im Moment geht es erst einmal ums Sammeln.
+      </p>
+
+      <div class="punkte-stand">
+        <div class="punkte-zahl" id="punkte-zahl">–</div>
+        <div class="punkte-zahl-text">
+          <strong id="punkte-zahl-label">Punkte erarbeitet</strong>
+          <span class="muted" id="punkte-verfuegbar"></span>
+        </div>
+      </div>
+
+      <!-- Michel-Vorgabe: ohne diesen Satz ist die erste Regeländerung ein
+           Vertrauensbruch („der hat mir Punkte weggenommen"). Mit ihm ist sie
+           angekündigt. Nicht entfernen, solange die Regeln nicht feststehen.
+           Zweiter Satz seit 2026-08-04: eine Regeländerung rechnet nur die Monate
+           neu, für die es noch Einzelaufzeichnungen gibt (13). Ältere Monate stehen
+           danach mit null da. Michel-Entscheidung, das so zu lassen und stattdessen
+           zu benennen -- ein unerklärter Rückgang wäre schlimmer als ein
+           angekündigter. -->
+      <p class="muted punkte-erprobung">
+        Das Punktesystem wird gerade erprobt. Die Regeln, nach denen gezählt wird, können
+        sich noch ändern — dann ändert sich auch dein Stand. Neu berechnet wird dabei nur
+        die Zeit, für die noch Einzelaufzeichnungen vorliegen; ältere Zeiträume behalten
+        ihren damaligen Wert nicht.
+      </p>
+
+      <details class="punkte-details">
+        <summary>Wie kommen die Punkte zustande?</summary>
+        <ul class="punkte-regeln" id="punkte-regeln"></ul>
+      </details>
+
+      <!-- Auskunftsrecht in Klickform: hier steht, was über einen gespeichert ist. -->
+      <details class="punkte-details">
+        <summary>Was ist über mich gespeichert?</summary>
+        <div id="punkte-protokoll"></div>
+      </details>
+
+      <!-- ⚠️ KEIN .form-field um das Kästchen: dort greift input{width:100%} und
+           macht aus der Checkbox einen Balken (gleiche Falle wie bei den
+           Push-Schaltern darüber). -->
+      <div class="punkte-optout">
+        <label class="punkte-optout-label">
+          <input type="checkbox" id="punkte-opt-out" />
+          <span>Nicht mitzählen</span>
+        </label>
+        <small class="muted">Für dein Konto wird dann nichts mehr erfasst. Dein bisher gespeichertes Protokoll wird dabei gelöscht.</small>
+      </div>
+
+      <p class="muted" id="punkte-meldung" style="display:none; margin-top:10px;"></p>
+    </details>
+
+  </section>
+
+  <section class="tab-section" id="tab-admin">
+
+    <!-- Zugang zum Admin-Dashboard und die Testansicht. Beide standen bis
+         2026-08-13 in der Kopfzeile; Michel-Vorgabe: sie gehoeren zu den
+         Einstellungen. Nebenbei kosteten sie am Handy dort Zeilen (siehe
+         "Als App ablegen" in CLAUDE.md).
+         ⚠️ Beide Ids bleiben -- Klick-Handler, renderViewAsControl() und die
+         Sichtbarkeits-Steuerung in app.js haengen daran und sind unveraendert.
+         ⚠️ Bewusst KEINE Beschriftung neben der Auswahl: app.js blendet nur das
+         <select> ein und aus, ein danebenstehendes Wort bliebe stehen. Was sie
+         tut, sagen ihre Eintraege ("👑 Admin (echt)") und der title. -->
+    <div class="admin-kopfzeile">
+      <button type="button" class="admin-dashboard-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
+      <select class="view-as-select" id="view-as-select" style="display:none;" title="Testansicht: Dashboard und alle verlinkten Apps als Mitglied einer anderen Gruppe ansehen (nur für Admins)"></select>
+      <!-- Nur waehrend einer aktiven Testansicht sichtbar (renderViewAsControl).
+           Dann ist der Rest dieses Tabs leer, weil jedes Panel an isAdmin haengt. -->
+      <p class="muted" id="view-as-hinweis" style="display:none; flex-basis:100%; margin:0;">
+        🎭 Testansicht aktiv. Zurück geht es über „👑 Admin (echt)“ oben — oder mit dem ✕ am orangen Zeichen in der Kopfzeile.
+      </p>
+    </div>
+
+    <!-- Neuigkeiten-Verwaltung (nur Admin) -->
+    <details class="card collapsible" id="admin-news-panel" style="display:none;">
+      <summary>Neuigkeiten</summary>
+      <p class="muted" style="margin-bottom:14px;">Meldungen erscheinen oben auf der Übersicht — für alle angemeldeten Nutzer sichtbar, neueste zuerst. Änderungen gelten sofort. Meldungen, deren Datum älter als 14 Tage ist, werden automatisch gelöscht — samt angehängter Bilder, Videos und Reaktionen.</p>
+      <div id="news-admin-list"></div>
+      <form id="news-form" class="form-grid" style="margin-top:16px; align-items:flex-end;">
+        <input type="hidden" id="news-edit-id" value="" />
+        <div class="form-field">
+          <label>Typ</label>
+          <select id="news-type" class="form-select">
+            <option value="neu">Neu</option>
+            <option value="update">Update</option>
+            <option value="fix">Fix</option>
+            <option value="hinweis">Hinweis</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Datum</label>
+          <input type="date" id="news-date" />
+        </div>
+        <div class="form-field">
+          <label>Verknüpftes Tool (optional)</label>
+          <select id="news-tool" class="form-select"><option value="">— keins —</option></select>
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label>Titel</label>
+          <input type="text" id="news-title" maxlength="200" required />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label>Text (optional)</label>
+          <textarea id="news-text" rows="2" maxlength="1000"></textarea>
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label>Bilder und Videos (optional, bis 4 Stück, je max. 10 MB)</label>
+          <div class="news-medien-edit" id="news-medien-edit"></div>
+          <div class="news-medien-knoepfe">
+            <button type="button" class="btn secondary small" id="btn-news-medien-add">📎 Bild oder Video hinzufügen</button>
+            <button type="button" class="btn secondary small" id="btn-news-video-aufnehmen">🎥 Bildschirmvideo aufnehmen</button>
+          </div>
+          <input type="file" id="news-medien-datei" style="display:none;" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" />
+          <p class="muted" style="font-size:12px; margin-top:6px;">JPEG, PNG, GIF, WebP, MP4 oder WebM. Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar.</p>
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label>Video-Link (optional, für längere Videos)</label>
+          <input type="url" id="news-video-url" maxlength="500" placeholder="https://…" />
+          <p class="muted" style="font-size:12px; margin-top:6px;">Für Videos, die über 10 MB liegen — z. B. YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nicht eingebettet.</p>
+        </div>
+        <!-- Push beim Speichern (seit 2026-08-13). Geht über die bestehende Aktion
+             `push-rundnachricht` mit dem Anlass "mitteilung" — kein neuer Worker-Weg
+             und damit kein Worker-Deploy; der Versand landet im selben Protokoll wie
+             eine von Hand geschriebene Mitteilung.
+             ⚠️ Bewusst KEIN .form-field um die Häkchenzeile: dort gilt
+             `label { display: block }` (spezifischer als eine einzelne Klasse) und
+             `input { width: 100% }` — das macht aus dem Kästchen einen Balken und
+             legt den Text darunter. Gleiche Falle wie bei .push-schalter und
+             .rund-eingrenzen-feld. -->
+        <div class="news-push-feld">
+          <label class="news-push-zeile" for="news-push">
+            <input type="checkbox" id="news-push" />
+            <span>Als Push-Nachricht an alle Handys senden</span>
+          </label>
+          <div class="news-push-optionen" id="news-push-optionen" style="display:none;">
+            <label class="news-push-kreis-label" for="news-push-kreis">Empfänger</label>
+            <select id="news-push-kreis" class="form-select">
+              <option value="personal">Mitarbeiter — ohne Spielerkonten</option>
+              <option value="alle">Alle Konten — auch Spieler</option>
+            </select>
+            <p class="muted" style="font-size:12px; margin:8px 0 0;">
+              Geht sofort raus und <strong>lässt sich nicht zurückholen</strong>. Überschrift und Text
+              der Meldung stehen dann auf dem Sperrbildschirm, wo auch andere mitlesen können —
+              keine Namen und nichts Vertrauliches. Wer den Schalter „Mitteilungen des Vereins“
+              in seinem Konto ausgeschaltet hat, bekommt nichts.
+            </p>
+          </div>
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn small" id="btn-news-submit">Hinzufügen</button>
+          <button type="button" class="btn secondary small" id="btn-news-cancel" style="display:none;">Abbrechen</button>
+        </div>
+      </form>
+      <p class="muted" id="news-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="news-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Nachricht an alle Handys (nur Admin, seit 2026-08-06).
+         Bewusst NICHT im Push-Panel des Konto-Tabs: dort stellt jeder seinen eigenen
+         Empfang ein, hier wird an andere gesendet. Zwei gegensätzliche Richtungen im
+         selben Kasten wären der klassische Fehlgriff. -->
+    <details class="card collapsible" id="admin-rundnachricht-panel" style="display:none;">
+      <summary>Nachricht an alle Handys</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Verschickt sofort eine Push-Nachricht an alle, die Benachrichtigungen eingeschaltet haben —
+        für Kurzfristiges, das zu keiner App gehört (Training fällt aus, Halle gesperrt).
+        <strong>Die Nachricht lässt sich nicht zurückholen</strong> und erscheint auf dem
+        Sperrbildschirm, wo auch andere mitlesen können: keine Namen und nichts Vertrauliches.
+        Wer den Schalter „Mitteilungen des Vereins“ in seinem Konto ausgeschaltet hat, bekommt nichts.
+      </p>
+      <!-- Wegweiser zur Privatnachricht (seit 2026-08-30). Beide Wege bleiben
+           bewusst getrennt (Michel-Entscheidung), deshalb zeigt jeder auf den
+           anderen — sonst überlegt man bei jedem Mal, welcher Knopf der richtige
+           ist. Der Gegenhinweis steht in der Karte „Privatnachrichten“ im Tab
+           „Mein Konto“; wer einen anfasst, prüft den anderen. -->
+      <p class="muted" style="margin-bottom:14px; font-size:13px;">
+        Für eine Nachricht an <strong>einzelne Personen</strong> — etwa weil dort noch etwas fehlt —
+        gibt es die Privatnachricht im Tab „Mein Konto“. Die geht zusätzlich per E-Mail
+        und bleibt im Postfach des Empfängers liegen.
+      </p>
+      <div class="form-grid" style="align-items:flex-end;">
+        <!-- Der Emoji-Knopf steht bei JEDEM der beiden Felder, nicht einmal für
+             beide: welches Feld gemeint ist, muss vor dem Klick feststehen. Ein
+             einzelner Knopf müsste sich das zuletzt benutzte Feld merken — und
+             genau das nimmt ihm der eigene Klick wieder weg (der Fokus wandert). -->
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="rund-titel">Überschrift</label>
+          <input type="text" id="rund-titel" maxlength="100" placeholder="z. B. Training fällt heute aus" autocomplete="off" />
+          <div class="emoji-leiste">
+            <button type="button" class="emoji-knopf" id="btn-rund-emoji-titel" data-ziel="rund-titel" aria-expanded="false" title="Emoji in die Überschrift einfügen">🙂 Emoji</button>
+          </div>
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="rund-text">Text</label>
+          <textarea id="rund-text" rows="2" maxlength="200" placeholder="z. B. Der Platz ist gesperrt. Alle Einheiten heute entfallen."></textarea>
+          <div class="emoji-leiste">
+            <button type="button" class="emoji-knopf" id="btn-rund-emoji-text" data-ziel="rund-text" aria-expanded="false" title="Emoji in den Text einfügen">🙂 Emoji</button>
+            <p class="muted" id="rund-zaehler" style="font-size:12px; margin:0;"></p>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="rund-kreis">Empfänger</label>
+          <select id="rund-kreis" class="form-select">
+            <option value="personal">Mitarbeiter — ohne Spielerkonten</option>
+            <option value="alle">Alle Konten — auch Spieler</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <button type="button" class="btn small" id="btn-rund-senden">Jetzt senden</button>
+        </div>
+
+        <!-- Eingrenzen auf Gruppen und einzelne Personen (seit 2026-08-07).
+             ⚠️ Der Block bleibt versteckt, solange der Worker die Auswahl nicht
+             kennt (Feld `auswahl` in der Verlauf-Antwort). Sonst böte die Maske
+             eine Eingrenzung an, die ein älterer Worker stillschweigend verwirft
+             — und die Nachricht ginge an alle statt an drei Leute.
+             Zugeklappt als Vorgabe: der Normalfall ist der ganze Kreis. -->
+        <!-- ⚠️ Bewusst KEIN .form-field: dort gilt `label { display: block }`, und
+             das ist spezifischer als eine einzelne Klasse — es überstimmt das
+             `display:flex` der Häkchenzeilen, womit Abstand und rechtsbündige
+             Zusatzangabe wegfallen. Am 2026-08-07 genau so ausgeliefert und von
+             Michel per Screenshot gemeldet. Dieselbe Familie wie die
+             input-Falle, die bei den Push-Schaltern schon vermerkt ist. -->
+        <div class="rund-eingrenzen-feld" style="display:none;" id="rund-eingrenzen-feld">
+          <details class="collapsible rund-eingrenzen" id="rund-eingrenzen">
+            <summary>Eingrenzen — <span id="rund-eingrenzen-status">alle im gewählten Kreis</span></summary>
+            <p class="muted" style="font-size:12px; margin:8px 0 12px;">
+              Ohne Haken geht die Nachricht an den ganzen oben gewählten Kreis. Gesetzte Haken
+              <strong>verkleinern</strong> ihn nur: wer ausgewählt ist, aber nicht in den Kreis passt
+              (Spielerkonto bei „ohne Spielerkonten“), bekommt nichts.
+            </p>
+            <div class="rund-auswahl-spalten">
+              <div class="rund-auswahl-spalte">
+                <h4 class="rund-auswahl-titel">Gruppen</h4>
+                <div id="rund-gruppen-liste" class="rund-auswahl-liste"></div>
+              </div>
+              <div class="rund-auswahl-spalte">
+                <h4 class="rund-auswahl-titel">Einzelne Personen</h4>
+                <input type="search" id="rund-personen-suche" placeholder="Name suchen" autocomplete="off" />
+                <div id="rund-personen-liste" class="rund-auswahl-liste"></div>
+              </div>
+            </div>
+            <button type="button" class="btn secondary small" id="btn-rund-auswahl-leeren" style="margin-top:10px;">Auswahl aufheben</button>
+          </details>
+        </div>
+      </div>
+      <p class="muted" id="rund-reichweite" style="margin-top:10px; font-size:12px;"></p>
+      <!-- Wen die Nachricht erreicht und wen nicht. Zwei aufklappbare Listen statt
+           eines Tooltips: am Handy gibt es kein Überfahren mit der Maus, und die
+           zweite Liste kann bei „Alle Konten“ mehrere hundert Namen lang sein. -->
+      <div id="rund-wer" style="margin-top:6px;"></div>
+      <p class="muted" id="rund-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="rund-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+      <div id="rund-verlauf" style="margin-top:14px;"></div>
+    </details>
+
+    <!-- Protokoll der Privatnachrichten (seit 2026-08-30, nur Admin).
+         ⚠️ Es steht hier KEIN Text und KEINE Überschrift — nur wer wann an wen
+         geschrieben hat und ob es gelesen wurde (Michel-Entscheidung, gleiche
+         Linie wie bei den Kinderschutz-Meldungen). Das reicht für die Frage, um
+         die es geht: schreibt hier jemand dreißig Leute am Tag an? Wer dieses
+         Panel je um den Text erweitert, muss den Satz in der Schreibmaske und den
+         Datenschutz-Hinweis mitziehen — sonst ist es ein gebrochenes
+         Versprechen. -->
+    <details class="card collapsible" id="admin-pn-panel" style="display:none;">
+      <summary>Privatnachrichten — Protokoll</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Wer hat wann an wen geschrieben. <strong>Der Inhalt steht hier bewusst nicht</strong> —
+        weder Überschrift noch Text. Das Protokoll ist dafür da, auffälligen Gebrauch zu
+        erkennen, nicht zum Mitlesen.
+      </p>
+      <p class="muted" id="admin-pn-status" style="margin-bottom:14px;">Zum Laden aufklappen.</p>
+      <div id="admin-pn-liste"></div>
+    </details>
+
+    <!-- Materialcontainer-Code (nur Admin) -->
+    <details class="card collapsible" id="admin-materialcontainer-panel" style="display:none;">
+      <summary>Materialcontainer-Code</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Code des Zahlenschlosses am Materialcontainer. Jede:r angemeldete Mitarbeiter:in sieht ihn über den
+        Knopf „🔐 Materialcontainercode“ oben im Kopfbereich — Spielerkonten nicht. Beim Ändern des Schlosses
+        hier den neuen Code eintragen; er gilt sofort für alle.
+      </p>
+      <div class="form-grid" style="align-items:flex-end;">
+        <div class="form-field">
+          <label for="materialcontainer-code-input">Code</label>
+          <input type="text" id="materialcontainer-code-input" maxlength="60" placeholder="z. B. 4711" autocomplete="off" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="materialcontainer-hinweis-input">Hinweis (optional)</label>
+          <input type="text" id="materialcontainer-hinweis-input" maxlength="200" placeholder="z. B. Räder nach oben drehen, dann zuschieben" />
+        </div>
+        <div class="form-field">
+          <button type="button" class="btn small" id="btn-materialcontainer-save">Speichern</button>
+        </div>
+      </div>
+      <p class="muted" id="materialcontainer-admin-meta" style="margin-top:10px; font-size:12px;"></p>
+      <p class="muted" id="materialcontainer-admin-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="materialcontainer-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Linksammlung der Startseite (nur Admin, seit 2026-08-14).
+         ⚠️ Der Hinweis "fuer jeden Besucher sichtbar" ist nicht Kosmetik: der GET
+         liefert die Links ohne Token aus. Wer den Kreis je enger zieht, aendert
+         BEIDES -- den Worker und diesen Absatz. -->
+    <details class="card collapsible" id="admin-links-panel" style="display:none;">
+      <summary>Links auf der Startseite</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Adressen anderer Webseiten, die auf der Startseite unter den Werkzeug-Kacheln stehen.
+        <strong>Sie sind für jeden Besucher sichtbar</strong> — auch für Leute ohne Vereinskonto.
+        Trag hier deshalb nichts Internes ein. Die Reihenfolge in der Liste unten ist die
+        Reihenfolge auf der Startseite; mit ↑ und ↓ lässt sie sich ändern.
+      </p>
+      <div id="links-admin-list"></div>
+      <form id="links-form" class="form-grid" style="margin-top:16px; align-items:flex-end;">
+        <input type="hidden" id="links-edit-id" value="" />
+        <div class="form-field">
+          <label for="links-icon">Symbol (optional)</label>
+          <input type="text" id="links-icon" maxlength="8" placeholder="z. B. ⚽" autocomplete="off" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="links-titel">Name *</label>
+          <input type="text" id="links-titel" maxlength="80" required placeholder="z. B. Thüringer Fußball-Verband" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="links-url">Adresse *</label>
+          <input type="url" id="links-url" maxlength="500" required placeholder="https://…" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="links-beschreibung">Kurze Erklärung (optional)</label>
+          <input type="text" id="links-beschreibung" maxlength="200" placeholder="z. B. Spielpläne, Staffeln, Passwesen" />
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn small" id="btn-links-submit">Hinzufügen</button>
+          <button type="button" class="btn secondary small" id="btn-links-cancel" style="display:none;">Abbrechen</button>
+        </div>
+      </form>
+      <p class="muted" id="links-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="links-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Unterschriften anfordern: wer darf ein PDF zum Unterschreiben verschicken (nur Admin).
+         Hier stand bis 2026-07-29 zusätzlich eine erste Häkchenreihe für assignGroupIds
+         ("wer darf anderen eine Aufgabe in die Liste legen"). Sie ist ersatzlos entfernt,
+         weil sie seit dem Umzug des Zuweisens in die App Vereinsaufgaben (2026-07-28)
+         nichts mehr schaltete: die Aktion aufgabe-zuweisen hat keinen Einstieg mehr,
+         oeffneAufgabeZuweisen() wird nur noch im Modus "unterschrift" gerufen.
+         ⚠️ speichereAufgabenGruppen() schickt seitdem KEIN groupIds mehr mit — der Worker
+         liest ein fehlendes Feld als "unverändert" und bewahrt den gespeicherten Wert für
+         den Altbestand. Ein mitgeschicktes [] würde ihn dagegen leeren. -->
+    <details class="card collapsible" id="admin-aufgaben-panel" style="display:none;">
+      <summary>Unterschriften anfordern</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Wer darf über „Unterschriften anfordern“ ein PDF verschicken, das unterschrieben werden muss? Ohne Häkchen kann das
+        niemand außer den Administratoren — die Auswahl ist bewusst leer statt „alle“. Aufgaben, die jemand
+        <strong>anderem</strong> aufgetragen werden, laufen dagegen über das Werkzeug „Vereinsaufgaben“ und
+        richten sich dort nach den Ressorts, nicht nach dieser Liste.
+      </p>
+      <div id="aufgaben-dok-gruppen-liste" class="aufgaben-gruppen-liste"></div>
+
+      <div style="margin-top:14px;">
+        <button type="button" class="btn small" id="btn-aufgaben-gruppen-save">Speichern</button>
+      </div>
+      <p class="muted" id="aufgaben-admin-meta" style="margin-top:10px; font-size:12px;"></p>
+      <p class="muted" id="aufgaben-admin-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="aufgaben-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Feedback & Wünsche (nur Admin) -->
+    <details class="card collapsible" id="admin-feedback-panel" style="display:none;">
+      <summary>Feedback &amp; Wünsche</summary>
+      <p class="muted" style="margin-bottom:14px;">Eingereichtes Feedback und Wünsche aller Nutzer aus dem Tab „Feedback &amp; Hilfe“ — als erledigt markieren oder löschen.</p>
+      <div id="feedback-admin-list"></div>
+      <p class="muted" id="feedback-admin-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="feedback-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Nutzerverwaltung (nur Admin) -->
+    <details class="card collapsible" id="admin-users-panel" style="display:none;">
+      <summary>Nutzer</summary>
+      <details class="collapsible" id="users-list-details">
+        <summary>Nutzerliste (<span id="users-count">0</span>)</summary>
+        <div class="users-filter">
+          <input type="search" id="users-filter-text" placeholder="Name suchen …" />
+          <select id="users-filter-group">
+            <option value="">Alle Gruppen</option>
+          </select>
+          <button type="button" class="btn secondary small" id="users-filter-reset">Filter zurücksetzen</button>
+        </div>
+        <div id="users-list"></div>
+      </details>
+      <div class="backfill-block" style="margin-top:14px;">
+        <button type="button" class="btn secondary small" id="btn-backfill-personalkosten">📥 Lizenz &amp; Mannschaft aus Personalkosten übernehmen</button>
+        <div id="backfill-panel" style="display:none; margin-top:12px;"></div>
+      </div>
+      <form id="create-user-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
+        <div class="form-field">
+          <label>Art</label>
+          <select id="new-user-art">
+            <option value="personal">Personal (Trainer, Betreuer, Geschäftsstelle)</option>
+            <option value="spieler">Spieler / Eltern</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Vorname</label>
+          <input type="text" id="new-user-vorname" required />
+        </div>
+        <div class="form-field">
+          <label>Nachname</label>
+          <input type="text" id="new-user-nachname" required />
+        </div>
+        <div class="form-field">
+          <label>Trainerlizenz</label>
+          <select id="new-user-lizenz">
+            <option value="">— keine —</option>
+            <option value="ohne Lizenz">ohne Lizenz</option>
+            <option value="Basis">Basis</option>
+            <option value="C">C</option>
+            <option value="B">B</option>
+            <option value="B Elite">B Elite</option>
+            <option value="A">A</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Mannschaft(en)</label>
+          <input type="text" id="new-user-mannschaften" list="mannschaft-suggestions" placeholder="z. B. B-Jugend, C-Jugend" />
+          <datalist id="mannschaft-suggestions"></datalist>
+        </div>
+        <div class="form-field">
+          <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" id="new-user-is-admin" /> Admin-Rechte</label>
+        </div>
+        <div class="form-field">
+          <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" id="new-user-vertrag-benoetigt" /> Vertrag benötigt</label>
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn small">Anlegen</button>
+        </div>
+      </form>
+      <div class="form-field" style="margin-top:10px;">
+        <label>Gruppen</label>
+        <div id="new-user-groups" class="group-picker"></div>
+      </div>
+      <p class="muted" id="users-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="users-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+    </details>
+
+    <!-- Gruppenverwaltung (nur Admin) -->
+    <details class="card collapsible" id="admin-groups-panel" style="display:none;">
+      <summary>Gruppen</summary>
+      <div class="rechte-warnung" id="groups-guard" style="display:none;">
+        <strong>⚠️ Die gespeicherten Rechte sind gerade nicht geladen.</strong>
+        Was hier steht, ist nur ein Notbehelf: jedes Werkzeug erscheint als „Öffentlich“ und ohne Gruppen.
+        <strong>Speichern ist gesperrt</strong> — sonst würden damit alle Gruppen-Rechte überschrieben.
+        <div class="btn-row" style="justify-content:flex-start; margin-top:10px;">
+          <button type="button" class="btn small" data-visibility-reload>Erneut laden</button>
+        </div>
+        <p class="muted rw-status" style="display:none; margin:8px 0 0;"></p>
+      </div>
+      <div id="groups-list"></div>
+      <form id="create-group-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
+        <div class="form-field">
+          <label>Gruppenname</label>
+          <input type="text" id="new-group-name" required />
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn small">Anlegen</button>
+        </div>
+      </form>
+      <p class="muted" id="groups-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+    </details>
+
+    <!-- Mannschaften (nur Admin, seit 2026-08-12).
+         Steht bewusst direkt neben Nutzern und Gruppen: hier werden Konten an
+         Mannschaften gehängt, die Auswahl kommt aus derselben Nutzerliste.
+         ⚠️ Der Schalter „Trainerprofile füllen“ ist der Sicherheitsgurt — solange
+         die Liste im Aufbau ist, würde ein Abgleich jedem noch nicht zugeordneten
+         Trainer sein Profil leeren und ihm flottenweit Filter und Rechte entziehen. -->
+    <details class="card collapsible" id="admin-mannschaften-panel" style="display:none;">
+      <summary>Mannschaften</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Die <strong>eine</strong> Mannschaftsliste des Vereins. Alle Werkzeuge holen sich ihre
+        Auswahl von hier — wer eine Mannschaft anlegt oder umbenennt, ändert sie überall.
+        Jede Mannschaft hat einen <strong>Kurznamen</strong> (der steht in den Daten und wird nie
+        geändert), einen langen Namen für Briefe und Aushänge und die Liga.
+      </p>
+
+      <div class="mannschaft-leiste">
+        <div class="form-field">
+          <label for="mannschaft-saison">Saison</label>
+          <select id="mannschaft-saison"></select>
+        </div>
+        <button type="button" class="btn small" id="btn-mannschaft-saison-neu">Neue Saison</button>
+        <button type="button" class="btn small" id="btn-mannschaft-saison-kopieren">Saison kopieren</button>
+        <button type="button" class="btn small" id="btn-mannschaft-saison-aktiv">Als laufende Saison setzen</button>
+      </div>
+      <p class="muted" id="mannschaft-saison-hinweis" style="margin-top:8px; font-size:12px;"></p>
+
+      <div class="mannschaft-abgleich">
+        <label>
+          <input type="checkbox" id="mannschaft-abgleich" />
+          Trainerprofile aus dieser Liste füllen
+        </label>
+        <p class="muted" style="margin:6px 0 0; font-size:12px;">
+          Solange das aus ist, ändert diese Liste nichts an den Profilen. Erst einschalten,
+          wenn alle Mannschaften stehen und die richtigen Leute dranhängen —
+          <strong>wer dann an keiner Mannschaft hängt, hat auch im Profil keine mehr.</strong>
+        </p>
+      </div>
+
+      <div class="mannschaft-werkzeuge">
+        <button type="button" class="btn small" id="btn-mannschaft-neu">Mannschaft hinzufügen</button>
+        <button type="button" class="btn small" id="btn-mannschaft-vorschlag">Vorschlag aus den Profilen</button>
+      </div>
+      <p class="muted" style="margin-top:6px; font-size:12px;">
+        „Vorschlag“ liest, was heute in den Trainerprofilen steht, fasst gleiche Mannschaften
+        zusammen und schlägt Kurznamen vor. Es wird nichts gespeichert, bis du auf Speichern drückst.
+      </p>
+
+      <div id="mannschaft-liste" style="margin-top:14px;"></div>
+
+      <div style="margin-top:14px;">
+        <button type="button" class="btn small" id="btn-mannschaft-save">Speichern</button>
+      </div>
+      <p class="muted" id="mannschaft-meta" style="margin-top:10px; font-size:12px;"></p>
+      <p class="muted" id="mannschaft-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="mannschaft-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+
+      <!-- Hier stand bis 2026-08-12 der einmalige Umschreib-Lauf über die Daten
+           aller Werkzeuge. Er hat seine Arbeit getan: der Lauf meldete 0 Treffer
+           in 0 Werkzeugen, in den App-Daten steht keine alte Schreibweise mehr.
+           Michel-Entscheidung, ihn danach wieder auszubauen — ein Knopf, der
+           echte Vereinsdaten überschreibt, soll nicht dauerhaft herumstehen.
+           ⚠️ Die Worker-Aktion `mannschaften-umschreiben` BLEIBT (admin-only,
+           von hier aus nicht mehr erreichbar). Sollte doch noch irgendwo eine
+           alte Schreibweise auftauchen, ist sie über die Browser-Konsole zu
+           haben, ohne dass dafür ein Worker-Deploy nötig wird. -->
+    </details>
+
+    <!-- Sichtbarkeits-Verwaltung (nur Admin) -->
+    <details class="card collapsible" id="admin-visibility-panel" style="display:none;">
+      <summary>Sichtbarkeit der Tools</summary>
+      <p class="muted" style="margin-bottom:14px;">Änderungen gelten sofort für alle Besucher der Übersicht. Pro Tool wählbar: versteckt, öffentlich (auch ohne Login), für alle eingeloggten Nutzer, oder nur für bestimmte Gruppen.</p>
+      <div class="rechte-warnung" id="visibility-guard" style="display:none;">
+        <strong>⚠️ Die gespeicherten Rechte sind gerade nicht geladen.</strong>
+        Was hier steht, ist nur ein Notbehelf: jedes Werkzeug erscheint als „Öffentlich“ und ohne Gruppen.
+        <strong>Speichern ist gesperrt</strong> — sonst würden damit alle Gruppen-Rechte überschrieben.
+        <div class="btn-row" style="justify-content:flex-start; margin-top:10px;">
+          <button type="button" class="btn small" data-visibility-reload>Erneut laden</button>
+        </div>
+        <p class="muted rw-status" style="display:none; margin:8px 0 0;"></p>
+      </div>
+      <div id="visibility-list"></div>
+      <p class="muted" id="admin-save-error" style="display:none; color:#c0392b; margin:10px 0;"></p>
+      <p class="muted" id="admin-save-success" style="display:none; color:#2d8c4e; margin:10px 0;">Gespeichert.</p>
+      <div class="btn-row" style="margin-top:14px;">
+        <button type="button" class="btn" id="btn-save-visibility">Speichern</button>
+      </div>
+
+      <!-- Sicherung der Rechte (seit 2026-08-25). Schreibt über die BESTEHENDE Aktion
+           save-visibility, braucht also keinen Worker-Deploy. Anlass: am 2026-08-25 waren
+           sämtliche Gruppen-Zuordnungen leer und es gab keinen Weg zurück. -->
+      <div class="rechte-sicherung">
+        <div class="rs-titel">💾 Rechte sichern</div>
+        <p class="muted" style="margin:4px 0 10px;">
+          Lädt alle Rechte als Datei auf dieses Gerät — Sehen, Bearbeiten, Administrieren und
+          Auto-Eintrag für jedes Werkzeug. Am besten nach jeder größeren Änderung.
+          „Sicherung einspielen“ ersetzt den jetzigen Stand vollständig durch die Datei.
+        </p>
+        <div class="btn-row" style="justify-content:flex-start; gap:8px;">
+          <button type="button" class="btn small" id="btn-rechte-sichern">Rechte sichern</button>
+          <button type="button" class="btn small secondary" id="btn-rechte-einspielen">Sicherung einspielen</button>
+          <input type="file" id="rechte-einspielen-datei" accept="application/json,.json" style="display:none;" />
+        </div>
+        <p class="muted" id="rechte-sicherung-hinweis" style="display:none; margin-top:8px;"></p>
+      </div>
+    </details>
+
+
+  </section>
+
+  <!-- Admin-Dashboard: eigene Ansicht, nur über die Admin-Kachel auf dem Dashboard erreichbar -->
+  <section class="tab-section" id="tab-admin-dashboard">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+      <h2 style="color:var(--blue); margin:0;">📊 Admin-Dashboard</h2>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn secondary small" id="btn-admin-dashboard-refresh">Aktualisieren</button>
+        <button type="button" class="btn secondary small" id="btn-admin-dashboard-back">← Zurück zum Dashboard</button>
+      </div>
+    </div>
+
+    <p class="muted" id="admin-dashboard-error" style="display:none; color:#c0392b; margin-bottom:14px;"></p>
+
+    <div id="admin-dashboard-content" style="display:none;">
+      <p class="muted" id="admin-dashboard-trainer-note" style="display:none; color:#c0392b; margin-bottom:14px;">
+        Gruppe „Trainer" ist noch nicht angelegt — lege sie im Tab Einstellungen unter „Gruppen" an und ordne die Trainer:innen zu, damit die Trainervertrag-/Trainerkodex-Quote aussagekräftig ist.
+      </p>
+      <div class="stat-grid">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-users" role="button" tabindex="0">
+          <div class="stat-tile-label">Nutzer-Anmeldequote</div>
+          <div class="stat-tile-value" id="stat-users">–</div>
+          <div class="stat-tile-sub">haben ihr Passwort gesetzt</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-trainervertrag" role="button" tabindex="0">
+          <div class="stat-tile-label">Trainervertrag-Quote</div>
+          <div class="stat-tile-value" id="stat-trainervertrag">–</div>
+          <div class="stat-tile-sub" id="stat-trainervertrag-sub">erstellt</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-trainerkodex" role="button" tabindex="0">
+          <div class="stat-tile-label">Trainerkodex-Quote</div>
+          <div class="stat-tile-value" id="stat-trainerkodex">–</div>
+          <div class="stat-tile-sub">bestätigt</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-jugendschutz" role="button" tabindex="0">
+          <div class="stat-tile-label">Jugendschutzkonzept-Quote</div>
+          <div class="stat-tile-value" id="stat-jugendschutz">–</div>
+          <div class="stat-tile-sub">bestätigt</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-feedback" role="button" tabindex="0">
+          <div class="stat-tile-label">Offene Feedback &amp; Hilfe-Einträge</div>
+          <div class="stat-tile-value" id="stat-feedback">–</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-materialbedarf" role="button" tabindex="0">
+          <div class="stat-tile-label">Offene Materialbedarf-Meldungen</div>
+          <div class="stat-tile-value" id="stat-materialbedarf">–</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-busplan" role="button" tabindex="0">
+          <div class="stat-tile-label">Offene/klärungsbedürftige Busplan-Zusagen</div>
+          <div class="stat-tile-value" id="stat-busplan">–</div>
+        </div>
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-testspielplaner" role="button" tabindex="0">
+          <div class="stat-tile-label">Offene Testspiel-Anfragen</div>
+          <div class="stat-tile-value" id="stat-testspielplaner">–</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0; color:var(--blue);">🕒 Zuletzt angemeldet</h3>
+        <p class="muted" style="margin:0;">Die zehn jüngsten Anmeldungen von Personal-Konten.</p>
+        <ol id="admin-dashboard-recent-list" class="recent-activity-list"></ol>
+      </div>
+
+      <!-- Aktivitäts-Auswertung (seit 2026-08-04). Bewusst NICHT beim Öffnen des
+           Dashboards mitgeladen, sondern erst auf Knopfdruck: sie kostet einen
+           Worker-Aufruf je 20 Konten, das soll niemand ungefragt auslösen. -->
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0; color:var(--blue);">🏅 Aktivität und Punkte</h3>
+        <p class="muted" style="margin-bottom:14px;">
+          Wer hat in einem Monat mit welchem Werkzeug gearbeitet. Grundlage ist dieselbe
+          Aufzeichnung, aus der auch die Punkte im Konto entstehen. Erfasst wird nur, was
+          über die Anmeldung dieser Übersicht läuft — Vereinsverwaltung, Spiele und Age-Lan
+          haben eigene Zugänge und tauchen hier nicht auf.
+        </p>
+        <div class="aktivitaet-steuerung">
+          <div class="form-field" style="max-width:190px; margin:0;">
+            <label for="aktivitaet-monat">Monat</label>
+            <input type="month" id="aktivitaet-monat" />
+          </div>
+          <button type="button" class="btn secondary small" id="btn-aktivitaet-laden">Auswerten</button>
+        </div>
+        <p class="muted" id="aktivitaet-status" style="display:none; margin-top:12px;"></p>
+        <div id="aktivitaet-ergebnis"></div>
+      </div>
+
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<!-- Materialcontainer-Code: kleines Fenster über dem Dashboard. Der Code wird erst
+     beim Öffnen vom Worker geholt, nicht beim Seitenaufbau — er soll nur über die
+     Leitung gehen, wenn ihn jemand ausdrücklich sehen will. -->
+<!-- Grossansicht eines Bildes/Videos aus einer Neuigkeit. Eigener z-index (siehe
+     style.css), damit die DOM-Reihenfolge gegenueber den anderen Overlays keine
+     Rolle spielt. -->
+<div class="code-overlay news-medien-overlay" id="news-medien-overlay" style="display:none;">
+  <div class="news-medien-dialog">
+    <button type="button" class="news-medien-close" id="btn-news-medien-close" title="Schließen" aria-label="Schließen">×</button>
+    <div id="news-medien-buehne"></div>
+    <div class="news-medien-name muted" id="news-medien-name"></div>
+  </div>
+</div>
+
+<!-- Bildschirmvideo für eine Meldung aufnehmen (seit 2026-08-07, nur Admin).
+     Nimmt NICHT den Bildschirm des Rechners auf, sondern den Tab -- nur so kommen die
+     Klicks überhaupt an, aus denen die Kreise entstehen. Ein Werkzeug wird dafür in den
+     Rahmen unten geladen; das geht, weil die ganze Flotte auf derselben Adresse liegt.
+     Die Bedienleiste steht am unteren Rand und wird aus dem Bild GESCHNITTEN, sonst
+     stünde sie im fertigen Video. -->
+<div class="code-overlay aufnahme-overlay" id="aufnahme-overlay" style="display:none;">
+
+  <div class="aufnahme-buehne" id="aufnahme-buehne" style="display:none;">
+    <iframe id="aufnahme-iframe" title="Aufgenommenes Werkzeug" src="about:blank"></iframe>
+  </div>
+
+  <div class="code-dialog aufnahme-dialog" id="aufnahme-dialog" role="dialog" aria-modal="true" aria-labelledby="aufnahme-titel">
+    <div class="code-dialog-head">
+      <h2 id="aufnahme-titel">🎥 Bildschirmvideo aufnehmen</h2>
+      <button type="button" class="code-dialog-close" id="btn-aufnahme-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+
+    <div id="aufnahme-setup">
+      <p class="muted" style="margin-bottom:14px;">
+        Zeichnet auf, was du anklickst — mit einem Kreis unter dem Mauszeiger und einem Ring bei
+        jedem Klick, damit hinterher zu sehen ist, wo du hingedrückt hast. Die Größe wird vorher so
+        eingestellt, dass das fertige Video als Anhang unter die Grenze von 10 MB passt.
+      </p>
+
+      <div class="form-field">
+        <label for="aufnahme-quelle">Was soll aufgenommen werden?</label>
+        <select class="form-select" id="aufnahme-quelle">
+          <option value="tool">Im Rahmen: Dashboard oder ein Werkzeug — mit Klick-Kreisen</option>
+          <option value="seite">Diese Seite selbst — mit Klick-Kreisen</option>
+          <option value="frei">Bildschirm oder anderes Fenster — ohne Klick-Kreise</option>
+        </select>
+      </div>
+
+      <div class="form-field" id="aufnahme-tool-zeile">
+        <label for="aufnahme-tool">Womit soll die Aufnahme beginnen?</label>
+        <select class="form-select" id="aufnahme-tool"></select>
+      </div>
+
+      <div class="aufnahme-optionen">
+        <div class="form-field">
+          <label for="aufnahme-breite">Bildbreite</label>
+          <select class="form-select" id="aufnahme-breite">
+            <option value="1280">1280 Pixel — scharf</option>
+            <option value="960" selected>960 Pixel — empfohlen</option>
+            <option value="720">720 Pixel — sehr sparsam</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="aufnahme-fps">Bilder je Sekunde</label>
+          <select class="form-select" id="aufnahme-fps">
+            <option value="25">25 — flüssig</option>
+            <option value="15" selected>15 — empfohlen</option>
+            <option value="10">10 — sehr sparsam</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="aufnahme-dauer">Höchstdauer</label>
+          <select class="form-select" id="aufnahme-dauer">
+            <option value="30">30 Sekunden</option>
+            <option value="60" selected>1 Minute</option>
+            <option value="120">2 Minuten</option>
+            <option value="180">3 Minuten</option>
+            <option value="300">5 Minuten</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="aufnahme-haken">
+        <input type="checkbox" id="aufnahme-ringe" checked />
+        <span>Mauszeiger und Klicks hervorheben</span>
+      </label>
+      <label class="aufnahme-haken">
+        <input type="checkbox" id="aufnahme-ton" />
+        <span>Ton vom Mikrofon mit aufnehmen (erklärt das Gezeigte)</span>
+      </label>
+
+      <p class="muted aufnahme-hinweis" id="aufnahme-hinweis"></p>
+      <p class="muted aufnahme-fehler" id="aufnahme-fehler" style="display:none;"></p>
+
+      <div class="aufnahme-knoepfe">
+        <button type="button" class="btn" id="btn-aufnahme-start">Aufnahme starten</button>
+        <button type="button" class="btn secondary" id="btn-aufnahme-abbrechen">Abbrechen</button>
+      </div>
+    </div>
+
+    <div id="aufnahme-ergebnis" style="display:none;">
+      <p class="muted" id="aufnahme-ergebnis-text" style="margin-bottom:12px;"></p>
+      <div class="aufnahme-vorschau"><video id="aufnahme-video" controls playsinline preload="metadata"></video></div>
+      <p class="muted aufnahme-fehler" id="aufnahme-ergebnis-fehler" style="display:none;"></p>
+      <div class="aufnahme-knoepfe">
+        <button type="button" class="btn" id="btn-aufnahme-anhaengen">An die Meldung anhängen</button>
+        <button type="button" class="btn secondary" id="btn-aufnahme-download">Herunterladen</button>
+        <button type="button" class="btn secondary" id="btn-aufnahme-neu">Noch einmal aufnehmen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Steht bewusst AUSSERHALB des Fensters: in der Betriebsart „Diese Seite" wird das
+     Fenster ausgeblendet, die Leiste muss trotzdem bedienbar bleiben. -->
+<div class="aufnahme-leiste" id="aufnahme-leiste" style="display:none;">
+  <span class="aufnahme-punkt" aria-hidden="true"></span>
+  <span class="aufnahme-zeit" id="aufnahme-zeit">0:00</span>
+  <div class="aufnahme-balken"><div class="aufnahme-balken-fuellung" id="aufnahme-balken-fuellung"></div></div>
+  <span class="aufnahme-groesse" id="aufnahme-groesse">0,0 MB</span>
+  <button type="button" class="btn small" id="btn-aufnahme-stopp">■ Aufnahme beenden</button>
+</div>
+
+<div class="code-overlay" id="materialcontainer-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="materialcontainer-titel">
+    <div class="code-dialog-head">
+      <h2 id="materialcontainer-titel">🔐 Materialcontainer</h2>
+      <button type="button" class="code-dialog-close" id="btn-materialcontainer-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted" id="materialcontainer-status">Code wird geladen …</p>
+    <div class="code-anzeige" id="materialcontainer-code" style="display:none;"></div>
+    <p class="muted" id="materialcontainer-hinweis" style="display:none;"></p>
+    <p class="muted" id="materialcontainer-meta" style="display:none; font-size:12px;"></p>
+  </div>
+</div>
+
+<!-- Anleitung fuer iPhone und iPad. Auf Android oeffnet der Knopf stattdessen den
+     echten Installationsdialog des Systems und dieses Fenster geht nie auf:
+     Apple hat beforeinstallprompt nie umgesetzt, dort ist Anleiten das einzig
+     Moegliche. Nutzt bewusst .code-dialog -- die Basisklasse bringt seit 76989c7
+     max-height und eigenes Scrollen mit, eine Sonderklasse waere ein Rueckschritt. -->
+<div class="code-overlay" id="app-ablegen-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="app-ablegen-titel">
+    <div class="code-dialog-head">
+      <h2 id="app-ablegen-titel">📲 Als App ablegen</h2>
+      <button type="button" class="code-dialog-close" id="btn-app-ablegen-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted">In drei Schritten liegt die Tools-Übersicht als eigenes Symbol auf dem Startbildschirm — mit Vollbild, ohne Adressleiste.</p>
+    <ol class="app-schritte">
+      <li>Unten in der Safari-Leiste auf das Teilen-Symbol
+        <svg class="app-teilen-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 3l4 4h-3v8h-2V7H8l4-4z" fill="currentColor"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7h-2v7H7v-7H5z" fill="currentColor"/></svg>
+        tippen.</li>
+      <li>In der Liste nach unten wischen bis <strong>Zum Home-Bildschirm</strong>.</li>
+      <li>Oben rechts auf <strong>Hinzufügen</strong> tippen.</li>
+    </ol>
+    <p class="muted" style="font-size:12px;">Das Symbol verhält sich wie eine App: Alle Werkzeuge bleiben darin, du musst dich nicht erneut anmelden, und die Anmeldung hält länger als im normalen Browser-Tab.</p>
+  </div>
+</div>
+
+<!-- Aufgabe zuweisen (nur für Mitglieder der berechtigten Gruppen) -->
+<div class="code-overlay" id="aufgaben-zuweisen-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="aufgaben-zuweisen-titel">
+    <div class="code-dialog-head">
+      <!-- Beschriftungen wechseln mit dem Modus (oeffneAufgabeZuweisen). -->
+      <h2 id="aufgaben-zuweisen-titel">📋 Aufgabe zuweisen</h2>
+      <button type="button" class="code-dialog-close" id="btn-aufgaben-zuweisen-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <div class="form-field">
+      <label for="aufgabe-zuweisen-text" id="aufgabe-zuweisen-text-label">Aufgabe</label>
+      <input type="text" id="aufgabe-zuweisen-text" maxlength="200" placeholder="z. B. Trikots zählen" autocomplete="off" />
+    </div>
+    <div class="form-field" style="margin-top:10px;">
+      <label for="aufgabe-zuweisen-faellig">Fällig bis (optional)</label>
+      <input type="date" id="aufgabe-zuweisen-faellig" />
+    </div>
+    <div class="form-field" style="margin-top:10px;">
+      <label for="aufgabe-zuweisen-suche">An wen? (Mehrfachauswahl)</label>
+      <input type="search" id="aufgabe-zuweisen-suche" placeholder="Name suchen …" autocomplete="off" />
+    </div>
+    <div id="aufgabe-zuweisen-empfaenger" class="aufgaben-empfaenger-liste"></div>
+
+    <!-- Braucht in beiden Modi das Recht aus aufgaben.dokumentGroupIds -- eine eigene,
+         engere Stufe als das Zuweisen. Unterschied: beim "Aufgabe zuweisen" ist das
+         Dokument OPTIONAL (Häkchen), beim "Unterschrift anfordern" ist es der Zweck
+         und damit Pflicht; dort entfällt das Häkchen. -->
+    <div id="aufgabe-zuweisen-dok-block" style="display:none; margin-top:14px; border-top:1px solid var(--border, #e3e6ec); padding-top:12px;">
+      <label class="check-inline" id="aufgabe-zuweisen-dok-an-zeile" style="display:none;">
+        <input type="checkbox" id="aufgabe-zuweisen-dok-an" />
+        <span>Dazu ein PDF zum Unterschreiben mitschicken</span>
+      </label>
+      <div id="aufgabe-zuweisen-dok-felder" style="margin-top:10px;">
+        <label class="form-label" for="aufgabe-zuweisen-dok-datei">Zu unterschreibendes PDF</label>
+        <input type="file" id="aufgabe-zuweisen-dok-datei" accept="application/pdf,.pdf" />
+        <p class="muted" id="aufgabe-zuweisen-dok-status" style="margin-top:8px;"></p>
+        <div id="aufgabe-zuweisen-dok-vorschau" class="dok-vorschau" style="display:none;">
+          <div class="dok-seiten-leiste">
+            <button type="button" class="btn small secondary" id="dok-seite-zurueck">‹</button>
+            <span id="dok-seite-anzeige">Seite 1 / 1</span>
+            <button type="button" class="btn small secondary" id="dok-seite-vor">›</button>
+          </div>
+          <!-- Steht ÜBER der Vorschau, nicht darunter: die Seitenansicht ist bis zu
+               55vh hoch, ein Hinweis dahinter wäre erst nach dem Scrollen zu sehen —
+               also genau dann, wenn man ihn nicht mehr braucht. Text kommt aus
+               zuweisenFeldInfoZeigen() und erklärt die Funktion, statt sie nur zu
+               quittieren; der frühere statische Satz an dieser Stelle ist darin
+               aufgegangen. -->
+          <p class="dok-platz-info" id="dok-feld-info"></p>
+          <div class="dok-canvas-wrap" id="dok-canvas-wrap">
+            <canvas id="dok-vorschau-canvas"></canvas>
+            <div class="dok-feld-marker" id="dok-feld-marker" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mailversand ist ein bewusstes Opt-in je Vorgang (Michel-Vorgabe 2026-07-31),
+         deshalb ein eigenes Häkchen und keine Automatik. Es steht hier unten beim
+         Senden-Knopf und NICHT im Dokument-Block darüber: die Seitenvorschau dort
+         ist bis zu 55vh hoch, ein Häkchen dahinter wäre erst nach dem Scrollen zu
+         sehen — also genau dann nicht, wenn man es setzen will. Sichtbar nur, wenn
+         auch wirklich ein Dokument mitgeht (zuweisenMailZeileZeigen() in app.js). -->
+    <label class="check-inline" id="aufgabe-zuweisen-mail-zeile" style="display:none; margin-top:14px;">
+      <input type="checkbox" id="aufgabe-zuweisen-mail" />
+      <span>Empfänger zusätzlich per E-Mail benachrichtigen</span>
+    </label>
+
+    <p class="muted" id="aufgabe-zuweisen-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+    <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn secondary small" id="btn-aufgabe-zuweisen-abbrechen">Abbrechen</button>
+      <button type="button" class="btn small" id="btn-aufgabe-zuweisen-senden">Zuweisen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Persönliche ToDos. Eigenes Fenster mit eigenem Kopf-Knopf RECHTS in der
+     Kopfzeile (Michel-Vorgabe 2026-07-29). Bis dahin steckte diese Liste in der
+     oberen Hälfte des Unterschriften-Fensters; zwei Dinge, die nichts miteinander
+     zu tun haben, teilten sich einen Knopf und eine Überschrift.
+     ⚠️ Der Container heißt weiter #aufgaben-widget-inhalt -- daran hängen
+     renderAufgabenWidget() und alle Handler aus setupAufgabenWidget(). -->
+<div class="code-overlay" id="todos-overlay" style="display:none;">
+  <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="todos-titel">
+    <div class="code-dialog-head">
+      <h2 id="todos-titel">📝 Meine ToDos</h2>
+      <button type="button" class="code-dialog-close" id="btn-todos-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <!-- Der Knopf "Aufgabe zuweisen" ist am 2026-07-28 ERSATZLOS entfernt worden
+         (Michel-Entscheidung): diese Liste ist ausschließlich das, was man sich
+         SELBST notiert. Was einem anderen aufgetragen wird, gehört in die eigene
+         App "Vereinsaufgaben" -- mit Ressorts, Fristenkontrolle und dauerhafter
+         Historie. Zwei Orte, an denen eine Zuweisung entstehen kann, wären genau
+         die Doppelung, die vermieden werden soll. -->
+    <p class="muted">
+      Hier steht nur, was du dir selbst notierst. Aufgaben für andere werden in den
+      Vereinsaufgaben vergeben.
+    </p>
+    <!-- Bewusst ein Knopf (a.btn-link) statt eines Links im Fließtext, Michel-Vorgabe
+         2026-07-29: der Weg in die andere App ist der wichtigste Ausgang dieses
+         Fensters und muss so aussehen wie jeder andere Knopf der Flotte. a.btn-link
+         trägt exakt dieselben Maße wie button.btn (10px 18px, 14px) -- beim Ändern
+         eines der beiden das andere mitziehen, sonst laufen sie auseinander. -->
+    <a class="btn-link" href="https://sc1911heiligenstadt.github.io/Vereinsaufgaben/">📋 Zu den Vereinsaufgaben</a>
+
+    <div id="aufgaben-widget-inhalt"></div>
+  </div>
+</div>
+
+<!-- Unterschriften. Eigenes Fenster über dem Dashboard statt eines Tabs
+     (Michel-Vorgabe 2026-07-28): der Zugang sitzt als Knopf oben im Header
+     neben dem Materialcontainercode. Der Inhalt wird erst beim Öffnen geholt --
+     die meisten Seitenaufrufe gehen nie hier hinein.
+     Seit 2026-07-29 steht hier NUR noch der Unterschriften-Weg; die persönliche
+     Liste hat ihr eigenes Fenster (siehe oben). -->
+<div class="code-overlay" id="dokumente-overlay" style="display:none;">
+  <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="dokumente-titel">
+    <div class="code-dialog-head">
+      <h2 id="dokumente-titel">✍ Unterschriften anfordern</h2>
+      <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted">Dokumente, die unterschrieben werden sollen.</p>
+    <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+    <div class="btn-row" style="margin: 12px 0 4px;">
+      <button type="button" class="btn small" id="btn-fenster-unterschrift" style="display:none;">
+        <span class="chip-icon" aria-hidden="true">✍</span>Unterschrift anfordern
+      </button>
+      <button type="button" class="btn small secondary" id="btn-dokument-selbst">Selbst unterschreiben</button>
+      <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
+    </div>
+
+    <h4 class="dok-unterabschnitt">Zu unterschreiben</h4>
+    <div id="dokumente-an-mich"><p class="muted">Wird geladen …</p></div>
+
+    <div id="dokumente-von-mir-karte">
+      <h4 class="dok-unterabschnitt">Von mir verschickt</h4>
+      <div id="dokumente-von-mir"><p class="muted">Wird geladen …</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Unterschreiben. Dient zwei Wegen: einem zugewiesenen Dokument (dann steht der
+     Ablehnen-Knopf mit dabei) und dem eigenen PDF ohne Zuweisung ("Selbst
+     unterschreiben"), bei dem die Datei hier ausgewählt und das Feld hier gesetzt
+     wird. Gleiche Maske, weil es dieselbe Handlung ist. -->
+<div class="code-overlay" id="dokument-signieren-overlay" style="display:none;">
+  <div class="code-dialog dok-dialog" role="dialog" aria-modal="true" aria-labelledby="dokument-signieren-titel">
+    <div class="code-dialog-head">
+      <h2 id="dokument-signieren-titel">Dokument unterschreiben</h2>
+      <button type="button" class="code-dialog-close" id="btn-dokument-signieren-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+
+    <div id="dok-sig-selbst-block" style="display:none; margin-bottom:10px;">
+      <div class="form-field">
+        <label for="dok-sig-titel">Bezeichnung</label>
+        <input type="text" id="dok-sig-titel" maxlength="200" placeholder="z. B. Einverständnis Fahrtkosten" autocomplete="off" />
+      </div>
+      <div class="form-field" style="margin-top:10px;">
+        <label for="dok-sig-datei">PDF auswählen</label>
+        <input type="file" id="dok-sig-datei" accept="application/pdf,.pdf" />
+      </div>
+    </div>
+
+    <p class="muted" id="dok-sig-meta"></p>
+    <!-- Sagt an, welcher Schritt noch fehlt — in BEIDEN Modi. Beim eigenen Dokument
+         ist das Platzieren Pflicht, damit nie ein zusätzliches Blatt am Ende entsteht.
+         Beim zugewiesenen sagt die Zeile, ob der Absender die Stelle vorgegeben hat
+         (dann ist das Feld gesperrt) oder ob man sie selbst wählen darf. Vorher schwieg
+         sie dort ganz — ein aufgezogenes Rechteck verschwand kommentarlos. -->
+    <p class="dok-platz-info" id="dok-sig-platz-info" style="display:none;"></p>
+
+    <div class="dok-seiten-leiste">
+      <button type="button" class="btn small secondary" id="dok-sig-seite-zurueck">‹</button>
+      <span id="dok-sig-seite-anzeige">Seite 1 / 1</span>
+      <button type="button" class="btn small secondary" id="dok-sig-seite-vor">›</button>
+      <button type="button" class="btn small secondary" id="dok-sig-original-laden" style="margin-left:auto;">Original herunterladen</button>
+    </div>
+    <div class="dok-canvas-wrap" id="dok-sig-canvas-wrap">
+      <canvas id="dok-sig-canvas"></canvas>
+      <div class="dok-feld-marker" id="dok-sig-feld-marker" style="display:none;"></div>
+    </div>
+
+    <div id="dok-sig-pad-block" style="margin-top:14px;">
+      <label class="form-label">Deine Unterschrift</label>
+      <div class="signature-wrap">
+        <canvas id="dok-sig-pad" class="signature-canvas"></canvas>
+      </div>
+      <div class="btn-row" style="justify-content:flex-start; margin-top:6px;">
+        <button type="button" class="btn small secondary" id="btn-dok-sig-pad-clear">Unterschrift löschen</button>
+      </div>
+    </div>
+
+    <p class="muted" id="dok-sig-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+    <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+      <button type="button" class="btn secondary small" id="btn-dok-sig-abbrechen">Abbrechen</button>
+      <button type="button" class="btn secondary small" id="btn-dok-sig-ablehnen">Nicht unterschreiben</button>
+      <button type="button" class="btn small" id="btn-dok-sig-senden">Unterschreiben</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fusszeile: bewusst OHNE Rechte-Gate, anders als der Info-Tab dieser Seite
+     (der ist seit 2026-07-25 nur fuer Angemeldete). Genau umgekehrte
+     Begruendung: diese Seite ist die einzige, die ein nicht angemeldeter
+     Besucher ueberhaupt erreicht -- Impressum und Datenschutzerklaerung
+     muessen deshalb gerade IHM zugaenglich sein. Nichts davon ist
+     vereinsintern, es sind die Pflichtangaben des Vereins. -->
+<footer class="seiten-fuss">
+  <p>1. SC 1911 Heiligenstadt e.V. — interne Werkzeuge des Vereins</p>
+  <p>
+    <a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a>
+  </p>
+</footer>
+
+<!-- Dateiauswahl für den Admin-Weg (fremdes Foto setzen). Bewusst eine eigene,
+     globale Eingabe statt einer je Nutzerzeile: die Zeilen werden bei jedem
+     Neu-Rendern verworfen, ein Listener daran wäre danach verwaist. -->
+<input type="file" id="admin-foto-datei" accept="image/*" style="display:none;" />
+
+<!-- Zuschnitt des Nutzerfotos. Steht bewusst als LETZTES Overlay im Markup: bei
+     gleichem z-index entscheidet die DOM-Reihenfolge, und dieser Dialog geht immer
+     über allem auf, was ihn geöffnet hat (Konto-Tab oder Nutzer-Panel). -->
+<div class="code-overlay" id="foto-zuschnitt-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="foto-zuschnitt-titel">
+    <div class="code-dialog-head">
+      <h2 id="foto-zuschnitt-titel">Bild zuschneiden</h2>
+      <button type="button" class="code-dialog-close" id="btn-foto-zuschnitt-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted" id="foto-zuschnitt-hinweis">Zieh das Bild im Rahmen zurecht und stell die Größe ein. Gespeichert wird genau der sichtbare Ausschnitt.</p>
+    <div class="foto-buehne" id="foto-buehne">
+      <canvas id="foto-canvas"></canvas>
+    </div>
+    <div class="foto-regler">
+      <label for="foto-zoom">Größe</label>
+      <input type="range" id="foto-zoom" min="100" max="400" value="100" />
+      <!-- Handyfotos tragen ihre Ausrichtung im EXIF. Statt sie im Code zu raten,
+           sieht man die Schieflage hier und dreht sie mit einem Tipp gerade. -->
+      <button type="button" class="btn secondary small" id="btn-foto-drehen" title="Bild um 90° drehen">↻ Drehen</button>
+    </div>
+    <p class="muted foto-status" id="foto-zuschnitt-status" style="display:none;"></p>
+    <div class="foto-dialog-btns">
+      <button type="button" class="btn secondary small" id="btn-foto-abbrechen">Abbrechen</button>
+      <button type="button" class="btn" id="btn-foto-speichern">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script src="signature-pad.js?v=1.0"></script>
+<script src="config.js?v=1.0"></script>
+<script src="app.js?v=1.0"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+CLAUDE.md
+backup-worker-*.js
+vapid-schluessel.local.json
+# Ausgabe von anleitung-rendern.ps1 / anleitung-zusammen.ps1. Die Skripte schreiben
+# per Default hierher; die Bilder sind jederzeit reproduzierbar und landen beim
+# Veroeffentlichen ohnehin in Nextcloud.
+push-schritt-*.png
+push-anleitung-komplett.png

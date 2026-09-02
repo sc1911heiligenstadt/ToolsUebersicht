@@ -1,0 +1,2748 @@
+:root {
+  --green: #2d8c4e;
+  --green-light: #e8f5ed;
+  --red: #c0392b;
+  --red-light: #fdecea;
+  --blue: #1a56a0;
+  --blue-light: #e8f0fb;
+  --gold: #c9941f;
+  --gold-light: #fbf2e1;
+  --gray: #f4f5f7;
+  --border: #dde1e8;
+  --text: #1e2330;
+  --muted: #6b7280;
+  --white: #ffffff;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --radius: 12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #eef1f6;
+  color: var(--text);
+  min-height: 100vh;
+}
+header {
+  position: relative;
+  background: var(--blue);
+  color: white;
+  padding: 16px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  flex-wrap: wrap;
+}
+header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+/* wrap + flex-end: seit der Abmelden-Button hier mit drin sitzt, wird die Gruppe
+   auf schmalen Handys sonst breiter als der Schirm (header bricht zwar um, aber
+   nur als Ganzes). */
+.header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; }
+/* Das Wappen sitzt seit 2026-09-02 VORNE im <h1> (vorher rechts in .header-right,
+   44px). flex: none, weil es sonst in der schmalen Kopfzeile des Handys als
+   einziges schrumpfbares Kind der Ueberschrift zusammengedrueckt wuerde --
+   width:auto haelt nur das Seitenverhaeltnis, nicht die Breite. */
+.header-logo { height: 56px; width: auto; display: block; flex: none; }
+/* ⚠️ Die Pillen der Kopfzeile (.header-code-btn, .header-user,
+   .header-logout-btn) sind am 2026-08-13 auf Michel-Vorgabe eine Stufe kleiner
+   geworden: Schrift 13→12px, Polsterung entsprechend. Sie
+   gehoeren als Satz zusammen -- wer eine davon anfasst, zieht die anderen mit,
+   sonst steht eine Pille sichtbar aus der Reihe. Die Kopfzeilen-HOEHE aendert
+   sich dadurch am Rechner nicht: das hoechste Element ist jetzt das <h1> mit dem
+   56px hohen .header-logo, und in einer Flex-Leiste zieht das hoechste alle
+   anderen. */
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+/* Das Kennzeichen IM Nutzer-Chip ("Admin", "Testansicht") bestimmt dessen Hoehe:
+   mit den 11px/2px der Grundklasse blieb der Chip bei 29px stehen, waehrend die
+   uebrigen Pillen nach der Verkleinerung 27px hoch sind -- und in einer
+   Flex-Leiste faellt genau das auf. Bewusst NUR hier enger, nicht an
+   .version-badge selbst: die traegt auch die Versionsangabe im Info-Tab. */
+.header-user .version-badge { font-size: 10px; padding: 1px 7px; }
+/* Abmelden sitzt im Header neben dem Nutzer-Chip, damit es von jedem Tab aus
+   erreichbar ist -- nicht mehr nur im Einstellungen-Tab. */
+.header-logout-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+}
+.header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
+/* ⚠️ BEIDE Klassen im Selektor, nicht nur `.badge-view-as`. Die Grundregel
+   `.version-badge` steht weiter unten in dieser Datei und hat dieselbe
+   Spezifitaet -- bei Gleichstand gewinnt die spaetere, das Orange kam also gar
+   nicht an (am 2026-08-19 gemessen: der Hintergrund war das weisse 0.18 der
+   Grundregel). Das Orange ist hier kein Schmuck: es ist das Zeichen, dass man
+   gerade NICHT als man selbst unterwegs ist. */
+.version-badge.badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
+/* Das Abzeichen ist ein <button> (Ausstieg aus der Testansicht, siehe
+   renderHeaderUser). Es soll aussehen wie die anderen Abzeichen daneben --
+   also Schrift und Farbe vom Header erben statt vom Browser-Knopf. */
+button.badge-view-as { font: inherit; font-size: 11px; font-weight: 600; color: inherit; cursor: pointer; }
+.header-user button.badge-view-as { font-size: 10px; }
+.version-badge.badge-view-as:hover { background: rgba(255, 190, 60, 0.55); }
+/* Erste Zeile des Einstellungen-Tabs: Dashboard-Knopf und Testansicht-Auswahl
+   nebeneinander (Michel-Vorgabe 2026-08-13). Das margin-bottom sitzt HIER und
+   nicht mehr am Knopf -- sonst haetten beide Elemente je eigenen Abstand nach
+   unten, und beim Umbruch am Handy klaffte eine Luecke dazwischen. */
+.admin-kopfzeile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+/* Zugang zum Admin-Dashboard. Steht seit 2026-08-13 oben im Einstellungen-Tab,
+   davor in der Kopfzeile (Michel-Vorgabe). Das Gold bleibt: zwischen den grauen
+   Panels kennzeichnet es den Wechsel in eine andere Ansicht.
+   ⚠️ Das frühere margin-right:auto ist mit dem Umzug ENTFALLEN -- es gehoerte zur
+   Kopfzeile und teilte dort den Freiraum haelftig mit dem an .header-btns. In der
+   Sektion haette es keine Bedeutung mehr; das Auto-Margin drueben traegt allein.
+   ⚠️ Kein display hier: app.js setzt inline-flex fuer Admins und none fuer alle
+   anderen (renderAdminPanels), eine Angabe an dieser Stelle waere wirkungslos. */
+.admin-dashboard-btn {
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2b2107;
+  background: var(--gold);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.admin-dashboard-btn:hover { opacity: 0.9; }
+/* Testansicht-Auswahl, seit 2026-08-13 neben dem Dashboard-Knopf statt in der
+   Kopfzeile (Michel-Vorgabe).
+   ⚠️ Die Farben MUSSTEN mit umziehen: in der Kopfzeile trug sie weisse Schrift auf
+   halbdurchsichtigem Weiss -- auf dem hellen Grund der Sektion waere das ein
+   unsichtbares Feld gewesen. Die Pillenform bleibt, damit sie neben dem goldenen
+   Knopf kein Fremdkoerper ist; die frühere Regel `.view-as-select option` ist mit
+   der weissen Schrift entfallen (Eintraege erben jetzt das dunkle #111).
+   ⚠️ Kein display hier: renderViewAsControl() in app.js setzt inline-block nur
+   fuer echte Admins (realIsAdmin) -- eine Angabe an dieser Stelle waere
+   wirkungslos, und die Auswahl darf nie fuer andere aufblitzen. */
+.view-as-select {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+/* Kopf-Knoepfe (Materialcontainercode, Unterschriften) sitzen links neben dem
+   Titel. Der ToDo-Knopf steht bewusst NICHT hier, sondern in .header-right --
+   die persoenliche Liste hat mit den Unterschriften nichts zu tun.
+   margin-right:auto schiebt die Gruppe an den Titel -- der Header ist
+   space-between, ohne das Auto-Margin landete sie mittig. Bis 2026-08-13 teilte es
+   den Freiraum mit dem Auto-Margin des Admin-Knopfes; seit dessen Umzug in den
+   Einstellungen-Tab traegt es allein.
+   ⚠️ Der Anker sitzt am WRAPPER, nicht an den Knoepfen: beide werden je nach Konto
+   einzeln aus- und eingeblendet, und ein Anker an einem versteckten Element traegt
+   nicht. Der Wrapper bleibt immer im Fluss, auch wenn beide Knoepfe weg sind. */
+.header-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  margin-left: 10px;
+  min-width: 0;
+  /* Am Handy passen "Materialcontainercode" und "Unterschriften anfordern" nicht
+     mehr nebeneinander -- ohne Umbruch schiebt der zweite Knopf die ganze Seite
+     seitlich raus (gemessen: 387 px bei 375 px Fenster, damals noch mit der
+     kuerzeren Beschriftung "Meine Aufgaben"). */
+  flex-wrap: wrap;
+}
+.header-code-btn {
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 5px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-code-btn:hover { background: rgba(255, 255, 255, 0.24); }
+/* Der entbehrliche Teil einer Knopfbeschriftung. Faellt unter 860px per
+   Media-Query weg (Platz) und per .aus, wenn er inhaltlich nicht stimmt --
+   "anfordern" duerfen nur die Gruppen aus dokumentGroupIds, wer bloss
+   unterschreiben soll, liest dort sonst etwas Falsches.
+   ⚠️ Als Klasse und NICHT per inline-style geschaltet: ein inline gesetztes
+   display:"" wuerde die Media-Query aushebeln und den Text am Handy zurueckholen. */
+.btn-lang.aus { display: none; }
+/* Signal am Kopf-Knopf, wenn etwas neu zugewiesen, heute fällig oder überfällig
+   ist. Bewusst nur Hintergrund und Rahmen: ein zusätzliches Badge oder ein
+   absolut gesetzter Punkt kostet Layoutbreite, und die Kopfzeile hat am Handy
+   keine mehr übrig (bei 375px Fenster endet sie bei 341px). */
+.header-code-btn.hat-signal {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+/* Kleines Fenster fuer den Code. Bewusst schlicht gehalten: es zeigt genau einen
+   Wert und wird sofort wieder geschlossen. */
+.code-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+/* Zwei Dialoge koennen ueber dem Aufgaben-Fenster aufgehen: Zuweisen und
+   Unterschreiben. Bei gleichem z-index entscheidet die DOM-Reihenfolge -- und
+   #aufgaben-zuweisen-overlay steht im Markup VOR dem Fenster, waere also
+   dahinter verschwunden. Deshalb hier ausdruecklich hoeher. */
+#aufgaben-zuweisen-overlay,
+#dokument-signieren-overlay { z-index: 1010; }
+.code-dialog {
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  padding: 22px 24px 24px;
+  width: 100%;
+  max-width: 420px;
+  /* Ohne diese beiden Zeilen waechst ein Dialog mit viel Inhalt ueber den
+     Bildschirmrand hinaus, und die Knoepfe unten (Zuweisen/Anfordern) sind
+     schlicht nicht mehr erreichbar -- der Overlay selbst scrollt nicht.
+     Am 2026-07-29 von Michel gemeldet: nach dem Waehlen einer PDF war der
+     Absenden-Knopf nur noch ueber den Browser-Zoom zu erreichen. Die beiden
+     grossen Dialoge (.dok-dialog, .dok-liste-dialog) hatten das laengst, der
+     Zuweisen-Dialog hing an .code-dialog und ging leer aus. Gehoert deshalb
+     hierher und nicht in eine weitere Sonderklasse. */
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+.code-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.code-dialog-head h2 { font-size: 18px; color: var(--blue); margin: 0; }
+.code-dialog-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.code-dialog-close:hover { color: var(--text); }
+/* Gross und in Festbreite: der Code wird meist am Container abgetippt, oft vom
+   Handy abgelesen. */
+.code-anzeige {
+  font-family: "Consolas", "SF Mono", "Menlo", monospace;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-align: center;
+  color: var(--blue);
+  background: var(--gray);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 12px;
+  margin: 6px 0 12px;
+  user-select: all;
+  word-break: break-all;
+}
+
+/* Anleitung im Fenster "Als App ablegen" (nur iPhone/iPad -- auf Android oeffnet
+   der Knopf den Systemdialog und dieses Fenster geht nie auf). */
+.app-schritte {
+  margin: 4px 0 14px;
+  padding-left: 22px;
+  line-height: 1.7;
+  font-size: 14px;
+}
+.app-schritte li { margin-bottom: 6px; }
+.app-schritte strong { color: var(--blue); }
+/* Das Teilen-Symbol steht mitten im Satz und muss auf der Textlinie sitzen --
+   ohne vertical-align haengt es an der Grundlinie und schiebt die Zeile auf. */
+.app-teilen-icon {
+  vertical-align: -4px;
+  margin: 0 2px;
+  color: var(--blue);
+}
+
+nav {
+  display: flex;
+  gap: 4px;
+  background: var(--white);
+  padding: 8px 28px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+nav button {
+  background: none;
+  border: none;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  border-radius: 8px 8px 0 0;
+}
+nav button:hover { background: var(--gray); }
+nav button.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* Rote Zahl am Konto-Tab: neue Unterlagen im Downloadbereich.
+   ⚠️ `margin-block: -2px` ist Pflicht, keine Kosmetik. Die Pille ist 17 px hoch
+   und damit höher als die Textzeile des Knopfes — gemessen zog sie die GANZE
+   Nav-Leiste von 47 auf 49 px auf, samt aller Nachbarknöpfe (das höchste
+   Element einer Flex-Leiste zieht alle mit). Mit -2 px steht die Leiste wieder
+   bei 47 px, die Pille bleibt voll 17 px und mittig zum Text. Die Werte 0/-1/-2/-3
+   wurden durchgemessen: -2 ist der kleinste, der die Leiste nicht mehr anhebt.
+   ⚠️ `min-width` gleich der Höhe: eine einstellige Zahl bleibt dadurch rund,
+   eine zweistellige wächst nur in die Breite (gemessen 22 px). */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  margin-left: 6px;
+  margin-block: -2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+.tab-section { display: none; }
+.tab-section.active { display: block; }
+
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 18px;
+}
+.card h2 { font-size: 17px; margin-bottom: 14px; color: var(--blue); }
+.card h3 { font-size: 15px; margin-bottom: 10px; }
+
+/* Karte "Mein Konto": Beschriftung/Wert paarweise. Auf schmalen Schirmen
+   untereinander statt zweispaltig, sonst bricht der Wert unschoen um. */
+.konto-grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; }
+.konto-grid dt { font-size: 13px; font-weight: 600; color: var(--muted); }
+.konto-grid dd { font-size: 14px; margin: 0; }
+@media (max-width: 560px) {
+  .konto-grid { grid-template-columns: 1fr; gap: 3px; }
+  .konto-grid dd { margin-bottom: 10px; }
+}
+.konto-passwort { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.konto-passwort form { max-width: 340px; }
+
+/* Nutzerfoto (seit 2026-08-04) */
+.konto-foto {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.konto-foto-vorschau {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  /* ⚠️ BEWUSST vier Einzeleigenschaften statt der Kurzform. Hier stand
+     `background: var(--bg) center / cover no-repeat` — und `--bg` gibt es in
+     dieser Datei gar nicht. Eine Kurzform mit einer unauflösbaren var() ist als
+     GANZES ungültig ("invalid at computed-value time") und fällt auf die
+     Startwerte zurück: 0% 0% / auto / repeat. Das 320px-Foto lag dadurch
+     ungeskaliert in der linken oberen Ecke des 96px-Kreises, man sah also nur
+     dessen Ecke. Getrennt notiert kostet ein Fehler in der Farbe nur die Farbe,
+     nie den Bildausschnitt. */
+  background-color: var(--gray);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--muted);
+  overflow: hidden;
+}
+/* min-width: 0 -- ohne das schiebt ein langer Hinweistext die Karte breiter,
+   statt umzubrechen, und die ganze Seite laeuft am Handy seitlich ueber. */
+.konto-foto-text { flex: 1 1 240px; min-width: 0; }
+.konto-foto-text h3 { margin: 0 0 4px; font-size: 15px; }
+.konto-foto-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.foto-status { margin-top: 10px; font-size: 13px; }
+.foto-status.fehler { color: #c0392b; }
+
+/* Aktivitätspunkte (seit 2026-08-04) */
+.punkte-stand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.punkte-zahl {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--blue);
+}
+/* min-width: 0 aus demselben Grund wie bei .konto-foto-text: ohne das schiebt ein
+   langer Text die Karte breiter, statt umzubrechen. */
+.punkte-zahl-text { display: flex; flex-direction: column; min-width: 0; }
+.punkte-zahl-text .muted { font-size: 13px; }
+.punkte-erprobung {
+  margin-top: 14px;
+  font-size: 13px;
+  font-style: italic;
+}
+.punkte-details { margin-top: 14px; }
+.punkte-details > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.punkte-regeln { margin: 10px 0 0; padding-left: 20px; }
+.punkte-regeln li { margin-bottom: 5px; font-size: 14px; }
+
+/* ⚠️ table-layout: fixed ist hier nicht Kosmetik, sondern die Bedingung dafuer,
+   dass die Seite am Handy nicht seitlich ueberlaeuft. `main` haengt in einem
+   Flex-Container (.page-body) und waechst mit der Wunschbreite seines Inhalts:
+   mit `white-space: nowrap` in den Zellen zog die Tabelle die ganze Karte auf
+   422px und die Seite um 79px ueber den Rand hinaus (bei 375px gemessen). Ein
+   blosses max-width am Scroll-Container aendert daran NICHTS -- gemessen, nicht
+   vermutet: die Prozentangabe rechnet gegen den bereits aufgezogenen Vorfahren.
+   Erst die feste Tabellenbreite nimmt der Tabelle die Wunschbreite. Der
+   Scroll-Container bleibt als Auffangnetz fuer ein einzelnes ueberlanges Wort. */
+.punkte-tabelle-scroll { overflow-x: auto; margin-top: 10px; }
+.punkte-tabelle { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 13px; }
+.punkte-tabelle th, .punkte-tabelle td {
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+/* ⚠️ Polsterung LINKS an jeder Spalte ab der zweiten. Ohne sie klebt eine
+   rechtsbündige Zahl unmittelbar am Text der Folgespalte ("42Vereinskalender",
+   "PunkteMeistgenutzt") -- die Zellen haben nur rechts Polsterung, und .zahl
+   setzt genau die auf 0. Fiel erst in der Auswertung auf, betrifft aber auch
+   zwei benachbarte Zahlenspalten im Protokoll des Konto-Tabs. */
+.punkte-tabelle th + th, .punkte-tabelle td + td { padding-left: 12px; }
+/* Zahlenspalten: die Ausrichtung muss an th UND td stehen, sonst steht die
+   Überschrift links und der Wert rechts. */
+.punkte-tabelle th.zahl, .punkte-tabelle td.zahl { text-align: right; padding-right: 0; }
+/* Mit table-layout: fixed bekäme sonst jede Spalte gleich viel Platz und die
+   rechtsbündige Zahl stünde einsam mitten im Feld. */
+.punkte-tabelle col.spalte-zahl { width: 6.5em; }
+
+.punkte-optout { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.punkte-optout-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+/* Breite und Höhe ausdrücklich setzen: das Kästchen steht außerhalb von
+   .form-field, soll aber trotzdem nicht in Browser-Standardgröße herumliegen. */
+.punkte-optout-label input { width: 16px; height: 16px; flex: 0 0 auto; }
+.punkte-optout small { display: block; margin-top: 6px; font-size: 12px; }
+
+/* Aktivitäts-Auswertung im Admin-Dashboard (seit 2026-08-04) */
+.aktivitaet-steuerung { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.aktivitaet-titel { margin: 18px 0 0; font-size: 14px; color: var(--blue); }
+.aktivitaet-ungenutzt { margin-top: 12px; font-size: 13px; }
+
+/* Der Kamera-Knopf ergibt nur dort Sinn, wo es auch eine Kamera gibt.
+   pointer: coarse ist der verlaessliche Hinweis auf ein Touch-Geraet; am Rechner
+   oeffnete capture="user" bloss denselben Dateidialog wie der Knopf daneben und
+   verspraeche etwas, das nicht passiert. */
+.nur-touch { display: none; }
+@media (pointer: coarse) {
+  .nur-touch { display: inline-block; }
+}
+
+/* Zuschnitt-Dialog. Die Buehne ist der Canvas selbst -- seine Groesse setzt
+   oeffneFotoZuschnitt() beim Oeffnen, weil ein Canvas hinter display:none auf
+   seinen Standardmassen 300x150 haengenbleibt und der erste Zuschnitt sonst
+   verzerrt herauskaeme. Deshalb hier bewusst KEIN aspect-ratio: das kennen die
+   aelteren iOS-Geraete der Flotte nicht. */
+.foto-buehne { display: flex; justify-content: center; margin-top: 14px; }
+#foto-canvas {
+  background: #2b2b2b;
+  border-radius: 8px;
+  max-width: 100%;
+  cursor: grab;
+  /* Ohne das scrollt beim Ziehen die Seite statt das Bild zu wandern. */
+  touch-action: none;
+}
+#foto-canvas.zieht { cursor: grabbing; }
+.foto-regler { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.foto-regler label { font-size: 13px; color: var(--muted); }
+/* min-width: 0 am Flex-Kind, sonst haelt der Regler seine intrinsische Breite
+   und drueckt den Drehen-Knopf aus dem Dialog. */
+.foto-regler input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.foto-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* Foto-Zeile im Nutzer-Bearbeiten-Panel (Admin-Weg). flex-wrap, damit die beiden
+   Knoepfe am Handy umbrechen statt die Zeile breiter zu machen als die Karte. */
+.user-foto-zeile { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+/* Push-Benachrichtigungen (seit 2026-08-03) */
+.push-titel { margin-top: 18px; }
+.push-titel:first-child { margin-top: 0; }
+
+/* ⚠️ Die Kaestchen stehen bewusst NICHT in .form-field: dort greift
+   input { width: 100% } und macht aus jeder Checkbox einen Balken quer durch
+   die Karte. Breite und Hoehe deshalb hier ausdruecklich festhalten. */
+.push-schalter { display: flex; flex-direction: column; gap: 10px; }
+.push-schalter label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.push-schalter input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;   /* sonst quetscht flex das Kaestchen bei langem Text zusammen */
+  margin: 1px 0 0 0;
+  cursor: pointer;
+}
+
+/* ---------- Freigabe fuer die Kontaktliste (seit 2026-08-13) ----------
+   ⚠️ Dieselbe Falle wie bei .push-schalter: die Kaestchen duerfen NICHT in
+   .form-field stehen, dort greift input { width: 100% } und macht aus jeder
+   Checkbox einen Balken. Breite/Hoehe deshalb auch hier ausdruecklich. */
+.kf-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.kf-check input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  margin: 2px 0 0 0;
+  cursor: pointer;
+}
+.kf-check.kf-haupt { margin-bottom: 6px; }
+/* Der eigene Wert neben dem Haekchen -- ohne ihn kreuzt man blind an, weil die
+   Daten selbst in Trainerdaten liegen und hier nirgends sonst stehen.
+   `overflow-wrap` faengt lange E-Mail-Adressen ab, die sonst die Karte
+   seitlich aufziehen. */
+.kf-wert { color: var(--muted); overflow-wrap: anywhere; }
+.kf-wert:before { content: "· "; }
+/* Fehlt der Wert in Trainerdaten, steht das da statt eines leeren Haekchens --
+   sonst gibt jemand etwas frei, was gar nicht existiert. */
+.kf-wert.kf-leer { font-style: italic; }
+.kf-hinweis { margin: 0 0 12px 27px; font-size: 12px; }
+/* Ausgegraut statt gesperrt: ein disabled-Kaestchen schluckt den Klick
+   kommentarlos (gleiche Ueberlegung wie beim Abhak-Guard der Aufgaben). */
+#kf-felder.kf-aus { opacity: 0.5; }
+
+/* ⚠️ Eigene Knopfreihe, weil `.btn-row` in DIESEM Repo nicht existiert -- die
+   Klasse stammt aus den App-Repos, hier blieb das <div> `display: block` und die
+   beiden Knoepfe richteten sich an der Textbasislinie aus (gemessen: 4 px
+   Hoehenunterschied und sichtbarer Versatz).
+   `align-items: center` statt `stretch`: der Link traegt bei `.secondary` einen
+   1px-Rahmen und ist dadurch zwangslaeufig zwei Pixel hoeher als der rahmenlose
+   Button -- zentriert faellt das nicht auf, gestreckt saehe der Button gedehnt aus. */
+.kf-knopfreihe {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+/* Eine bereitgestellte Unterlage im Downloadbereich.
+   ⚠️ `flex-wrap` plus `flex: 1 1 260px` am Textteil ist Pflicht, nicht Kosmetik:
+   ohne beides legt sich der Knopf am Handy neben einen 20 Pixel breiten Text
+   statt darunter (gleiche Gegenmaßnahme wie bei .links-admin-row und
+   .feedback-admin-row).
+   ⚠️ `min-width: 0` am Textteil, sonst sprengt ein langer Dateiname die Zeile —
+   ein Flex-Kind schrumpft ohne das nie unter seinen Inhalt. */
+.dl-zeile {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.dl-zeile:first-child { border-top: none; }
+.dl-zeile-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+/* ⚠️ `> *`, NICHT `span`: der Anzeigename steht in einem <strong>, und genau der
+   ist der lange (ein Dateiname wie „merkblatt-fuehrungszeugnis-2026.pdf" hat
+   keine Trennstelle). Mit der span-Regel allein zog eine solche Zeile die Karte
+   bei 375 px auf 459 px und die GANZE Seite um 116 px seitlich auf — `main`
+   hängt in einem Flex-Container und wächst mit der Wunschbreite seines Inhalts
+   (dieselbe Falle wie bei der Protokoll-Tabelle der Aktivitätspunkte). */
+.dl-zeile-text > * { overflow-wrap: anywhere; min-width: 0; }
+/* Zwei Knöpfe („Ansehen" / „Speichern") sollen am Handy zusammen umbrechen und
+   nicht einzeln in verschiedene Zeilen fallen — deshalb stehen sie in einem
+   eigenen Flex-Kind und nicht direkt in .dl-zeile. */
+.dl-zeile-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.push-geraete { list-style: none; margin: 0; padding: 0; }
+.push-geraete li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.push-geraete li:last-child { border-bottom: none; }
+.push-geraete .muted { font-size: 13px; }
+.push-dieses {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-light);
+  border-radius: 10px;
+  padding: 1px 8px;
+  margin-left: 4px;
+}
+/* Am Handy untereinander: Geraetename und Knopf nebeneinander lassen den Namen
+   sonst auf wenige Zeichen zusammenschrumpfen. */
+@media (max-width: 560px) {
+  .push-geraete li { flex-direction: column; align-items: flex-start; gap: 7px; }
+}
+
+.answer-card { border-left: 4px solid var(--blue); }
+.answer-question {
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.answer-question::before { content: "Frage: "; color: var(--muted); font-weight: 600; }
+.answer-text { font-size: 15px; line-height: 1.6; }
+.answer-meta { font-size: 12px; }
+
+button.btn {
+  background: var(--blue);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.btn:hover { opacity: 0.9; }
+button.btn.secondary { background: var(--gray); color: var(--text); border: 1px solid var(--border); }
+button.btn.danger { background: var(--red); }
+button.btn.success { background: var(--green); }
+button.btn.small { padding: 6px 12px; font-size: 13px; }
+button.btn:disabled { opacity: 0.6; cursor: default; }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.form-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+/* .users-filter steht bewusst mit im Selektor statt eigene Werte zu wiederholen:
+   die Filterfelder der Nutzerliste sollen exakt wie die Formularfelder aussehen.
+   Das width:100% ist dort wirkungslos, weil flex-basis (siehe unten) gewinnt. */
+.form-field input, .form-field select, .form-field textarea,
+.users-filter input, .users-filter select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] { width: auto; }
+
+.muted { color: var(--muted); font-size: 13px; }
+.empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+
+.version-badge {
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 9px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+#changelog-list { display: flex; flex-direction: column; gap: 8px; }
+.changelog-entry { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.changelog-entry .cv { font-weight: 700; color: var(--blue); }
+.changelog-group { display: flex; flex-direction: column; gap: 4px; }
+.changelog-group .cg-title { font-weight: 700; font-size: 14px; color: var(--blue); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
+.changelog-group .cg-items { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; color: var(--text); }
+
+/* ---------- Neuigkeiten ---------- */
+
+.news-banner {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  margin-bottom: 26px;
+}
+.news-head h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
+.news-carousel { display: flex; align-items: center; gap: 10px; }
+.news-carousel-item { flex: 1; min-width: 0; }
+.news-nav-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--gray);
+  color: var(--blue);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.news-nav-btn:hover:not(:disabled) { background: var(--blue-light); }
+.news-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.news-dots { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; font-weight: 600; }
+.news-item { display: block; text-decoration: none; color: var(--text); padding: 4px 6px; }
+/* .news-item-klick ist die Meldung, die auf einen TAB dieser App zeigt (Ideen) --
+   dort gibt es kein <a href>, die Optik muss trotzdem dieselbe sein. */
+a.news-item, .news-item-klick { border-radius: 8px; transition: background 0.12s ease; }
+a.news-item:hover, .news-item-klick:hover { background: var(--blue-light); }
+a.news-item:hover .news-item-title, .news-item-klick:hover .news-item-title { text-decoration: underline; }
+.news-item-klick { cursor: pointer; }
+.news-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.news-date { font-size: 12px; color: var(--muted); }
+.news-item-title { font-weight: 700; font-size: 15px; color: var(--blue); }
+.news-item-text { font-size: 13px; color: var(--text); line-height: 1.45; margin-top: 2px; }
+.news-item-link { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--blue); }
+.news-badge {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.news-badge-neu     { color: var(--green); background: var(--green-light); }
+.news-badge-update  { color: var(--blue);  background: var(--blue-light); }
+.news-badge-fix     { color: var(--gold);  background: var(--gold-light); }
+.news-badge-hinweis { color: var(--muted); background: var(--gray); }
+.news-admin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.news-admin-row:first-child { border-top: none; }
+.news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
+#news-form textarea { width: 100%; }
+/* position: relative ist der Bezugspunkt fuer die Namensliste unten -- sie wird per
+   JS an der Position des ueberfahrenen Knopfes ausgerichtet (btn.offsetLeft). */
+.news-reactions { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.news-react-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  cursor: pointer;
+  line-height: 1.2;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.news-react-btn:hover { background: var(--gray); }
+.news-react-btn.active { border-color: var(--blue); background: var(--blue-light); }
+.news-react-emoji { font-size: 16px; }
+.news-react-count { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 8px; text-align: center; }
+.news-react-btn.active .news-react-count { color: var(--blue); }
+.news-react-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+/* ---- Medien-Anhaenge einer Neuigkeit (seit 2026-08-03) ----
+   Vorschau-Streifen unter der Meldung. Michel-Vorgabe: klein zeigen, Klick oeffnet
+   gross. Das Karussell steht ganz oben auf der Startseite -- ein grosses Bild darin
+   schoebe bei jeder bebilderten Meldung die Kacheln nach unten, am Handy aus dem
+   sichtbaren Bereich. Deshalb feste 64 px und flex-wrap statt einer Bildflaeche. */
+.news-medien { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.news-medien-thumb {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--blue-light);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.news-medien-thumb:hover { transform: scale(1.05); border-color: var(--blue); }
+.news-medien-thumb-zeichen { font-size: 22px; line-height: 1; }
+/* Sobald das echte Bild als Hintergrund haengt, ist das Platzhalter-Zeichen im Weg. */
+.news-medien-thumb.hat-bild .news-medien-thumb-zeichen { display: none; }
+.news-medien-link { font-size: 13px; font-weight: 600; color: var(--blue); text-decoration: none; }
+.news-medien-link:hover { text-decoration: underline; }
+
+/* ⚠️ Eigener z-index ueber den 1000 der uebrigen Overlays: bei Gleichstand
+   entscheidet die DOM-Reihenfolge, und dieses Fenster steht im Markup VOR den
+   anderen -- es laege sonst dahinter. Gleiche Loesung wie beim Zuweisen-Dialog. */
+.news-medien-overlay { z-index: 1010; }
+.news-medien-dialog { position: relative; max-width: 96vw; text-align: center; }
+#news-medien-buehne img,
+#news-medien-buehne video {
+  display: block;
+  max-width: 96vw;
+  /* 96px: Platz fuer den Schliessen-Knopf oben und die Namenszeile unten. */
+  max-height: calc(100vh - 96px);
+  border-radius: 10px;
+  background: #000;
+}
+.news-medien-name { margin-top: 8px; font-size: 13px; color: #fff; }
+.news-medien-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Anhang-Liste im Admin-Formular */
+.news-medien-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.news-medien-zeile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--gray);
+}
+.news-medien-art { font-size: 18px; line-height: 1; flex: 0 0 auto; }
+/* minmax-Ersatz fuer Flex: ohne min-width:0 sprengt ein langer Dateiname die Zeile. */
+.news-medien-titel {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Namen der Reagierenden beim Ueberfahren eines Knopfes. Liegt UEBER der Leiste, damit
+   die Karte beim Hover nicht waechst (sonst rutscht der Knopf unter der Maus weg).
+   width: max-content + max-width: 100% haelt die Box so schmal wie noetig und trotzdem
+   innerhalb der Karte; die Links-Position setzt das JS geklemmt. */
+.news-react-namen {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+  pointer-events: none; /* sonst nimmt die Box die Maus vom Knopf und flackert */
+}
+.news-react-namen[hidden] { display: none; }
+.news-react-namen-hinweis { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+
+/* ---------- Feedback & Hilfe ---------- */
+
+/* ⚠️ flex-wrap + der 320px-Basiswert am Textteil: seit dort ein Antwortfeld
+   steht, teilten sich Text und Knopfgruppe am Handy die 303 px Zeilenbreite --
+   fuers Antworten blieben 135 px. Ab dieser Breite bricht die Knopfgruppe unter
+   den Text, am Rechner bleibt alles nebeneinander wie bisher. */
+.feedback-admin-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.feedback-admin-row:first-child { border-top: none; }
+.feedback-admin-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.feedback-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.feedback-item-text { font-size: 13px; color: var(--text); line-height: 1.45; margin-top: 2px; }
+.feedback-badge {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.feedback-badge-feedback { color: var(--blue); background: var(--blue-light); }
+.feedback-badge-wunsch   { color: var(--gold); background: var(--gold-light); }
+
+/* Antwortfeld im Admin-Panel. ⚠️ min-width:0 am Textteil ist Pflicht: seit hier
+   ein Textarea drinsteht, zieht ein Flex-Kind sonst die ganze Zeile auf seine
+   Wunschbreite und laesst die Seite am Handy seitlich ueberlaufen. */
+.feedback-admin-main { flex: 1 1 320px; min-width: 0; }
+.feedback-antwort-block { margin-top: 10px; }
+.feedback-antwort-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.feedback-antwort-text {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: vertical;
+}
+.feedback-antwort-aktionen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.feedback-antwort-status { font-size: 12px; }
+
+/* Eigene Einreichungen im Feedback-Tab */
+.meine-feedback-row { padding: 12px 0; border-top: 1px solid var(--border); }
+.meine-feedback-row:first-child { border-top: none; }
+.meine-feedback-antwort {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--blue);
+  background: var(--blue-light);
+  border-radius: 0 8px 8px 0;
+}
+.meine-feedback-antwort-kopf { font-size: 12px; font-weight: 700; color: var(--blue); margin-bottom: 3px; }
+
+a.btn-link {
+  display: inline-block;
+  background: var(--blue);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+a.btn-link:hover { opacity: 0.9; }
+/* ⚠️ `line-height` MUSS gesetzt sein, sonst ist ein `a.btn-link` hoeher als der
+   gleich gestylte `button.btn` daneben: ein <button> bringt seine eigene
+   Default-Zeilenhoehe mit, ein <a> nicht. Gemessen am 2026-08-13 in derselben
+   Reihe: Link 40 px gegen Button 36 px (primaer) bzw. 37 px (sekundaer, mit
+   Rahmen). Mit 1.15 trifft der sekundaere Link die 37 px auf den Pixel und der
+   primaere liegt bei 35 statt 38. Wer den Wert aendert, misst gegen einen echten
+   `button.btn` in derselben Zeile -- schaetzen geht hier daneben. */
+a.btn-link { line-height: 1.15; }
+/* ⚠️ Die Knopf-Optik ist ELEMENTGEBUNDEN: `button.btn` (Zeile ~547) greift bei
+   einem <a> nicht, ein `<a class="btn secondary">` sieht deshalb wie ein
+   gewoehnlicher Link aus (unterstrichen, Besucht-Lila) -- genau so am 2026-08-13
+   beim Knopf "Zur Kontaktliste" aufgeschlagen. Fuer Links ist `a.btn-link` die
+   richtige Klasse; hier die fehlende sekundaere Variante dazu, damit ein Link
+   neben einem primaeren Knopf stehen kann, ohne mit ihm zu konkurrieren.
+   Werte bewusst identisch zu `button.btn.secondary` -- wer eines aendert, zieht
+   das andere mit (die Doppelung ist im Kopf dieses Abschnitts schon vermerkt). */
+a.btn-link.secondary { background: var(--gray); color: var(--text); border: 1px solid var(--border); }
+a.btn-link.small { padding: 6px 12px; font-size: 13px; }
+
+/* ---------- Dashboard-Layout (Kalender-Widget + Kacheln) ---------- */
+/* .page-body bricht bewusst aus dem zentrierten max-width:1100px von <main>
+   aus, damit das Kalender-Widget ganz links am Fensterrand steht statt nur
+   am linken Rand des zentrierten Inhaltsbereichs; <main> bleibt als eigenes
+   Flex-Kind weiterhin über seine eigene max-width/margin:auto zentriert. */
+
+.page-body {
+  display: flex;
+  align-items: flex-start;
+}
+main { flex: 1; min-width: 0; }
+.calendar-widget { flex: 0 0 260px; padding: 24px 0 0 16px; }
+.calendar-widget .card { margin-bottom: 0; }
+.calendar-widget-list { display: flex; flex-direction: column; }
+.calendar-widget-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+  border-radius: 6px;
+}
+.calendar-widget-item:first-child { border-top: none; }
+.calendar-widget-item:hover { background: var(--blue-light); }
+.calendar-widget-item .cw-date { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; width: 40px; }
+.calendar-widget-item .cw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.calendar-widget-item .cw-emoji { flex-shrink: 0; font-size: 13px; line-height: 1; }
+.calendar-widget-item .cw-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-widget-birthday { cursor: default; }
+.calendar-widget-birthday:hover { background: none; }
+.calendar-widget-birthday .cw-title { color: #b8860b; }
+/* Umfrage-Vorschlag: Datum/Titel bleiben eine verlinkte Zeile, die Zu-/Absage-
+   Knöpfe stehen rechts daneben. Der Titel gibt dafür Platz her (min-width:0 +
+   ellipsis erbt er von .cw-title), die Knöpfe behalten ihre Breite. */
+.calendar-widget-poll { flex-wrap: wrap; }
+/* flex-basis 0 (nicht auto): mit auto zählt der volle Titel als Basis, und die
+   Knöpfe brechen bei langen Titeln in die nächste Zeile um. Mit 0 nimmt der
+   Titelbereich nur den Rest und kürzt per ellipsis -- die Knöpfe bleiben rechts. */
+.calendar-widget-poll .cw-main {
+  display: flex; align-items: center; gap: 8px;
+  text-decoration: none; color: var(--text); min-width: 0; flex: 1 1 0;
+}
+.calendar-widget-poll .cw-votes { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.cw-vote {
+  border: 1px solid var(--border); background: var(--white); border-radius: 6px;
+  padding: 2px 8px; font-size: 12px; font-weight: 700; font-family: inherit;
+  cursor: pointer; color: var(--muted); line-height: 1.6;
+}
+.cw-vote:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+.cw-vote:disabled { opacity: 0.5; cursor: default; }
+.cw-vote-ja.active { background: #16a34a; border-color: #16a34a; color: #fff; }
+.cw-vote-nein.active { background: #dc2626; border-color: #dc2626; color: #fff; }
+/* Fehlermeldung bricht in eine eigene Zeile um, damit sie die Knöpfe nicht aus
+   der Spalte drückt; ohne Text nimmt sie gar keinen Platz ein. */
+.cw-vote-msg { flex: 0 0 100%; font-size: 11px; color: #dc2626; margin-top: 4px; }
+.cw-vote-msg:empty { display: none; }
+.calendar-widget-sub-heading {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 14px 0 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- Aufgaben (im Fenster "Meine ToDos") ---------- */
+
+/* Bis 2026-07-28 eine aufklappbare Karte unten links im Dashboard; auf Michels
+   Wunsch komplett ins Fenster gezogen. Der Zähler sitzt seither am Kopf-Knopf --
+   ohne ihn sähe man beim Seitenaufruf nicht mehr, dass etwas offen ist. */
+.header-zaehler {
+  flex-shrink: 0; margin-left: 6px; font-size: 10px; font-weight: 700;
+  background: rgba(255, 255, 255, 0.9); color: var(--blue);
+  border-radius: 999px; padding: 1px 6px; line-height: 1.5;
+}
+/* Der Ring hebt die rote Zahl vom hellen Kopfbereich ab -- box-shadow liegt
+   außerhalb des Layouts und verbreitert den Knopf nicht. */
+.header-zaehler.warn {
+  background: #fee2e2; color: #b91c1c;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.5);
+}
+
+/* Umbrechend, NICHT drei Felder in einer Zeile: das Datumsfeld bringt eine
+   intrinsische Mindestbreite mit, die sich per width/min-width nicht wegkürzen
+   lässt. In einer Zeile erzwang es am Handy eine Kartenbreite von 403px bei
+   371px Fenster — und weil die Seite dadurch insgesamt breiter wurde, liefen
+   auch Neuigkeiten und Kacheln seitlich heraus (im iframe-Test gemessen).
+   Text bekommt deshalb eine eigene Zeile, Datum und Knopf teilen sich die
+   nächste. 16px Schriftgröße, damit iOS beim Antippen nicht hineinzoomt. */
+.aufgaben-neu { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 8px; }
+.aufgaben-neu input[type="text"] { flex: 1 1 100%; min-width: 0; }
+.aufgaben-neu input[type="date"] { flex: 1 1 0; min-width: 0; }
+.aufgaben-neu input { font-size: 16px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+.aufgaben-neu button { flex: 0 0 auto; }
+/* Sicherheitsnetz gegen genau diesen Fehlermodus: der Bereich darf seinen
+   Container nie überschreiten, egal was später hineinwandert. */
+#aufgaben-widget-inhalt, #aufgaben-widget-inhalt * { max-width: 100%; }
+
+.aufgaben-liste { display: flex; flex-direction: column; }
+.aufgabe-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 4px; border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text);
+}
+.aufgabe-item:first-child { border-top: none; }
+.aufgabe-check { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+.aufgabe-text { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.aufgabe-meta { flex-shrink: 0; font-size: 11px; color: var(--muted); }
+.aufgabe-item.erledigt .aufgabe-text,
+.aufgabe-item.zurueckgezogen .aufgabe-text { text-decoration: line-through; color: var(--muted); }
+.aufgabe-item.ueberfaellig .aufgabe-meta { color: #b91c1c; font-weight: 700; }
+/* Heute fällig ist eine Vorwarnung, keine Mahnung: Bernstein statt desselben
+   Rots wie bei überfällig -- sonst sieht beides gleich dringend aus. */
+.aufgabe-item.heute .aufgabe-meta { color: #b45309; font-weight: 700; }
+
+/* Hinweiszeile über der Liste. Sagt in Worten, was der Zähler am Kopf-Knopf nur
+   andeutet ("3" verrät nicht, ob eine neue Zuweisung dabei ist). Erscheint nur,
+   wenn es wirklich etwas zu melden gibt, und verschwindet mit dem Anlass. */
+.aufgaben-signal {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 12px 0 0; padding: 8px 11px;
+  border-radius: 8px; font-size: 12.5px; font-weight: 600; line-height: 1.45;
+  background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe;
+}
+.aufgaben-signal.dringend { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+/* Ungesehene Zuweisung: farbiger Balken links statt eines eigenen Badges --
+   in der schmalen Spalte ist jede zusätzliche Zeile teurer als ein Rand. */
+.aufgabe-item.neu { box-shadow: inset 3px 0 0 var(--blue); padding-left: 8px; }
+.aufgabe-del {
+  flex-shrink: 0; border: none; background: none; cursor: pointer;
+  color: var(--muted); font-size: 13px; line-height: 1; padding: 2px 4px;
+}
+.aufgabe-del:hover { color: #b91c1c; }
+
+/* Beide Aktionen sind Knöpfe im gleichen Chip-Format, aber unterschiedlich
+   gewichtet: Zuweisen ist die eigentliche Aktion und trägt die Akzentfarbe,
+   Aufräumen bleibt grau im Hintergrund. Vorher waren es unterstrichene
+   Textlinks -- die sahen in der Karte wie ein Fremdkörper aus. */
+.aufgaben-aktionen { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.aufgaben-aktionen button {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--white);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.aufgaben-aktionen button:hover { background: var(--gray); }
+/* Das Plus sitzt in einem eigenen Kreis, damit der Knopf auch ohne Farbe als
+   "hier kommt etwas Neues dazu" lesbar bleibt. Seit dem Umzug des Zuweisen-Knopfs
+   ins Aufgaben-Fenster sitzt er auf blauem Grund -- dort muss der Kreis hell sein,
+   ein blauer Kreis auf blauem Knopf waere unsichtbar. */
+.chip-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; margin-right: 4px;
+  background: var(--blue); color: #fff; font-size: 11px; line-height: 1; font-weight: 700;
+}
+.btn .chip-icon { background: rgba(255, 255, 255, 0.9); color: var(--blue); }
+.aufgaben-fehler { color: #b91c1c; font-size: 12px; margin-top: 8px; }
+.aufgaben-fehler:empty { display: none; }
+
+.aufgaben-zugewiesen { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.aufgaben-zugewiesen > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--muted); }
+.aufgabe-zug-item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 4px; font-size: 12px;
+}
+.aufgabe-zug-item.erledigt .aufgabe-text { text-decoration: line-through; color: var(--muted); }
+.aufgabe-zurueck {
+  border: 1px solid var(--border); background: var(--white); border-radius: 6px;
+  padding: 2px 8px; font-size: 11px; font-family: inherit; cursor: pointer; color: var(--muted);
+}
+.aufgabe-zurueck:hover { border-color: #b91c1c; color: #b91c1c; }
+
+/* Empfänger- und Gruppenauswahl (Zuweis-Dialog + Admin-Panel) */
+.aufgaben-empfaenger-liste { max-height: 220px; overflow-y: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+.aufgaben-empfaenger-zeile,
+.aufgaben-gruppen-zeile { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 14px; cursor: pointer; }
+.aufgaben-empfaenger-zeile:hover { background: var(--blue-light); border-radius: 4px; }
+.aufgaben-gruppen-liste { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+
+/* ---------- Verlauf der Rundnachrichten (seit 2026-08-06) ---------- */
+
+/* Bewusst eine Liste von Bloecken statt einer Tabelle: der Text ist die laengste
+   Spalte, und eine Tabelle mit einer langen Textspalte sprengt am Handy den
+   Kasten (word-break greift dort nicht mehr rechtzeitig). */
+.rund-verlauf-eintrag { padding: 10px 0; border-top: 1px solid var(--border); }
+.rund-verlauf-eintrag:first-child { border-top: none; }
+.rund-verlauf-eintrag > div { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+
+/* Wen die Nachricht erreicht und wen nicht (seit 2026-08-07). Kleiner als die
+   uebrigen aufklappbaren Bereiche: das sind Fussnoten zur Reichweitenzeile,
+   keine eigenen Abschnitte. */
+.rund-wer-block > summary { font-size: 13px; font-weight: 600; padding: 4px 0; }
+.rund-wer-liste {
+  font-size: 13px;
+  line-height: 1.6;
+  /* ⚠️ --muted, NICHT --gray: --gray ist #f4f5f7, also eine Hintergrundfarbe.
+     Als Schriftfarbe ergibt sie fast weiss auf weiss -- am 2026-08-07 genau so
+     ausgeliefert und von Michel per Screenshot gemeldet. Gedaempfter TEXT ist in
+     dieser Datei immer --muted. */
+  color: var(--muted);
+  /* Doppelnamen sollen umbrechen statt den Kasten zu sprengen, und bei "Alle
+     Konten" stehen mehrere hundert Namen in der zweiten Liste -- die scrollt
+     dann in sich, statt das Panel unbedienbar lang zu machen. */
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+/* ---------- Neuigkeit zusaetzlich als Push (seit 2026-08-13) ----------
+   Steht wie .rund-eingrenzen-feld ausserhalb von .form-field: dessen
+   `label { display: block }` und `input { width: 100% }` machen aus dem
+   Kaestchen sonst einen Balken quer durch die Karte. Breite und Hoehe des
+   Kaestchens deshalb hier ausdruecklich, gleiche Werte wie bei .push-schalter. */
+.news-push-feld { grid-column: 1 / -1; }
+
+.news-push-zeile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.news-push-zeile input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;   /* sonst quetscht flex das Kaestchen bei langem Text zusammen */
+  margin: 1px 0 0 0;
+  cursor: pointer;
+}
+
+/* Eingerueckt unter dem Kaestchen, damit sichtbar bleibt, wozu die Auswahl
+   gehoert. max-width statt der vollen Rasterbreite: ein Auswahlfeld ueber die
+   ganze Karte sieht aus wie ein Pflichtfeld des Formulars. */
+.news-push-optionen { margin: 10px 0 0 27px; max-width: 340px; }
+.news-push-kreis-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.news-push-optionen select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+/* ---------- Eingrenzen auf Gruppen und Personen (seit 2026-08-07) ---------- */
+
+/* Nimmt die volle Breite des Formular-Rasters ein. Steht hier statt als
+   .form-field im Markup, weil dessen `label { display: block }` die
+   Häkchenzeilen unten plattmachen würde. */
+.rund-eingrenzen-feld { grid-column: 1 / -1; }
+
+.rund-eingrenzen > summary { font-size: 13px; font-weight: 600; padding: 4px 0; }
+
+/* Zwei Spalten am Rechner, untereinander am Handy. minmax(0, 1fr) statt 1fr:
+   ein langer Gruppen- oder Personenname zoege die Spalte sonst ueber die
+   Kartenbreite hinaus und die ganze Seite bekaeme einen seitlichen Ueberlauf. */
+.rund-auswahl-spalten {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 14px;
+}
+.rund-auswahl-spalte { min-width: 0; }
+.rund-auswahl-titel { margin: 0 0 6px; font-size: 13px; color: var(--blue); }
+
+/* Scrollt in sich: die Personenliste kann mehrere hundert Eintraege lang sein,
+   und ein Panel, das dadurch zwanzig Bildschirme hoch wird, ist unbedienbar. */
+.rund-auswahl-liste {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 6px;
+}
+
+/* ⚠️ Bewusst NICHT in .form-field: dort gilt input { width: 100% }, was aus
+   jedem Kaestchen einen Balken quer durch die Karte macht (dieselbe Falle wie
+   bei den Push-Schaltern und den Aufnahme-Haken). */
+.rund-auswahl-zeile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+  cursor: pointer;
+  /* Lange Doppelnamen sollen umbrechen statt die Liste breiter zu machen. */
+  overflow-wrap: anywhere;
+}
+
+/* Am Finger ist eine 23-px-Zeile zu knapp; am Zeiger waere dieselbe Hoehe
+   verschenkter Platz in einer Liste, die mehrere hundert Zeilen lang sein kann.
+   pointer: coarse trennt beides, wie beim Kamera-Knopf im Konto-Tab. */
+@media (pointer: coarse) {
+  .rund-auswahl-zeile { padding: 9px 0; }
+}
+.rund-auswahl-zeile input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; }
+.rund-auswahl-zeile small { margin-left: auto; color: var(--muted); font-size: 12px; flex: 0 0 auto; padding-left: 8px; }
+
+#rund-personen-suche {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+/* ---------- Emoji-Auswahl für die Rundnachricht (seit 2026-08-07) ---------- */
+
+/* Die Leiste ist der Bezugspunkt der Palette (die haengt per JS darin und liegt
+   absolut darunter). Sie traegt die volle Feldbreite, damit die Palette links
+   buendig zum Feld beginnt und rechts nicht darueber hinauslaeuft. */
+.emoji-leiste {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+
+/* ⚠️ Bewusst NICHT .form-field-Regeln ueberlassen: dort gilt
+   input/select/textarea { width: 100% }, und ein Knopf in der Zeile soll seine
+   eigene Breite behalten. */
+.emoji-knopf {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.emoji-knopf:hover { background: var(--gray); }
+.emoji-knopf[aria-expanded="true"] { border-color: var(--blue); background: var(--blue-light); }
+
+/* display wird per JS zwischen none und flex geschaltet -- der Startwert steht
+   hier, damit die Palette schon vor dem ersten Oeffnen unsichtbar ist. */
+.emoji-palette {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  /* right: 0 statt einer festen Breite: am Handy ist das genau die Feldbreite,
+     am Rechner wuerde eine feste Spaltenzahl entweder umbrechen oder Luft
+     lassen. max-width haelt sie zusaetzlich im Kasten. */
+  right: 0;
+  max-width: 100%;
+  z-index: 20;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  /* Bei sehr kleinen Fenstern lieber in sich scrollen als das Panel aufblaehen. */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.emoji-wahl {
+  flex: 0 0 auto;
+  /* 36 px sind die Fingerbreite, um die es am Handy geht -- ein Emoji in
+     Textgroesse waere ein 16-px-Ziel. */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.emoji-wahl:hover, .emoji-wahl:focus { background: var(--blue-light); border-color: var(--blue); }
+
+/* ---------- Dokumente zum Unterschreiben ---------- */
+
+/* Eine Aufgabe mit Dokument sieht anders aus als eine normale: ihr Haken ist
+   gesperrt, und der Text ist ein Knopf, der in den Dokumente-Tab fuehrt. */
+/* Der Haken einer Unterschriftsaufgabe bleibt anfassbar (er antwortet mit dem
+   Weg zum Dokument), sieht aber gedaempft aus -- er schaltet nichts um. */
+.aufgabe-item.mit-dokument .aufgabe-check { opacity: 0.55; }
+/* Knopf im Hinweis unter der Liste: fuehrt dorthin, wo es wirklich weitergeht. */
+.aufgabe-zu-dokumenten {
+  background: var(--blue, #2f5bd7); color: #fff; border: 0; border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; cursor: pointer; margin-left: 4px; white-space: nowrap;
+}
+.aufgabe-zu-dokumenten:hover { background: #1b3fa0; }
+/* Abgeschlossene Zuweisung aus der eigenen Rueckansicht raeumen. */
+.aufgabe-zug-weg {
+  background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px;
+  padding: 0 2px; line-height: 1;
+}
+.aufgabe-zug-weg:hover { color: #b91c1c; }
+.aufgaben-zug-aufraeumen {
+  background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
+  cursor: pointer; font-size: 12px; padding: 3px 10px; margin-top: 8px;
+}
+.aufgaben-zug-aufraeumen:hover { border-color: var(--blue, #2f5bd7); color: var(--blue, #2f5bd7); }
+.aufgabe-dok-link {
+  flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0;
+  font: inherit; color: var(--blue, #2f5bd7); cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.aufgabe-dok-link:hover { color: #1b3fa0; }
+
+/* Beide Kopf-Fenster (Unterschriften, ToDos) tragen eine Liste, kein Einzelfeld --
+   deshalb breiter als der Materialcontainer-Dialog und innen scrollbar. */
+.dok-liste-dialog { max-width: 720px; width: 100%; max-height: 88vh; overflow-y: auto; }
+/* .dok-abschnitt/.dok-trenner sind mit der Aufteilung in zwei Fenster
+   (2026-07-29) weggefallen: es gibt in keinem der beiden mehr zwei Haelften,
+   die voneinander abgesetzt werden muessten. */
+.dok-unterabschnitt {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
+  margin: 18px 0 8px; font-weight: 700;
+}
+.dok-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.dok-item.status-unterschrieben { border-left: 3px solid #2d8c4e; }
+.dok-item.status-abgelehnt { border-left: 3px solid #c0392b; }
+.dok-item.status-offen { border-left: 3px solid var(--blue, #2f5bd7); }
+.dok-item-kopf { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.dok-item-titel { font-weight: 600; }
+.dok-item-status,
+.dok-item-meta { font-size: 12px; color: var(--muted); }
+.dok-item-grund { font-size: 13px; margin-top: 6px; padding: 6px 8px; background: #fdf3f2; border-radius: 6px; }
+.dok-item-aktionen { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* Der Signier-Dialog braucht mehr Platz als die uebrigen: er zeigt eine PDF-Seite. */
+.dok-dialog { max-width: 860px; width: 100%; max-height: 92vh; overflow-y: auto; }
+/* Der Zuweisen-Dialog ist normalerweise ein schmales Formular (420px). Sobald
+   eine PDF-Vorschau darin steht, ist das zu eng, um eine Stelle zu treffen --
+   die Klasse setzt JS beim Anzeigen der Vorschau und nimmt sie beim Schliessen
+   wieder weg. Per CSS an der Sichtbarkeit des Kindes zu haengen ginge nur mit
+   :has(), das auf den aelteren iOS-Geraeten der Flotte fehlt. */
+.code-dialog.mit-vorschau { max-width: 860px; }
+.dok-seiten-leiste { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; font-size: 13px; flex-wrap: wrap; }
+.dok-canvas-wrap {
+  position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: #f4f6fa; max-height: 55vh; overflow-y: auto;
+  /* Ohne das faengt der Browser das Ziehen als Scrollgeste ab und das Feld
+     laesst sich am Handy gar nicht aufziehen. */
+  touch-action: none;
+}
+.dok-canvas-wrap canvas { display: block; max-width: 100%; }
+.dok-feld-marker {
+  position: absolute; border: 2px dashed var(--blue, #2f5bd7); background: rgba(47, 91, 215, 0.12);
+  pointer-events: none; border-radius: 3px;
+}
+/* Sobald unterschrieben ist, zeigt das Rechteck die echte Unterschrift an der
+   Stelle, an der sie im Export landet. Die getoente Fuellung muss dann weg,
+   sonst liegt ein blauer Schleier ueber dem Bild. */
+.dok-feld-marker.mit-unterschrift {
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  border-style: solid;
+  border-color: rgba(47, 91, 215, 0.5);
+}
+.dok-platz-info {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 13px;
+  background: var(--blue-light, #eef3fd); color: var(--text, #1e2330);
+}
+.dok-vorschau { margin-top: 10px; }
+
+/* Aus fahrtenbuch/TrainerCheckliste uebernommen -- das Pad ist dasselbe. */
+.signature-wrap { border: 1px dashed var(--border); border-radius: 8px; background: #fbfcfe; }
+.signature-canvas { width: 100%; height: 160px; display: block; touch-action: none; cursor: crosshair; }
+
+@media (max-width: 860px) {
+  .page-body { flex-direction: column; }
+  /* Kompakter, damit die beiden Kopf-Knoepfe moeglichst lange in eine Zeile
+     passen; reicht der Platz trotzdem nicht, bricht .header-btns um.
+     ⚠️ Muss unter der Basis bleiben (seit 2026-08-13: 5px 13px) -- sonst waere
+     der Knopf am Handy groesser als am Rechner. Die font-size steht nicht mehr
+     hier, sie ist oben schon 12px. */
+  .header-code-btn { padding: 5px 9px; }
+  /* Und ab hier faellt der entbehrliche Teil der Beschriftung weg: "✍
+     Unterschriften anfordern" + "📝 Meine ToDos" zwangen die Kopfzeile bei 375px
+     auf 243px Hoehe (fast ein Drittel des Bildschirms), weil jede Gruppe eine
+     eigene Zeile brauchte. Gekuerzt bleibt der Sinn erhalten -- der volle Text
+     steht weiterhin im title und in der Ueberschrift des Fensters. */
+  .btn-lang { display: none; }
+  /* Das Wappen ist am Rechner auf 56px gewachsen (siehe .header-logo oben).
+     Am Handy bleibt es auf den alten 44px: dort ist die Kopfzeile mit allen
+     Knoepfen ohnehin schon rund 235px hoch -- fast ein Drittel des Bildschirms --
+     und die zusaetzlichen 12px gehen voll auf diese Hoehe (am 2026-09-02 bei
+     375px nachgemessen: 234,7px -> 245,3px). Michel-Vorgabe: am Handy kleiner. */
+  .header-logo { height: 44px; }
+  /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen
+     Neuigkeiten und Kacheln. Den seitlichen Rand liefert dort schon <main>, hier
+     bleibt nur der Abstand nach unten — derselbe wie unter dem Neuigkeiten-Banner. */
+  .calendar-widget { flex-basis: auto; width: 100%; padding: 0; margin-bottom: 26px; }
+}
+
+/* ---------- Ansicht-Leiste ueber den Kacheln ---------- */
+
+.ansicht-leiste {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+/* Segmentierter Umschalter: die beiden Knoepfe teilen sich einen Rahmen, damit
+   sichtbar ist, dass genau einer von beiden gilt. */
+.ansicht-umschalter {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  overflow: hidden;
+}
+.ansicht-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ansicht-btn + .ansicht-btn { border-left: 1px solid var(--border); }
+.ansicht-btn:hover { background: var(--gray); }
+/* Der gewaehlte Zustand haengt an aria-pressed statt an einer eigenen Klasse --
+   so koennen Anzeige und Vorlesehilfe nicht auseinanderlaufen. */
+.ansicht-btn[aria-pressed="true"] { background: var(--blue); color: var(--white); }
+.ansicht-btn[aria-pressed="true"]:hover { background: var(--blue); }
+/* ⚠️ Die Filterknoepfe teilen sich diese Regel mit dem Anordnen-Knopf, statt eigene
+   Werte zu bekommen: in einer Flex-Leiste zieht das hoechste Element alle anderen mit
+   (siehe die line-height-Anmerkung am Suchfeld weiter unten). Zwei Kopien derselben
+   Masse liefen frueher oder spaeter um einen Pixel auseinander, und die ganze Leiste
+   wuerde sichtbar hoeher. */
+.ansicht-edit-btn,
+.ansicht-filter-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ansicht-edit-btn:hover,
+.ansicht-filter-btn:hover { background: var(--gray); }
+.ansicht-edit-btn.aktiv { background: var(--green); border-color: var(--green); color: var(--white); }
+.ansicht-edit-btn.aktiv:hover { background: var(--green); }
+/* Die beiden Kennzeichen-Filter gehoeren zusammen und stehen deshalb enger beieinander
+   als die uebrigen Bedienelemente der Leiste (6px statt der 10px Leisten-Luecke). */
+.ansicht-filter { display: inline-flex; gap: 6px; }
+/* Gedrueckt = blau wie der Kacheln/Liste-Umschalter, bewusst NICHT gruen: gruen ist in
+   dieser Leiste der laufende Anordnen-Modus. Zwei Bedeutungen fuer eine Farbe loest
+   beim Hinschauen niemand auf. Der Zustand haengt an aria-pressed statt an einer
+   Klasse, damit Anzeige und Vorlesehilfe nicht auseinanderlaufen. */
+.ansicht-filter-btn[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--white); }
+.ansicht-filter-btn[aria-pressed="true"]:hover { background: var(--blue); }
+/* ⚠️ Am Handy fallen die beiden Woerter weg, und das ist kein Schoenheitsgriff:
+   gemessen bei 375px zieht das Paar MIT Beschriftung die Leiste von 99 auf 142px --
+   eine dritte Zeile ueber allen Kacheln, bei jedem Aufruf der Startseite. Ohne die
+   Woerter passt es neben "Anordnen" und die Leiste bleibt bei 99px.
+   Vertretbar ist das nur, weil DIESELBEN Symbole auf den Kacheln darunter stehen und
+   ein Druck sofort zeigt, was er tut -- anders als bei ▦/☰, wo die Beschriftung
+   genau deshalb bleibt. Die Bedeutung traegt weiterhin das aria-label.
+   Bewusst eigene Grenze statt .btn-lang: die faellt schon unter 860px. */
+@media (max-width: 560px) {
+  .ansicht-filter-btn { padding: 7px 11px; }
+  .ansicht-filter-btn .filter-wort { display: none; }
+}
+/* Das Suchfeld steht offen in der Leiste (seit 2026-08-13 ohne Knopf davor). Es traegt
+   dieselbe Pillenform wie die Knoepfe daneben, damit die Leiste eine Reihe bleibt. */
+.ansicht-suche {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  padding: 0 6px 0 12px;
+}
+.ansicht-suche:focus-within { border-color: var(--blue); }
+/* Die Lupe ersetzt den frueheren Knopf als Hinweis, wozu das Feld da ist -- der
+   Platzhaltertext allein verschwindet beim ersten Buchstaben. */
+.ansicht-suche-lupe { font-size: 13px; line-height: 1; }
+.ansicht-suche input {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 7px 0;
+  /* ⚠️ line-height explizit, sonst ist das Feld 4px hoeher als die Knoepfe daneben --
+     ein Textfeld bringt eine groessere Standard-Zeilenhoehe mit als ein Button. In
+     einer Flex-Leiste zieht das hoechste Element alle anderen mit, die ganze Leiste
+     waere also 37 statt 33px hoch. Gemessen, nicht geschaetzt. */
+  line-height: 17px;
+  /* Ohne min-width:0 erzwingt die intrinsische Mindestbreite eines Textfelds in der
+     Flex-Leiste am Handy einen seitlichen Ueberlauf der ganzen Seite -- dieselbe Falle
+     wie beim Datumsfeld im Aufgaben-Formular. */
+  width: 190px;
+  min-width: 0;
+  max-width: 100%;
+}
+.ansicht-suche-x {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.ansicht-suche-x:hover { background: var(--gray); color: var(--text); }
+/* Am Handy bekommt das Feld eine eigene Zeile: neben Umschalter und "Anordnen" blieben
+   sonst wenige Pixel, und ein Suchfeld, in das zwei Buchstaben passen, ist keins.
+   ⚠️ Seit den beiden Kennzeichen-Filtern (2026-08-17) ist es `1 1 160px` statt
+   `1 1 100%`: die zwei Symbolknoepfe teilen sich diese Zeile mit dem Feld. Mit `100%`
+   bekaemen sie eine DRITTE Zeile ganz fuer sich (gemessen bei 375px: Leiste 98 -> 140px
+   ueber allen Kacheln, bei jedem Aufruf der Startseite). So bleiben es 98px, und das
+   Feld ist dort immer noch 245px breit -- mehr als die 190px am Rechner. Die 160px
+   sind die Reissleine: wird es enger, bricht das Feld doch um, statt zu schrumpfen. */
+@media (max-width: 560px) {
+  .ansicht-suche { flex: 1 1 160px; }
+  .ansicht-suche input { width: 100%; }
+}
+.ansicht-hinweis { font-size: 12px; color: var(--muted); }
+.ansicht-status { font-size: 12px; color: var(--muted); min-height: 1em; }
+.ansicht-status.fehler { color: var(--red); font-weight: 600; }
+
+/* ---------- Kategorie-Gruppen ---------- */
+
+.category-group { margin-bottom: 26px; }
+.category-group h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px; }
+
+/* ---------- Tool-Karten ---------- */
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+.tool-card {
+  position: relative;
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.tool-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); }
+.tool-card.dragging { opacity: 0.5; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2); transform: none; cursor: grabbing; }
+.tool-card .tool-icon { font-size: 28px; }
+/* ⚠️ Der Greifpunkt ist NUR im Anordnen-Modus da (seit 2026-08-07). Vorher stand er
+   dauerhaft auf jeder Kachel und jeder Fehlgriff daneben verschob etwas, ohne dass
+   jemand das vorhatte -- die Karte ist ein Link, kein Werkzeugkasten. Bewusst
+   display:none statt Sichtbarkeit oder Deckkraft: ein unsichtbarer Greifpunkt bliebe
+   greifbar.
+
+   Er steht seit 2026-08-10 VORNE (Michel-Vorgabe): in der Kachel oben links, in der
+   Zeile ganz am Anfang -- dort, wo die Hand hingreift, und nicht hinter dem Inhalt.
+   Er ist ein eigenes erstes Kind der Karte. (Rechts oben stand bis 2026-08-10 der
+   Wrapper .tool-card-badges mit den Geraete-Symbolen; beide sind entfallen.) */
+.tool-drag-handle {
+  display: none;
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: grab;
+  padding: 2px 4px;
+  touch-action: none;
+  user-select: none;
+}
+.tool-drag-handle:active { cursor: grabbing; }
+#tool-groups.anordnen .tool-drag-handle { display: inline-block; }
+/* ⚠️ Der Greifpunkt liegt in der Kachel ABSOLUT -- ohne diese Einrueckung laege er auf
+   dem Tool-Symbol, das im Fluss an derselben Ecke beginnt (siehe
+   [[feedback-absolut-positioniert-kollidiert]]). Bewusst nur ein padding am Symbol
+   statt eines Kartenrandes: das verschiebt eine Zeile zur Seite und aendert KEINE
+   Kachelhoehe, das Umschalten in den Anordnen-Modus laesst das Raster also stehen.
+   In der Liste laeuft er im Fluss mit und braucht das nicht. */
+#tool-groups.anordnen .tool-grid:not(.als-liste) .tool-card .tool-icon { padding-left: 26px; }
+/* Im Anordnen-Modus fuehrt kein Klick mehr ins Werkzeug (app.js faengt ihn ab) --
+   das muss man sehen, bevor man klickt. Der gestrichelte Rahmen liegt als outline
+   INNEN (outline-offset negativ) und aendert deshalb keine einzige Kachelgroesse. */
+#tool-groups.anordnen .tool-card {
+  cursor: default;
+  outline: 2px dashed var(--border);
+  outline-offset: -2px;
+}
+#tool-groups.anordnen .tool-card:hover { transform: none; box-shadow: var(--shadow); }
+.tool-card h3 { font-size: 16px; color: var(--blue); }
+.tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
+/* Hinweis-Symbole unten links auf der Kachel: Briefumschlag (Flag mail:true) und
+   Glocke (Flag push:true, seit 2026-08-03). Sie zeigen vor dem Klick, ueber welche
+   Kanaele eine Handlung hier nach draussen wirkt. Bewusst IM Flex-Fluss mit
+   margin-top:auto statt absolut positioniert: die Beschreibung reicht bei der
+   laengsten Kachel einer Zeile bis ans untere Padding, ein absolut gesetztes Badge
+   laege dort lautlos auf dem Text. Da die Kacheln einer Zeile gleich hoch sind,
+   stehen die Symbole trotzdem alle auf einer Linie.
+
+   ⚠️ Der margin-top:auto sitzt am WRAPPER, nicht an den Symbolen. Zwei Geschwister
+   mit je eigenem auto-Margin bekaemen jeder seinen eigenen Schub nach unten und
+   stuenden untereinander statt nebeneinander -- der Wrapper braucht nur einen Anker
+   und haelt beide in einer Zeile. */
+.tool-hinweis-badges {
+  margin-top: auto;
+  align-self: flex-start;
+  display: flex;
+  gap: 6px;
+  line-height: 1;
+}
+.tool-hinweis-badge {
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.8;
+}
+/* ---------- Listenansicht (seit 2026-08-07) ----------
+   Dieselben .tool-card-Elemente wie im Raster, nur der Container traegt zusaetzlich
+   .als-liste. Bewusst KEIN zweiter Renderpfad in app.js: die Badges, die Statusampeln
+   und der ganze Verschiebe-Code bleiben dadurch unveraendert und koennen zwischen den
+   beiden Ansichten nicht auseinanderlaufen.
+
+   ⚠️ Die Reihenfolge in der Zeile macht `order`, nicht das Markup: die beiden
+   Badge-Gruppen stehen im DOM am Anfang bzw. in der Mitte und gehoeren in der Zeile
+   nach rechts. Und nur EINE davon traegt margin-left:auto -- zwei Geschwister mit je
+   eigenem auto-Margin teilen sich den Rest und stuenden auseinandergezogen. */
+.tool-grid.als-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tool-grid.als-liste .tool-card {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 12px 16px;
+}
+.tool-grid.als-liste .tool-card:hover { transform: none; background: var(--blue-light); box-shadow: var(--shadow); }
+.tool-grid.als-liste .tool-card .tool-icon { font-size: 22px; }
+.tool-grid.als-liste .tool-card h3 { flex: 0 0 auto; }
+/* Einzeilig mit Auslassung: eine umbrechende Beschreibung macht aus der Zeile wieder
+   einen Block, und genau das soll die Liste ja vermeiden. */
+.tool-grid.als-liste .tool-card p {
+  flex: 1 1 200px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Am Handy reicht die Breite fuer Name UND Beschreibung nicht: gemessen bei 375px
+   wurde die Zeile sonst 173px hoch -- kaum weniger als die Kachel (205px), womit die
+   Liste ihren Zweck verfehlt. Der Name allein traegt hier, die Beschreibung steht in
+   der Kachelansicht. */
+@media (max-width: 560px) {
+  .tool-grid.als-liste .tool-card p { display: none; }
+}
+/* Der Greifpunkt ganz nach VORNE. Er braucht kein eigenes `order`: er ist das
+   erste Kind im Markup und behaelt die Vorgabe 0, waehrend alles, was nach hinten
+   gehoert, sich per order 97-99 dahinter einreiht. */
+.tool-grid.als-liste .tool-drag-handle {
+  position: static;
+  top: auto;
+  left: auto;
+  align-self: center;
+}
+.tool-grid.als-liste .tool-hinweis-badges {
+  margin-top: 0;
+  margin-left: auto;
+  align-self: center;
+  order: 98;
+}
+/* Die Statusampeln (Trainerdaten/Testspielplaner) sind im Raster eigene Bloecke
+   unter dem Symbol; in der Zeile stehen sie hinter dem Namen und duerfen nicht
+   auf die volle Breite wachsen. */
+.tool-grid.als-liste .badge-wip,
+.tool-grid.als-liste .badge-status-ok,
+.tool-grid.als-liste .badge-status-fail { order: 97; align-self: center; }
+
+.tool-card.wip { opacity: 0.82; }
+.badge-wip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--gold-light);
+  color: var(--gold);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* Ampel-Badge auf der Trainerdaten-Kachel (my-trainerdaten-status) --
+   ok/fail statt wip-Gold, gleiche Form wie .badge-wip. */
+.badge-status-ok,
+.badge-status-fail {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.badge-status-ok {
+  background: var(--green-light);
+  color: var(--green);
+}
+
+.badge-status-fail {
+  background: var(--red-light);
+  color: var(--red);
+}
+
+.badge-refresh {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  margin-left: 5px;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.badge-refresh:hover {
+  opacity: 1;
+}
+
+.badge-refresh:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ---------- Admin-Dashboard (eigene Ansicht) ---------- */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.stat-tile {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.stat-tile-label { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 8px; }
+.stat-tile-value { font-size: 28px; font-weight: 700; color: var(--blue); }
+.stat-tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.stat-tile-clickable { cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; }
+.stat-tile-clickable:hover, .stat-tile-clickable:focus-visible { box-shadow: 0 4px 14px rgba(0,0,0,0.15); transform: translateY(-2px); outline: none; }
+
+.recent-activity-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.recent-activity-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.recent-activity-list li:last-child { border-bottom: none; }
+.recent-activity-list .recent-activity-when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* ---------- Admin: Sichtbarkeits-Liste ---------- */
+
+.visibility-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.visibility-row .tool-icon { font-size: 20px; width: 28px; text-align: center; }
+.visibility-row .vr-name { font-weight: 700; flex: 1; }
+.visibility-row .vr-category { font-size: 12px; color: var(--muted); }
+.visibility-row .vr-sensibel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; user-select: none; }
+.visibility-row .vr-sensibel input { cursor: pointer; margin: 0; }
+.visibility-row .group-picker-wrap { flex-basis: 100%; padding-left: 16px; }
+.visibility-row .gp-label, .ur-groups .gp-label { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+.visibility-row .visibility-groups { flex-basis: 100%; }
+.visibility-row .visibility-groups summary { font-size: 13px; }
+.visibility-row select.form-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+/* Sensible/kritische Tools im Sichtbarkeits-Panel (Baustein 4, klare-rechte-trennung) */
+.kritisch-section {
+  border: 1px solid #e0a800;
+  border-radius: 8px;
+  padding: 8px 10px 4px;
+  margin-bottom: 14px;
+  background: rgba(224, 168, 0, 0.07);
+}
+.kritisch-section > summary {
+  font-weight: 700;
+  cursor: pointer;
+  color: #b07d10;
+  margin-bottom: 8px;
+}
+.kritisch-section > summary .ks-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #e0a800;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.visibility-row-kritisch { border-color: #e0a800; }
+.vr-kritisch { cursor: help; }
+
+/* Übrige (nicht-kritische) Tools — neutrales, aufklappbares Gegenstück zur Sensible-Sektion */
+.weitere-section {
+  border: 1px solid #d5dbe2;
+  border-radius: 8px;
+  padding: 8px 10px 4px;
+  margin-bottom: 14px;
+  background: rgba(0, 0, 0, 0.02);
+}
+.weitere-section > summary {
+  font-weight: 700;
+  cursor: pointer;
+  color: #4a5a6a;
+  margin-bottom: 8px;
+}
+.weitere-section > summary .ws-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #6b7c8c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.pin-gate { max-width: 420px; margin: 40px auto; text-align: center; }
+.pin-gate .card { text-align: left; }
+
+/* ---------- Aufklappbare Bereiche ---------- */
+
+/* ⚠️ Ueberall `>` und NIE der Nachfahren-Selektor `.collapsible summary`.
+   Der traf auch jedes summary in einem VERSCHACHTELTEN <details> -- und weil
+   `[open]` dabei am aeusseren Element haengt, zeigte ein zugeklappter innerer
+   Aufklapper das Zeichen "▾" fuer "offen", sobald die Karte darum offen war.
+   Am 2026-08-17 beim Aufklappbar-Machen der vier Konto-Karten gemessen (die
+   beiden Aufklapper in "Meine Punkte"); den Bestand traf es genauso
+   (#users-list-details in der Nutzerverwaltung, #rund-eingrenzen).
+   Zweiter Gewinn: `.punkte-details > summary` behaelt so unveraendert seine
+   eigene, bewusst dezentere Optik statt Blau und Fettdruck der Kartenzeile zu
+   erben. Alle 19 summary-Elemente der Seite sind direkte Kinder ihres
+   .collapsible -- die vier per JS gebauten (buildUserArtSection,
+   buildVisibilityRow, rund-wer-block, rund-verlauf) ebenfalls. */
+.collapsible > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--blue);
+  padding: 6px 0;
+  list-style: none;
+}
+.collapsible > summary::-webkit-details-marker { display: none; }
+.collapsible > summary::before { content: "▸ "; }
+.collapsible[open] > summary::before { content: "▾ "; }
+.collapsible[open] > summary { margin-bottom: 8px; }
+.card.collapsible > summary { font-size: 17px; }
+
+/* ---------- Nutzerverwaltung ---------- */
+
+.user-row {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.ur-main { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.ur-main .ur-name { font-weight: 700; flex: 1; }
+.ur-groups { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+
+/* Filterzeile über der Nutzerliste. Textsuche wächst mit, Gruppen-Dropdown und
+   Zurücksetzen bleiben schmal; ab Handy-Breite bricht alles untereinander um. */
+.users-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.users-filter input[type="search"] { flex: 1 1 220px; min-width: 160px; }
+.users-filter select { flex: 0 1 200px; }
+
+.user-group-section { margin-bottom: 16px; padding-left: 4px; }
+.user-group-section summary { font-size: 15px; }
+.user-group-section .user-row { margin-left: 8px; }
+
+.badge-warning {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--gold-light);
+  color: var(--gold);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.badge-admin {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--blue-light);
+  color: var(--blue);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* Kennzeichnet Spielerkonten in der Nutzerliste. Bewusst grün statt blau: das
+   blaue badge-admin steht direkt daneben, und die beiden schließen sich aus
+   (ein Spieler ist nie Admin) — zwei Blautöne wären hier nur Rauschen. */
+.badge-spieler {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--green-light);
+  color: var(--green);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* ---------- Gruppen ---------- */
+
+.group-row {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+/* ⚠️ flex-wrap ist hier Pflicht, nicht Kosmetik: ohne es erzwingen Name,
+   Mitgliederzahl und die Knopfreihe eine Mindestbreite von 558 px und ziehen bei
+   375 px die GANZE SEITE um 277 px seitlich auf. Am 2026-08-07 beim Einbau des
+   vierten Knopfes ("Umbenennen") gemessen -- mit den drei alten Knöpfen waren es
+   schon 228 px, der Fehler bestand also vorher und fiel nur nicht auf.
+   min-width: 0 am Namen, damit er umbricht statt seine Wunschbreite
+   durchzusetzen (siehe [[feedback-grid-minmax-null-fr]]). */
+.gr-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.gr-header .gr-name { font-weight: 700; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.gr-members { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+
+/* Umbenennen-Zeile (seit 2026-08-07). flex-wrap, damit die beiden Knöpfe am
+   Handy unter das Feld rutschen statt es auf Briefmarkengröße zu quetschen --
+   dieselbe Rechnung wie bei .feedback-admin-row. */
+.gr-rename { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.gr-rename-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gr-rename-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.gr-rename-hinweis { margin: 8px 0 0; font-size: 12px; }
+
+.group-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.group-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-basis: 100%;
+  padding: 4px 0;
+}
+
+.group-picker-row .gp-tool-name { flex: 1; min-width: 140px; }
+
+/* Rechte Nav-Gruppe (Einstellungen/Verwaltung + Info). Das margin haengt
+   am Wrapper, damit die Gruppe rechts bleibt, auch wenn einzelne Buttons
+   fuer Nicht-Admins ausgeblendet sind. */
+/* flex-wrap, weil die Gruppe sonst als ein Stueck ueber den rechten Rand
+   hinauslaeuft: bei 375px bleiben neben dem linken Reiter nur ~319px, und
+   vier Reiter brauchen mehr. Ohne den Umbruch ist der letzte nicht antippbar. */
+nav .nav-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: inherit; }
+
+/* ---------- Handy: Formularfelder mindestens 16px ----------
+   iOS Safari zoomt beim Antippen eines Feldes unter 16px automatisch in die
+   Seite hinein — und wieder heraus zoomt es nicht. Die Feldregeln weiter oben
+   laufen über Klassen und sind damit höher spezifisch als ein reiner
+   Elementsatz, deshalb hier !important. Gilt nur auf schmalen Schirmen, das
+   Desktop-Design bleibt unverändert. */
+@media (max-width: 820px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Fusszeile mit den Pflichtangaben des Vereins.
+   Dieselbe max-width wie <main>, damit sie unter dem Inhalt buendig steht und
+   nicht ueber die volle Fensterbreite laeuft. Bewusst dezent (gedaempfte
+   Schrift, duenne Trennlinie): sie soll erreichbar sein, nicht um
+   Aufmerksamkeit mit den Kacheln konkurrieren. */
+.seiten-fuss {
+  max-width: 1100px;
+  margin: 40px auto 0;
+  padding: 18px 16px 28px;
+  border-top: 1px solid var(--border, #dde1e8);
+  text-align: center;
+  font-size: 13px;
+  color: #6b7280;
+}
+.seiten-fuss p { margin: 4px 0; }
+.seiten-fuss a { color: var(--blue, #1a56a0); text-decoration: none; }
+.seiten-fuss a:hover { text-decoration: underline; }
+/* Der Trenner zwischen den beiden Links braucht Luft, sonst kleben sie am
+   Handy aneinander und der Tippbereich wird mehrdeutig. */
+.seiten-fuss span { margin: 0 8px; color: #b0b6c0; }
+/* ---------- Bildschirmvideo aufnehmen (seit 2026-08-07) ---------- */
+
+/* Die beiden Knöpfe unter den Anhängen brechen am Handy um, statt die Karte
+   seitlich aufzuziehen -- "🎥 Bildschirmvideo aufnehmen" ist die längere von
+   beiden Beschriftungen und passt bei 375 px nicht neben die erste. */
+.news-medien-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ⚠️ Liegt über den gestaffelten Dialogen (1010), weil in der Betriebsart
+   "Ein Werkzeug" der Rahmen den ganzen Bildschirm einnimmt und nichts
+   darüber liegen darf. */
+.aufnahme-overlay { z-index: 1010; }
+
+/* Während der Aufnahme trägt der Overlay keinen Rand mehr: der Rahmen füllt
+   alles bis zur Bedienleiste, und genau dieser Bereich wird aufgenommen. */
+.aufnahme-overlay.laeuft {
+  padding: 0;
+  background: #11151d;
+}
+
+.aufnahme-dialog { max-width: 560px; }
+.aufnahme-overlay.laeuft .aufnahme-dialog { display: none; }
+
+.aufnahme-buehne {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  /* Der Wert wird beim Start aus der gemessenen Höhe der Leiste gesetzt --
+     fest verdrahtet stimmte er am Handy nicht, wo die Leiste umbricht. */
+  bottom: 0;
+  background: var(--white);
+}
+.aufnahme-buehne iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* Drei schmale Auswahlfelder nebeneinander, am Handy untereinander.
+   minmax(0, 1fr) statt 1fr: ein <select> mit langer Beschriftung zöge die
+   Spalte sonst über die Dialogbreite hinaus. */
+.aufnahme-optionen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.aufnahme-optionen .form-field { min-width: 0; }
+
+/* ⚠️ Bewusst NICHT in .form-field: dort gilt input { width: 100% }, was aus
+   jedem Kästchen einen Balken macht (gleiche Falle wie bei den Push-Schaltern). */
+.aufnahme-haken {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.aufnahme-haken input { width: auto; margin-top: 2px; flex: none; }
+
+.aufnahme-hinweis { font-size: 12.5px; margin: 10px 0 0; }
+.aufnahme-fehler { color: var(--red); font-size: 13px; margin: 10px 0 0; }
+
+.aufnahme-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.aufnahme-vorschau {
+  background: #11151d;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.aufnahme-vorschau video {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  background: #11151d;
+}
+
+/* Die Leiste steht IMMER am unteren Rand und wird bei der Tab-Aufnahme aus dem
+   Bild geschnitten -- ohne das stünde die eigene Bedienung im fertigen Video. */
+.aufnahme-leiste {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1020;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #11151d;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.35);
+}
+.aufnahme-punkt {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e5484d;
+  flex: none;
+  animation: aufnahme-blinken 1.4s ease-in-out infinite;
+}
+@keyframes aufnahme-blinken { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.aufnahme-zeit,
+.aufnahme-groesse {
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.aufnahme-balken {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.aufnahme-balken-fuellung {
+  height: 100%;
+  width: 0;
+  background: #4ea15f;
+  transition: width 0.3s linear;
+}
+.aufnahme-balken-fuellung.knapp { background: var(--gold); }
+.aufnahme-balken-fuellung.voll { background: #e5484d; }
+.aufnahme-leiste .btn { flex: none; }
+
+/* ---------- Mannschaften: die eine Quelle (seit 2026-08-12) ---------- */
+
+/* Die Leiste bricht um. Ohne flex-wrap erzwingen Auswahlfeld und drei Knoepfe
+   eine Mindestbreite von rund 560 px und zoegen bei 375 px die GANZE Seite
+   seitlich auf -- derselbe Fehler, der 2026-08-07 an .gr-header gefunden wurde. */
+.mannschaft-leiste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+.mannschaft-leiste .form-field { flex: 1 1 200px; min-width: 0; margin: 0; }
+
+.mannschaft-abgleich {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 12px 0;
+  background: var(--gray);
+}
+/* Das Kaestchen steht bewusst NICHT in .form-field: dort greift
+   input { width: 100% } und macht aus jeder Checkbox einen Balken. */
+.mannschaft-abgleich label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.mannschaft-abgleich input[type="checkbox"] { width: auto; flex: none; }
+
+.mannschaft-werkzeuge { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.mannschaft-zeile {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.mannschaft-zeile > summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+/* Rot umrandet, nicht rot gefuellt: der Vorschlag markiert damit Zeilen, die
+   nach Altersbereich oder Rolle aussehen statt nach einer Mannschaft. Eine
+   Flaeche in Signalfarbe waere bei einem halben Dutzend Treffern erschlagend. */
+.mannschaft-zeile.verdaechtig { border-color: #c0392b; }
+.mannschaft-warnung {
+  color: #c0392b;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.mannschaft-schalter { margin-top: 10px; }
+.mannschaft-schalter label { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.mannschaft-schalter input[type="checkbox"] { width: auto; flex: none; margin-top: 3px; }
+
+.mannschaft-personen { margin-top: 12px; }
+.mannschaft-personen > label { display: block; font-weight: 600; margin-bottom: 6px; }
+/* Zwei Auswahlfelder und ein Knopf. Am Handy stehen sie untereinander, sonst
+   waere das Namensfeld rund 100 px breit und niemand erkennt, wer dasteht. */
+.mannschaft-person {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.mannschaft-person select { flex: 1 1 200px; min-width: 0; }
+.mannschaft-person .mannschaft-person-rolle { flex: 0 1 160px; }
+
+/* ---------- Linksammlung der Startseite (seit 2026-08-14) ---------- */
+/* Adressen fremder Webseiten, unter den Werkzeug-Kacheln. Bewusst OPTISCH
+   ZURUECKHALTENDER als .tool-card: kein Schatten, kein Anheben beim Ueberfahren,
+   nur ein Rahmen. Die Werkzeuge des Vereins sollen die Hauptsache bleiben --
+   staenden die Links in derselben Optik, waeren es zwei gleichrangige Raster
+   untereinander und niemand wuesste, wo die eigentliche Arbeit anfaengt. */
+.links-bereich { margin-top: 32px; }
+.links-titel {
+  font-size: 16px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+/* minmax(0, 1fr) statt minmax(240px, 1fr): eine lange Adresse ohne Leerzeichen
+   zieht die Spalte sonst ueber die Seitenbreite hinaus. Die Mindestbreite macht
+   hier das erste Argument von auto-fill. */
+.links-liste {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  gap: 12px;
+}
+.link-karte {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text);
+  min-width: 0;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.link-karte:hover { border-color: var(--blue); background: var(--blue-light); }
+.link-icon { font-size: 20px; line-height: 1.2; flex-shrink: 0; }
+/* min-width: 0 ist Pflicht, nicht Kosmetik: ohne das bekommt das Flex-Kind die
+   Wunschbreite seines laengsten Wortes (hier die Adresse) und sprengt die Karte. */
+.link-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.link-titel { font-weight: 600; overflow-wrap: anywhere; }
+.link-beschreibung { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+/* Zeigt vor dem Klick, wohin es geht -- die Karte fuehrt aus dem Verein hinaus. */
+.link-host { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* Pflege im Einstellungen-Tab. Aufbau wie .news-admin-row, nur mit den beiden
+   Pfeilen: die Reihenfolge des Arrays IST die Anzeigereihenfolge. */
+/* ⚠️ flex-wrap plus eine Basisbreite am Textteil, nicht nur space-between: mit den
+   VIER Knoepfen rechts (zwei davon Pfeile) blieb bei 375 px so wenig Platz, dass
+   die Knopfgruppe sich untereinander stapelte -- gemessen 440 px Zeilenhoehe fuer
+   einen einzigen Link. Mit flex: 1 1 260px bricht die Gruppe stattdessen UNTER den
+   Text und steht dort in einer Zeile. Gleiche Gegenmassnahme wie bei
+   .feedback-admin-row. */
+.links-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.links-admin-row:first-child { border-top: none; }
+.links-admin-main { flex: 1 1 260px; min-width: 0; }
+.links-admin-titel { font-weight: 600; overflow-wrap: anywhere; }
+.links-admin-text { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.links-admin-url { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
+/* flex-wrap, weil hier vier Knoepfe stehen: ohne das erzwingen sie am Handy eine
+   Mindestbreite und ziehen die ganze Seite seitlich auf (dieselbe Falle wie bei
+   .gr-header am 2026-08-07). */
+.links-admin-actions { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+
+/* ---------- Ideen (seit 2026-08-16) ----------
+   Michel-Wunsch: ein Ort, an dem jeder aufschreiben kann, was die Tools koennen
+   sollten. Eigener Tab; hier nur, was die Karten und der Wegweiser brauchen. */
+
+/* Wegweiser unter den Kacheln. Bewusst schmal und einzeilig -- er soll auf den
+   Tab zeigen, nicht selbst zum Inhalt werden. flex-wrap, damit der Knopf am
+   Handy unter den Text bricht statt die Seite seitlich aufzuziehen. */
+.ideen-hinweis {
+  margin-top: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--gold-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ideen-hinweis-text { flex: 1 1 240px; min-width: 0; font-weight: 600; }
+
+/* ⚠️ Bewusst NICHT in .form-field (siehe index.html): dort greift
+   input { width: 100% } und macht aus dem Kaestchen einen Balken. */
+.idee-anonym-feld { margin-top: 2px; }
+.idee-anonym-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.idee-anonym-label input[type="checkbox"] { width: 17px; height: 17px; flex-shrink: 0; }
+.idee-anonym-hinweis { font-size: 13px; margin: 4px 0 0 25px; }
+
+.idee-karte {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.idee-karte:first-child { border-top: none; padding-top: 0; }
+
+.idee-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.idee-titel { font-size: 16px; font-weight: 600; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.idee-text { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.idee-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--gray);
+  color: var(--muted);
+}
+.idee-status-neu { background: var(--blue-light); color: var(--blue); }
+.idee-status-arbeit { background: var(--gold-light); color: var(--gold); }
+.idee-status-umgesetzt { background: var(--green-light); color: var(--green); }
+.idee-status-abgelehnt { background: var(--gray); color: var(--muted); }
+
+.idee-fuss { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.idee-meta { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.idee-anonym-vermerk { font-style: italic; }
+
+/* Der Daumen ist der einzige Knopf, den jeder an jeder Idee drueckt -- er darf
+   deshalb ruhig auffallen, aber nicht wie die Hauptaktion der Seite aussehen. */
+.idee-daumen {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.2;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text);
+  cursor: pointer;
+}
+.idee-daumen:hover { border-color: var(--blue); }
+.idee-daumen.aktiv { background: var(--blue-light); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+.idee-daumen-zahl { font-variant-numeric: tabular-nums; }
+
+.idee-antwort {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--green-light);
+  border-radius: 8px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.idee-antwort-meta { display: block; font-size: 12px; margin-top: 4px; }
+
+/* flex-wrap wie bei .links-admin-actions: ohne das erzwingen zwei Knoepfe am
+   Handy eine Mindestbreite und ziehen die Seite seitlich auf. */
+.idee-eigene-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.idee-admin { margin-top: 10px; }
+.idee-admin > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.idee-admin-inhalt { margin-top: 8px; }
+.idee-admin-label { display: block; font-size: 13px; font-weight: 600; margin: 8px 0 4px; }
+.idee-status-select { max-width: 100%; }
+.idee-antwort-feld {
+  width: 100%;
+  max-width: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.idee-admin-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* ---------- Sicherheitsgurt + Sicherung der Rechte (seit 2026-08-25) ---------- */
+
+/* Der Kasten erscheint nur, wenn die Rechte-Konfiguration NICHT geladen ist. Er muss
+   auffaellig sein: in genau diesem Zustand zeigt das Panel darunter jedes Werkzeug als
+   "Oeffentlich", und ohne die Warnung sieht das wie ein echter Stand aus. */
+.rechte-warnung {
+  background: var(--red-light);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.rechte-sicherung {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.rechte-sicherung .rs-titel { font-weight: 600; font-size: 14px; }
+
+/* ---------- Privatnachrichten, Konto-Tab (seit 2026-08-30) ---------- */
+
+/* Die drei Warnsätze über der Schreibmaske. Sie stehen absichtlich in einem
+   farbigen Kasten und nicht als graue Kleinschrift: der Text landet sichtbar auf
+   einem fremden Sperrbildschirm, und wer das erst hinterher merkt, hat es schon
+   verschickt. */
+.pn-hinweis {
+  background: var(--gold-light);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pn-hinweis p { margin-bottom: 6px; }
+.pn-hinweis p:last-child { margin-bottom: 0; }
+
+.pn-titel { font-size: 14px; margin: 0 0 6px; }
+
+/* ⚠️ `line-height` ausdrücklich gesetzt: ein Textfeld bringt eine größere
+   Standard-Zeilenhöhe mit als die Knöpfe daneben, und in einer Flex-Reihe zieht
+   das höchste Element alle anderen mit (gemessen an der Werkzeug-Suche). */
+.pn-suche {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+/* Scrollt in sich, statt die Karte auf 50 Namen aufzuziehen. Gleicher Wert wie
+   bei der Eingrenzung der Rundnachricht. */
+.pn-personen {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+/* ⚠️ Bewusst NICHT in .form-field: dort gilt input { width: 100% } und macht aus
+   jedem Kästchen einen Balken quer durch die Karte (dieselbe Falle wie bei den
+   Push-Schaltern und der Rundnachricht). */
+.pn-person {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.pn-person input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  margin: 2px 0 0 0;
+  cursor: pointer;
+}
+/* Die Warnung, dass jemand nicht erreichbar ist. `overflow-wrap` fängt lange
+   Namen ab, die sonst die Karte seitlich aufziehen. */
+.pn-warn {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.pn-warn:before { content: "· "; }
+
+/* `flex-wrap` ist Pflicht: bei 375 px stehen sonst zwei Knöpfe nebeneinander und
+   sprengen die Karte (gleiche Gegenmaßnahme wie bei .kf-knopfreihe). */
+.pn-knopfreihe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pn-trenner {
+  height: 2px;
+  background: var(--border);
+  margin: 20px 0 16px;
+}
+
+/* Der zugeklappte Postausgang. Dezenter als die vier Karten-Aufklapper darum --
+   sonst sähe es aus wie eine eigene Karte in der Karte.
+   ⚠️ Kindselektor `>`, kein Nachfahre: `.collapsible summary` traf sonst auch
+   dieses summary und gäbe ihm die Optik der äußeren Karte samt "▾ offen",
+   während es selbst zugeklappt ist. */
+.pn-details { margin-top: 16px; }
+.pn-details > summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.pn-eintrag {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+/* Ungelesenes hebt sich ab -- ohne das sucht man in einer Liste aus zwanzig
+   Nachrichten die eine neue. */
+.pn-eintrag.pn-neu {
+  border-color: var(--blue);
+  background: var(--blue-light);
+}
+.pn-ausgang-eintrag { background: var(--gray); }
+
+/* ⚠️ `min-width: 0` am Flex-Kind: ohne das zieht eine lange Überschrift ohne
+   Leerzeichen die ganze Karte auf (gleiche Falle wie bei .dl-zeile-text). */
+.pn-kopf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pn-kopf > strong { min-width: 0; overflow-wrap: anywhere; }
+
+.pn-marke {
+  background: var(--blue);
+  color: var(--white);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+/* `pre-wrap` erhält die Zeilenumbrüche, die der Absender getippt hat --
+   `overflow-wrap` fängt lange Wörter ab. */
+.pn-text {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+}
+.pn-meta { font-size: 12px; margin-bottom: 4px; }
+.pn-ok { color: var(--green); }
+.pn-offen { color: var(--muted); }
+
+/* ⚠️ `table-layout: fixed` ist Pflicht, nicht Kosmetik: `main` hängt in einem
+   Flex-Container und wächst mit der Wunschbreite seines Inhalts. Eine Tabelle
+   ohne das zieht bei 375 px die GANZE Seite über den Rand -- an derselben Stelle
+   bei den Aktivitätspunkten gemessen. Ein `max-width` am Scroll-Container allein
+   hilft nicht. */
+.pn-tabelle-wrap { overflow-x: auto; max-width: 100%; }
+.pn-tabelle {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pn-tabelle th,
+.pn-tabelle td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.pn-tabelle th { color: var(--muted); font-weight: 600; }
+
+/* Der Knopf unter einer gekürzten Nachrichtenliste (seit 2026-08-30). Steht
+   linksbündig unter dem letzten Eintrag, nicht mittig: er ist die Fortsetzung
+   der Liste, kein Abschluss. */
+.pn-mehr { margin: 4px 0 10px; }
