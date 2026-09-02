@@ -519,6 +519,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.1",
+    groups: [
+      {
+        title: "Das Gateway antwortet beim Start schneller — für alle Werkzeuge",
+        items: [
+          "Vierzehn Abfragen, die beim Öffnen der Übersicht und der Werkzeuge laufen, holten ihre Daten bisher in zwei Runden aus der Nextcloud: erst prüfen, wer angemeldet ist, dann die eigentliche Datei lesen. Jetzt starten beide Lesevorgänge gemeinsam — eine Runde statt zwei.",
+          "Betroffen sind unter anderem die persönliche Ansicht, die Trainerdaten- und Testspiel-Ampeln auf der Startseite, die Mannschaftsliste (sieben Werkzeuge holen sie beim Start), die Kontaktliste, die Aufgaben und die Bus-Anfragen.",
+          "Ein Nextcloud-Zugriff kostet vom Gateway aus 200 bis 450 Millisekunden — genau so viel spart jede dieser Abfragen jetzt. Beim Öffnen der Übersicht trifft es zwei der drei Ladewellen.",
+          "An den Inhalten und Rechten ändert sich nichts: wer etwas nicht sehen darf, bekommt es weiter nicht — die Prüfung steht an derselben Stelle wie bisher."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0",
     groups: [
       {

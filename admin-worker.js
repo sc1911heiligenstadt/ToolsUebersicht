@@ -2099,10 +2099,17 @@ async function handleChangePassword(request, body, env, authHeader, corsHeaders)
 }
 
 async function handleMe(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
-  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  // Mit App-Bezug braucht buildMeResult sichtbarkeit.json fuer canEdit/canAdmin.
+  // Der Prefetch startet hier im Callback statt erst in buildMeResult -- also
+  // parallel zum nutzer.json-Read, nicht dahinter. Ohne App-Bezug (das Gateway
+  // selbst fragt so) wird nichts vorgeladen: dann wuerde die Datei nie gebraucht.
   const app = (body && body.app) ? String(body.app) : null;
-  return json(await buildMeResult(session, env, authHeader, app), 200, corsHeaders);
+  let cfgP = null;
+  const session = await getVerifiedSession(request, env, authHeader, () => {
+    if (app) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  });
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  return json(await buildMeResult(session, env, authHeader, app, cfgP), 200, corsHeaders);
 }
 
 // Baut die Antwort der Aktion "me". Ausgelagert, weil handleDavLoad dieselben
@@ -2645,7 +2652,9 @@ async function handleListDirectory(request, env, authHeader, corsHeaders) {
 // dav-load), damit die Bearbeiter-Struktur einer App nicht an Nutzer ohne
 // jeglichen Zugriff auf diese App durchsickert.
 async function handleListToolEditors(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (sessionMitDatei); dieselbe Promise
+  // dient weiter unten der Rechtepruefung UND dem Handler.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const app = String(body.app || "");
   // Existenz gegen die TOOL-Konfiguration prüfen, nicht gegen DAV_APPS. Diese
@@ -2659,10 +2668,11 @@ async function handleListToolEditors(request, body, env, authHeader, corsHeaders
   // leer blieben. Das Gate bleibt `userMayAccessTool` direkt darunter.
   // Geprüft am 2026-07-28: alle 20 DAV_APPS stehen auch in config.tools, für
   // sie ändert sich dadurch nichts.
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const cfgP = datei();
+  const config = await cfgP;
   const entry = getOwn(config.tools || {}, app);
   if (!entry) return json({ error: "Unbekannte App" }, 400, corsHeaders);
-  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+  if (!(await userMayAccessTool(app, session, env, authHeader, cfgP))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
   // Administrieren-Gruppen zählen mit -- deren Mitglieder SIND Bearbeiter
@@ -3389,14 +3399,22 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
 // damit das Sichtbarkeits-Panel den Kreis wirklich steuert statt einer fest
 // verdrahteten Regel hier.
 async function handleKontakteListe(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde wie in handleDavLoad: nutzer.json (Sitzung),
+  // sichtbarkeit.json (Rechte) und die Trainerdaten starten gemeinsam. Die
+  // Trainerdaten-Datei enthaelt IBAN -- ausgeliefert wird davon wie bisher
+  // NICHTS vor der Rechtepruefung, der Read ist fuer Unberechtigte reine Last.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, () => {
+    cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (session.art === USER_ART_SPIELER) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
-  if (!(await userMayAccessTool("kontakte", session, env, authHeader))) {
+  if (!(await userMayAccessTool("kontakte", session, env, authHeader, cfgP))) {
     return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
   }
 
-  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const trainerdatenDoc = await (docP || readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }));
   const kontakte = [];
   for (const t of trainerdatenDoc.trainer || []) {
     const f = t && t.kontaktFreigabe;
@@ -3706,10 +3724,12 @@ function isVertragspflichtig(usersDoc, username) {
 // Seit Trainerdaten 1.9 (2026-08-30) sind das nicht mehr nur Name + E-Mail, sondern
 // auch Geburtsdatum, Anschrift und Telefon -- siehe stammdatenOk unten.
 async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Trainerdaten parallel zur Sitzung (sessionMitDatei) -- Welle 2 des
+  // Seitenaufbaus. Aus der Datei geht wie bisher nur der eigene Status hinaus.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, PROVISION_ONLY_PATHS.trainerdaten, { version: 1, trainer: [] });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const user = getOwn(session.usersDoc.users, session.username);
-  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const trainerdatenDoc = await datei();
   const td = findTrainerdatenRecord(trainerdatenDoc, user);
   const summary = buildTrainerdatenSummary(td);
 
@@ -3991,9 +4011,10 @@ async function handleMyTrainerchecklisteStatus(request, env, authHeader, corsHea
 // E:\testspielplaner\app.js spiegeln (ISO-Stringvergleich, Europe/Berlin wie
 // handleListBirthdaysToday), sonst widersprechen sich Badge und In-App-Banner.
 async function handleMyTestspielplanerStatus(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Datei parallel zur Sitzung (sessionMitDatei) -- Welle 2 des Seitenaufbaus.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, DAV_APPS.testspielplaner, { reservierungen: [] });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  const doc = await readJson(DAV_APPS.testspielplaner, authHeader, { reservierungen: [] });
+  const doc = await datei();
   const heute = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
   const grenze = new Date(Date.now() + 14 * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
   const anstehendOhneGegner = (Array.isArray(doc.reservierungen) ? doc.reservierungen : []).filter((r) =>
@@ -4236,9 +4257,10 @@ async function handleToggleNewsReaction(request, body, env, authHeader, corsHead
 // Liefert dem eingeloggten Nutzer NUR seine eigenen Reaktionen (newsId -> Emoji),
 // damit der Client die eigene Wahl im Karussell hervorheben kann. Nie fremde Einträge.
 async function handleMyNewsReactions(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Datei parallel zur Sitzung (sessionMitDatei) -- laeuft bei jedem Seitenaufbau.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, NEWS_REACTIONS_URL, { version: 1, byNews: {} });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  const doc = await readJson(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} });
+  const doc = await datei();
   const byNews = (doc && doc.byNews && typeof doc.byNews === "object") ? doc.byNews : {};
   const mine = {};
   for (const newsId of Object.keys(byNews)) {
@@ -4285,9 +4307,11 @@ function leeresAnsichtDoc() {
 // gehen niemanden etwas an und wären zugleich eine Liste, wer welches Werkzeug oben
 // stehen hat.
 async function handleMeineAnsicht(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // ansicht.json parallel zur Sitzung (sessionMitDatei) -- laeuft in Welle 1 des
+  // Seitenaufbaus, war bis 2026-08-28 zwei serielle Nextcloud-Reads.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, ANSICHT_URL, leeresAnsichtDoc());
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  const doc = await readJson(ANSICHT_URL, authHeader, leeresAnsichtDoc());
+  const doc = await datei();
   const byUser = (doc && doc.byUser && typeof doc.byUser === "object") ? doc.byUser : {};
   const eigen = Object.prototype.hasOwnProperty.call(byUser, session.username) ? byUser[session.username] : null;
   const modus = (eigen && ANSICHT_MODI.includes(eigen.modus)) ? eigen.modus : "kacheln";
@@ -4422,12 +4446,14 @@ async function handleMeineAnsichtSpeichern(request, body, env, authHeader, corsH
 // alle eingeloggten" gilt für Spieler nirgends in diesem Worker, und bei ~200
 // Spielerkonten wäre ein Containercode für alle das Gegenteil eines Schlosses.
 async function handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (sessionMitDatei); die Spieler-Sperre
+  // steht wie bisher VOR dem await.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (session.art === USER_ART_SPIELER) {
     return json({ error: "Kein Zugriff auf den Materialcontainer-Code" }, 403, corsHeaders);
   }
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await datei();
   const mc = (config.materialcontainer && typeof config.materialcontainer === "object")
     ? config.materialcontainer : {};
   return json({
@@ -4546,8 +4572,10 @@ async function handleSaveLinks(request, body, env, authHeader, corsHeaders) {
 // wie beim Materialcontainer-Code: der Default „keine Gruppe = alle eingeloggten"
 // gilt für sie nirgends in diesem Worker, und ~200 Spielerkonten, die einander und
 // dem Trainerteam Einträge in die Liste legen könnten, sind kein Feature.
-async function aufgabenSession(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+// onTokenValid (optional) wird an getVerifiedSession durchgereicht -- damit kann
+// ein Handler seine Datei-Reads parallel zur Sitzung starten (siehe handleAufgabenLoad).
+async function aufgabenSession(request, env, authHeader, corsHeaders, onTokenValid) {
+  const session = await getVerifiedSession(request, env, authHeader, onTokenValid);
   if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
   if (session.art === USER_ART_SPIELER) {
     return { fehler: json({ error: "Kein Zugriff auf die Aufgaben" }, 403, corsHeaders) };
@@ -4643,14 +4671,20 @@ function aufgabenPrune(doc) {
 
 // Eigene Liste + was ich anderen gegeben habe + ob ich überhaupt zuweisen darf.
 async function handleAufgabenLoad(request, env, authHeader, corsHeaders) {
-  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  // Alle drei Reads in EINER Runde: nutzer.json (Sitzung), die Aufgaben selbst
+  // und die Konfiguration (wer zuweisen darf). Das Promise.all der beiden
+  // App-Reads gab es schon -- aber es startete erst NACH der Sitzung, also in
+  // einer zweiten Runde. Jetzt laufen sie im onTokenValid-Callback mit an.
+  let docP = null, cfgP = null;
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders, () => {
+    docP = prefetchJson(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  });
   if (fehler) return fehler;
 
-  // Beide Reads parallel: die Aufgaben selbst und die Konfiguration (wer zuweisen
-  // darf). Nacheinander wären das zwei Nextcloud-Roundtrips à 200–450 ms.
   const [doc, config] = await Promise.all([
-    readJson(AUFGABEN_URL, authHeader, { version: 1, byUser: {} }),
-    readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} })
+    docP || readJson(AUFGABEN_URL, authHeader, { version: 1, byUser: {} }),
+    cfgP || readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} })
   ]);
 
   const jetzt = Date.now();
@@ -7188,10 +7222,12 @@ async function handleSubmitFeedback(request, body, env, authHeader, corsHeaders)
 }
 
 async function handleListFeedback(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Datei parallel zur Sitzung (sessionMitDatei); die Admin-Pruefung steht wie
+  // bisher VOR dem await -- ein Nicht-Admin bekommt weiter 403, nie 502.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, FEEDBACK_URL, { version: 1, entries: [] });
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
-  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  const doc = await datei();
   return json({ entries: Array.isArray(doc.entries) ? doc.entries : [] }, 200, corsHeaders);
 }
 
@@ -9100,12 +9136,15 @@ function schulsportImTeam(massnahme, username) {
 // waere der Picker leer, und der naheliegende "Fix" (Uebungsleiter ins
 // Bearbeiten-Recht) haette ihnen das ganze Dokument geoeffnet.
 async function handleSchulsportPersonen(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung; dieselbe Promise dient danach der
+  // Rechtepruefung UND dem Handler -- ein Read statt zwei serieller.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await userMayAccessTool("schulsport", session, env, authHeader))) {
+  const cfgP = datei();
+  if (!(await userMayAccessTool("schulsport", session, env, authHeader, cfgP))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await cfgP;
   const entry = getOwn(config.tools || {}, "schulsport") || {};
   const sehen = Array.isArray(entry.groupIds) ? entry.groupIds : [];
   const edit = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
@@ -11316,6 +11355,36 @@ function prefetchJsonWithRev(url, authHeader, fallback) {
   const p = readJsonWithRev(url, authHeader, fallback);
   p.catch(() => {});
   return p;
+}
+
+// Sitzung pruefen und PARALLEL dazu eine Datei lesen, deren Inhalt nicht am
+// Nutzer haengt. Das ist das Muster aus handleDavLoad (2026-08-17) als
+// wiederverwendbarer Baustein: der Read startet im onTokenValid-Callback, also
+// nach der HMAC-Pruefung, aber BEVOR nutzer.json gelesen wird -- beide laufen
+// gleichzeitig statt nacheinander.
+//
+// ⚠️ Bis 2026-08-28 zahlten 36 Handler diesen Roundtrip doppelt: erst
+// `await getVerifiedSession(...)`, dann `await readJson(<App-Datei>)`. Ein
+// Nextcloud-Read kostet vom Worker aus 200-450 ms; beim Aufbau der Uebersicht
+// traf das drei Handler in den ersten beiden Wellen, bei den Apps unter anderem
+// `mannschaften-load` (sieben Apps) und `list-tool-editors`.
+//
+// Rueckgabe { session, datei }: session ist null bei ungueltigem Token -- dann
+// wurde KEIN Read ausgeloest, der Callback laeuft nur fuer echte Tokens (siehe
+// den Kommentar an getVerifiedSession, die Reihenfolge ist Absicht). `datei()`
+// liefert die Promise der Datei; als FUNKTION statt als fertiger Wert, damit der
+// Handler seine Rechtepruefungen VOR dem await abschliessen kann -- die
+// Fehlerreihenfolge 401 -> 403 -> 502 bleibt damit exakt wie vorher. Der Read
+// wird auch fuer Konten ohne Recht auf die Datei ausgeloest; herausgegeben wird
+// nichts, es ist reine Last -- derselbe bewusst getragene Preis wie in
+// handleDavLoad. Der Rueckfall `|| readJson(...)` greift nur, falls der
+// Callback wider Erwarten nicht erreicht wurde; im Normalfall steht docP.
+async function sessionMitDatei(request, env, authHeader, url, fallback) {
+  let docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, () => {
+    docP = prefetchJson(url, authHeader, fallback);
+  });
+  return { session, datei: () => docP || readJson(url, authHeader, fallback) };
 }
 
 // Kurzlebiger In-Memory-Cache für readJsonWithRev, ueberlebt auf einem warmen
@@ -16344,10 +16413,11 @@ async function mannschaftenProfileAbgleichen(env, authHeader, doc) {
 // jedem Aushang. Ein Rechte-Gate haette nur zur Folge, dass die login-losen
 // Ansichten (Ablaufplan-Link, Fotoauftrag-Freigabe) leere Auswahlfelder zeigen.
 async function handleMannschaftenLoad(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Datei parallel zur Sitzung (sessionMitDatei) -- sieben Apps rufen das beim Start.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, MANNSCHAFTEN_URL, leeresMannschaftenDoc());
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
-  const doc = await readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+  const doc = await datei();
   // Ohne Angabe die laufende Saison. Eine ANDERE ist nur zum Nachschlagen da
   // (wer hatte 2025/26 die D2) -- geschrieben wird immer ausdruecklich.
   const gewuenscht = capStr(body && body.saison, 10);
@@ -18047,9 +18117,10 @@ async function busplanLaufVermerken(authHeader, merker, ids, jetzt, bericht, feh
 // angemeldete Konto -- der Busplan selbst ist es auch, und der Bericht nennt
 // keine Personen, nur Mannschaftsnamen und Zahlen.
 async function handleBusplanErinnerungen(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Merker parallel zur Sitzung (sessionMitDatei) -- Nachlader beim Busplan-Start.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, BUSPLAN_ERINNERT_URL, { version: 1, ids: {} });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  const merker = await readJson(BUSPLAN_ERINNERT_URL, authHeader, { version: 1, ids: {} });
+  const merker = await datei();
   const lauf = (merker && merker.lauf && typeof merker.lauf === "object") ? merker.lauf : null;
   return json({ lauf, vorlaufTage: BUSPLAN_VORLAUF_TAGE }, 200, corsHeaders);
 }
@@ -18704,12 +18775,19 @@ async function busplanOptionPruefen(authHeader, saison, busOptionId) {
 // Jeder mit Tool-Zugriff. Die Liste nennt Mannschaft, Tag, Bus und den Namen
 // dessen, der angefragt hat -- keine Kontaktdaten, keine sensiblen Felder.
 async function handleBusplanAnfragenLoad(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde wie in handleDavLoad: nutzer.json (Sitzung),
+  // sichtbarkeit.json (Rechte) und die Anfragen-Datei starten gemeinsam; vorher
+  // liefen sie nacheinander. Herausgegeben wird weiter erst nach der Rechtepruefung.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, () => {
+    cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await userMayAccessTool("busplan", session, env, authHeader))) {
+  if (!(await userMayAccessTool("busplan", session, env, authHeader, cfgP))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
-  const doc = await readJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
+  const doc = await (docP || readJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] }));
   return json({ anfragen: busplanAnfragenNorm(doc) }, 200, corsHeaders);
 }
 
