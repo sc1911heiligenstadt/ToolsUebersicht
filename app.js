@@ -3806,6 +3806,11 @@ function zuweisenFeldInfoZeigen() {
   const info = document.getElementById("dok-feld-info");
   if (!info) return;
   info.className = "dok-platz-info";
+  if (vorschauZuweisen.hinweis) {
+    info.textContent = vorschauZuweisen.hinweis;
+    vorschauZuweisen.hinweis = "";
+    return;
+  }
   info.textContent = vorschauZuweisen.feld
     ? `Unterschrift kommt auf Seite ${vorschauZuweisen.feld.seite} an die markierte Stelle. Zum Ändern einfach ein neues Rechteck aufziehen.`
     : "Zieh ein Rechteck auf die Stelle im Dokument, an der unterschrieben werden soll (mit der Maus oder dem Finger) — dort wird die Unterschrift später eingesetzt. Lässt du es weg, darf der Empfänger die Stelle selbst wählen; tut auch er es nicht, kommt die Unterschrift auf ein zusätzliches Blatt am Ende.";
@@ -4128,7 +4133,7 @@ function bytesAlsBlobOeffnen(bytes, dateiname) {
 
 function neueVorschau(canvasId, wrapId, markerId, anzeigeId) {
   return {
-    doc: null, seite: 1, seiten: 1, feld: null, renderLauf: null,
+    doc: null, seite: 1, seiten: 1, feld: null, renderLauf: null, hinweis: "",
     canvas: () => document.getElementById(canvasId),
     wrap: () => document.getElementById(wrapId),
     marker: () => document.getElementById(markerId),
@@ -4216,6 +4221,15 @@ function dokSigStatusZeigen() {
   if (!el) return;
   el.style.display = "";
 
+  // Ein verworfener Wisch (siehe vorschauZiehenAktivieren) hat Vorrang vor dem
+  // Zustandssatz -- sonst verschwindet das Rechteck wieder kommentarlos.
+  if (vorschauSignieren.hinweis && !dokSigStelleVorgegeben()) {
+    el.textContent = vorschauSignieren.hinweis;
+    vorschauSignieren.hinweis = "";
+    return;
+  }
+  vorschauSignieren.hinweis = "";
+
   if (dokSigModus !== "selbst") {
     if (dokSigStelleVorgegeben()) {
       const wer = dokSigAktuell.vonName || dokSigAktuell.von || "der Absender";
@@ -4274,6 +4288,16 @@ function vorschauZiehenAktivieren(v, onFertig) {
     start = null;
     // Ein Klick ohne Ziehen ist keine Auswahl, sondern ein Fehlgriff.
     if (v.feld && (v.feld.w < 0.02 || v.feld.h < 0.01)) { v.feld = null; markerZeichnen(v); }
+    // ⚠️ Ein Wisch ist auch keine Auswahl. Der Wrap hat touch-action:none, damit
+    // sich das Feld am Handy überhaupt aufziehen lässt -- der Preis dafür: wer
+    // dort nach unten wischen will, zieht ein schmales, hohes Rechteck am Rand
+    // auf (Vorfall 2026-09-01: Unterschrift in einem 5 %-Streifen oben rechts auf
+    // Seite 1, obwohl sie unter den Namen auf Seite 2 gehörte). Ein Unterschrifts-
+    // feld ist immer breiter als hoch -- alles andere wird verworfen, mit Ansage.
+    if (v.feld && (v.feld.w < 0.1 || v.feld.h > v.feld.w)) {
+      v.feld = null; markerZeichnen(v);
+      v.hinweis = "Das sah nach Wischen aus, nicht nach einem Feld. Zieh das Rechteck breiter als hoch — etwa so groß, wie die Unterschrift auf dem Blatt stehen soll.";
+    }
     if (onFertig) onFertig();
   };
   wrap.addEventListener("pointerup", ende);
@@ -4302,7 +4326,15 @@ async function pdfMitUnterschrift(originalBytes, feld, signaturDataUrl, name) {
       // PDF zählt y von UNTEN, die Vorschau von oben.
       const x = feld.x * width;
       const y = height - (feld.y * height) - h;
-      seite.drawImage(png, { x, y: y + 10, width: w, height: Math.max(1, h - 10) });
+      // Ins Feld EINPASSEN statt aufziehen: die Vorschau zeigt das Bild mit
+      // background-size:contain, das PDF muss dasselbe Blatt ergeben. Vorher
+      // wurde die Unterschrift auf das Rechteck gestreckt und in jedem nicht
+      // passenden Feld verzerrt.
+      const kastenH = Math.max(1, h - 10);
+      const m = Math.min(w / png.width, kastenH / png.height);
+      const bw = Math.max(1, png.width * m);
+      const bh = Math.max(1, png.height * m);
+      seite.drawImage(png, { x: x + (w - bw) / 2, y: y + 10 + (kastenH - bh) / 2, width: bw, height: bh });
       seite.drawText(zeile, { x, y: Math.max(2, y - 2), size: 7, font, color: rgb(0.25, 0.25, 0.25) });
       return await pdf.save();
     }

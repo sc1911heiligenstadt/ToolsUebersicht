@@ -519,6 +519,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.46",
+    groups: [
+      {
+        title: "Unterschrift landete am Handy an der falschen Stelle",
+        items: [
+          "Wer am Handy im Dokument nach unten wischte, zog dabei unbemerkt ein schmales, hohes Rechteck am Rand auf. Die Unterschrift wurde dann dort hineingequetscht — oben rechts auf Seite 1 statt unter dem Namen.",
+          "Ein solches Rechteck wird jetzt verworfen, mit dem Hinweis, das Feld breiter als hoch aufzuziehen. Ein Unterschriftsfeld ist immer breiter als hoch.",
+          "Die Unterschrift wird außerdem ins Feld eingepasst statt darauf gestreckt — das Blatt sieht so aus wie die Vorschau vor dem Absenden.",
+          "Tipp für Absender: Wer beim Anfordern selbst das Rechteck setzt, nimmt dem Unterzeichner diese Wahl ab."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.45",
     groups: [
       {
