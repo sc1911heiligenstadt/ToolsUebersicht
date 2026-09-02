@@ -206,6 +206,12 @@
 //     Bearbeitern vorbehalten, ABSTIMMEN muss aber jeder dürfen, der den Termin sieht — sonst stimmt die
 //     Geschäftsstelle mit sich selbst ab. Schreibt ausschließlich umfrage.stimmen[<Token-Nutzer>][candId] eines
 //     einzelnen Termins und spiegelt dafür die Sichtbarkeitsregel für Privattermine serverseitig.
+//   POST { action: "vereinskalender-benachrichtigung-planen", terminId, art, neu[], bestehend[], inhaltGeaendert } (Bearbeiter) -> { ok, faelligAb, wartetMin }
+//     Legt Mail und Push für einen Termin in den Postausgang, statt sie sofort zu verschicken — abgeholt wird im
+//     Fünf-Minuten-Lauf, sobald das Sammelfenster (10 Min ab der letzten Änderung) abgelaufen ist. Michel-Wunsch
+//     vom 2026-09-02: wer einen Termin nach dem Anlegen noch dreimal nachbessert, soll EINE Nachricht mit dem
+//     Endstand auslösen, nicht drei mit Zwischenständen. ⚠️ Der Mailtext entsteht deshalb erst beim Versand im
+//     Worker (vkPostBrief), nicht mehr im Client. Details und alle Entscheidungen: Block am Dateiende.
 //   POST { action: "vereinskalender-abo-status" } (jeder mit Tool-Zugriff)  -> { ok, aktiv, umfang?, url?, webcalUrl?, erstelltAm? }
 //   POST { action: "vereinskalender-abo-anlegen", umfang } (dito)           -> { ok, aktiv:true, umfang, url, webcalUrl }
 //   POST { action: "vereinskalender-abo-loeschen" } (dito)                  -> { ok, aktiv:false, entwertet }
@@ -1057,6 +1063,12 @@ export default {
     // Aenderung am Zeitplan die Spieltagscrew-Erinnerungen nicht stillegen.
     if (String((event && event.cron) || "") === ABLAUFPLAN_CRON) {
       ctx.waitUntil(ablaufplanErinnerungslauf(env, authHeader, ctx).catch(() => {}));
+      // Der Vereinskalender-Postausgang haengt sich an denselben Takt, statt
+      // einen dritten Cron-Trigger zu verlangen (der von Hand im Dashboard
+      // angelegt werden muesste und beim naechsten Deploy vergessen waere).
+      // Eigener waitUntil, damit ein Fehler hier die Ablaufplan-Erinnerungen
+      // nicht mitreisst.
+      ctx.waitUntil(vkPostausgangLauf(env, authHeader, ctx).catch(() => {}));
       return;
     }
     ctx.waitUntil(scNaechtlicherLauf(env, authHeader, ctx));
@@ -1337,8 +1349,14 @@ export default {
         return handlePnLoeschen(request, body, env, authHeader, corsHeaders);
       case "pn-protokoll":
         return handlePnProtokoll(request, env, authHeader, corsHeaders);
+      // ⚠️ Seit dem Postausgang (2026-09-02) ruft der Client diese Aktion NICHT
+      // mehr -- sie bleibt trotzdem stehen. Ein Browser-Tab, der die alte
+      // app.js noch offen hat, ueberlebt den Deploy und wuerde sonst beim
+      // naechsten Speichern ins Leere laufen.
       case "vereinskalender-termin-push":
         return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
+      case "vereinskalender-benachrichtigung-planen":
+        return handleVkBenachrichtigungPlanen(request, body, env, authHeader, corsHeaders);
       case "vorgang-push":
         return handleVorgangPush(request, body, env, authHeader, corsHeaders, ctx);
       case "fotoauftrag-push":
@@ -13612,6 +13630,12 @@ const PUNKTE_TATEN = new Map([
   // 2026-08-04). Es greift nur bei Personal-Konten mit eigenem Kaderplatz.
   ["km-self:teilnahme", PUNKTE_TAT_TERMIN_ANTWORT],
   ["vereinskalender-termin-push", PUNKTE_PRO_TAT],
+  // Nachfolger von "vereinskalender-termin-push" seit dem Postausgang
+  // (2026-09-02) -- gleicher Wert, damit ein Termin anzulegen weiter denselben
+  // Punkt gibt. ⚠️ Anders als der Vorgaenger laeuft diese Aktion auch bei
+  // PRIVATEN Terminen; dort gab es bisher gar keinen Punkt, weil der Mail-Weg
+  // ueber notify-user lief. Das ist die einzige beabsichtigte Ausweitung.
+  ["vereinskalender-benachrichtigung-planen", PUNKTE_PRO_TAT],
   ["raumnutzung-mail-antrag", PUNKTE_PRO_TAT],
   ["fahrtenbuch-extern-submit", PUNKTE_PRO_TAT],
   ["fotoauftrag-ordner-anlegen", PUNKTE_PRO_TAT],
@@ -24280,4 +24304,443 @@ async function handlePnProtokoll(request, env, authHeader, corsHeaders) {
     push: Number(n && n.push) || 0
   }));
   return json({ ok: true, eintraege, gesamt: liste.length }, 200, corsHeaders);
+}
+
+// ============================================================================
+// Vereinskalender: Postausgang mit Sammelfenster (seit 2026-09-02)
+// ============================================================================
+//
+// Michel-Vorgabe: "Mails erst 10 Minuten nach dem Anlegen oder einer Aenderung
+// versenden, fuer Zwischenaenderungen." Wer einen Termin anlegt und ihn gleich
+// danach noch dreimal nachbessert, loeste bis hierher drei Benachrichtigungen
+// aus -- zwei davon mit einem Stand, den es schon nicht mehr gibt.
+//
+// ⚠️ DER MAILTEXT WIRD DESHALB HIER GEBAUT, NICHT MEHR IM CLIENT. Das ist der
+// Kern des Umbaus und nicht wegzukuerzen: der Client kennt nur den Stand des
+// Augenblicks, in dem gespeichert wurde. Wuerde er den Brief weiter selbst
+// schreiben und nur der Versand wanderte nach hinten, kaeme zehn Minuten
+// spaeter der ALTE Zwischenstand an -- die Verzoegerung haette nichts gebracht
+// ausser Wartezeit. Der Lauf unten liest den Termin frisch aus
+// vereinskalender.json und formuliert daraus.
+//
+// ⚠️ Damit gibt es die Textbausteine ZWEIMAL: hier und in E:\vereinskalender\
+// app.js (fmtDate, terminDatumLabel, terminZeitLabel, umfrageZeitLabel). Der
+// Worker kann die Datei des App-Repos nicht laden -- gleiche Lage wie bei
+// ablaufplanNormTeam. Wer die Datumsdarstellung in der App aendert, muss die
+// Kopie hier mitziehen, sonst steht in der Mail ein anderes Format als auf der
+// Karte. Die Anzeige in der App bleibt der fuehrende Ort.
+//
+// ⚠️ Michel-Entscheidung 2026-09-02: die Uhr startet bei JEDER Aenderung neu
+// (10:00 angelegt, 10:07 geaendert -> Mail 10:17). Dagegen steht als einzige
+// Sicherung VK_POST_DECKEL_MIN: spaetestens eine Stunde nach dem ersten Anlass
+// geht die Nachricht raus. Ohne den Deckel kann jemand, der alle neun Minuten
+// speichert, die Benachrichtigung unbegrenzt hinausschieben, ohne es zu merken.
+//
+// ⚠️ Push wartet MIT (Michel-Entscheidung, gleiche Sitzung). Bei privaten
+// Terminen laufen Mail und Push ohnehin durch denselben Aufruf; ein sofortiger
+// Push mit dem alten Stand neben einer spaeteren Mail mit dem neuen waere die
+// schlechtere Haelfte von beidem.
+//
+// Als geschlossener Block am Dateiende wie der Ablaufplan-Lauf davor: am Stueck
+// wieder herausloesbar.
+
+const VK_POSTAUSGANG_URL = DAV_APPS["vereinskalender"].replace(/[^/]+$/, "vereinskalender-postausgang.json");
+
+// Sammelfenster. ⚠️ Muss zum Hinweistext im Termin-Dialog von
+// E:\vereinskalender\index.html passen -- dort steht die Zahl fuer den Nutzer.
+const VK_POST_WARTE_MIN = 10;
+// Hartgrenze ab dem ERSTEN Anlass, siehe Kopfkommentar. Wird nie verschoben.
+const VK_POST_DECKEL_MIN = 60;
+// Deckel je Lauf. Ein oeffentlicher Termin ist ein Fan-out an die ganze
+// Belegschaft; zwanzig davon in einem Fuenf-Minuten-Lauf reichen weit, und der
+// Rest bleibt einfach bis zum naechsten Lauf liegen.
+const VK_POST_MAX_JE_LAUF = 20;
+// Notbremse gegen eine Datei, die durch einen Fehler unbegrenzt waechst.
+const VK_POST_MAX_EINTRAEGE = 300;
+// Ein Eintrag, dessen Termin nicht mehr existiert oder der aus einem anderen
+// Grund liegen bleibt, wird nach dieser Zeit weggeraeumt statt ewig mitgelesen.
+const VK_POST_VERFALL_STD = 24;
+
+const VK_POST_LINK = "https://sc1911heiligenstadt.github.io/vereinskalender/";
+
+// ---------------------------------------------------------------------------
+// Textbausteine -- ZWEITE KOPIE aus E:\vereinskalender\app.js, siehe oben.
+// ---------------------------------------------------------------------------
+
+function vkPostFmtDate(iso) {
+  if (!VK_ISO_RE.test(String(iso || ""))) return String(iso || "");
+  const [y, m, d] = String(iso).split("-");
+  return d + "." + m + "." + y;
+}
+
+function vkPostEndIso(t) {
+  return (t.endDatum && VK_ISO_RE.test(t.endDatum) && t.endDatum >= t.datum) ? t.endDatum : t.datum;
+}
+
+// "17.08.2026" bzw. "17.-20.08.2026" / "28.02.-02.03.2026" (Halbgeviertstrich).
+function vkPostDatumLabel(t) {
+  const start = String(t.datum || ""), end = vkPostEndIso(t);
+  if (!VK_ISO_RE.test(start)) return start;
+  if (end === start) return vkPostFmtDate(start);
+  const [ys, ms, ds] = start.split("-"), [ye, me, de] = String(end).split("-");
+  if (ys === ye && ms === me) return ds + ".–" + de + "." + ms + "." + ys;
+  if (ys === ye) return ds + "." + ms + ".–" + de + "." + me + "." + ys;
+  return vkPostFmtDate(start) + " – " + vkPostFmtDate(end);
+}
+
+function vkPostZeitLabel(t) {
+  if (t.ganztags || (!t.startZeit && !t.endZeit)) return "ganztägig";
+  if (t.startZeit && t.endZeit) return t.startZeit + "–" + t.endZeit + " Uhr";
+  if (t.startZeit) return "ab " + t.startZeit + " Uhr";
+  return "bis " + t.endZeit + " Uhr";
+}
+
+// Wie vkPostZeitLabel, aber LEER statt "ganztägig" -- ein Vorschlag ohne
+// Uhrzeit nennt nur seinen Tag.
+function vkPostVorschlagZeit(c) {
+  if (!c) return "";
+  if (c.startZeit && c.endZeit) return c.startZeit + "–" + c.endZeit + " Uhr";
+  if (c.startZeit) return "ab " + c.startZeit + " Uhr";
+  if (c.endZeit) return "bis " + c.endZeit + " Uhr";
+  return "";
+}
+
+function vkPostIstUmfrage(t) {
+  return !!(t && t.umfrage && t.umfrage.aktiv && Array.isArray(t.umfrage.termine) && t.umfrage.termine.length);
+}
+
+// Der Brief. Einleitungs- und Schlusssatz sind das EINZIGE, was die beiden
+// Faelle (neu geteilt / geaendert) unterscheidet -- deshalb eine Funktion.
+// Zwei Kopien liefen auseinander, sobald ein Feld dazukaeme.
+//
+// ⚠️ Die NOTIZ bleibt draussen. Titel, Tag und Ort braucht man zum Einordnen;
+// die Notiz ist der Ort fuer Einzelheiten und hat in einem Postfach nichts
+// verloren, das der Verein nicht kontrolliert. Das ist eine Datenschutz-
+// Entscheidung, keine Formatierung.
+function vkPostBrief(t, einleitung, schluss) {
+  const z = ["Hallo,", "", einleitung, "", "Termin:  " + String(t.titel || "Termin")];
+  if (vkPostIstUmfrage(t)) {
+    z.push("", "Ein fester Tag steht noch nicht fest. Zur Auswahl stehen:", "");
+    for (const c of t.umfrage.termine) {
+      if (!c || !VK_ISO_RE.test(String(c.datum || ""))) continue;
+      const zeit = vkPostVorschlagZeit(c);
+      z.push("  • " + vkPostFmtDate(c.datum) + (zeit ? ", " + zeit : ""));
+    }
+    z.push("", "Bitte stimme im Vereinskalender ab, wann es dir passt — direkt auf der",
+      "Terminkarte, das dauert einen Klick.");
+  } else {
+    z.push("Wann:    " + vkPostDatumLabel(t) + ", " + vkPostZeitLabel(t));
+    if (t.ort) z.push("Wo:      " + String(t.ort));
+  }
+  z.push("", schluss, "", "Zum Vereinskalender: " + VK_POST_LINK, "",
+    "Den Termin sehen nur die Personen, mit denen er geteilt wurde — er steht nicht",
+    "im öffentlichen Kalender des Vereins.", "",
+    "Diese Nachricht wurde automatisch verschickt.");
+  return z.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Die Warteschlange
+// ---------------------------------------------------------------------------
+
+function vkPostLeer() { return { version: 1, eintraege: [] }; }
+
+function vkPostNamenListe(roh) {
+  const out = [];
+  const gesehen = Object.create(null);
+  for (const x of (Array.isArray(roh) ? roh : [])) {
+    const name = normalizeUsername(String(x || ""));
+    if (!name || gesehen[name]) continue;
+    gesehen[name] = true;
+    out.push(name);
+  }
+  return out.slice(0, 200);
+}
+
+// Read-modify-write auf der Postausgangsdatei. Eigene Datei statt eines Feldes
+// im Termin: die Warteschlange ist Steuerung, kein Termininhalt, und
+// vereinskalender.json wird von Client, Fussballcamp-Abgleich und Abstimmweg
+// gleichzeitig beschrieben -- jede zusaetzliche Schreibursache dort ist ein
+// weiterer Konflikt. Ausserdem ueberlebt der Eintrag so das Loeschen des
+// Termins und kann beim Faelligwerden merken, dass es nichts mehr zu melden
+// gibt.
+async function vkPostMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    jsonCache.delete(VK_POSTAUSGANG_URL);
+    const { data: roh, rev } = await readJsonWithRev(VK_POSTAUSGANG_URL, authHeader, null);
+    jsonCache.delete(VK_POSTAUSGANG_URL);
+    const doc = (roh && typeof roh === "object") ? roh : vkPostLeer();
+    if (!Array.isArray(doc.eintraege)) doc.eintraege = [];
+    doc.version = 1;
+    const ergebnis = fn(doc) || {};
+    if (ergebnis.nichtsZuTun) return ergebnis;
+    try {
+      await writeJson(VK_POSTAUSGANG_URL, authHeader, doc, rev || undefined);
+      return ergebnis;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  return { fehler: "konflikt" };
+}
+
+// POST { action: "vereinskalender-benachrichtigung-planen", terminId, art,
+//        neu:[username], bestehend:[username], inhaltGeaendert }
+//
+// Loest NICHTS aus, sondern legt den Anlass in den Postausgang. Verschickt wird
+// im Fuenf-Minuten-Lauf, siehe vkPostausgangLauf.
+//
+// ⚠️ Gate am Bearbeiten-Recht -- gleiche Ueberlegung wie bei
+// vereinskalender-termin-push: ohne das koennte jedes eingeloggte Konto
+// Nachrichten in die Warteschlange legen, ohne dass ein Termin entsteht.
+async function handleVkBenachrichtigungPlanen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const darf = await resolveEditPermission("vereinskalender", session, env, authHeader);
+  if (!darf) return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+
+  const terminId = String((body && body.terminId) || "").trim().slice(0, 100);
+  if (!terminId) return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+
+  const artNeu = !(body && body.art === "geaendert");
+  const neu = vkPostNamenListe(body && body.neu);
+  const bestehend = vkPostNamenListe(body && body.bestehend);
+  const inhaltGeaendert = !!(body && body.inhaltGeaendert);
+  const ausloeser = normalizeUsername(session.username);
+  const u = getOwn(session.usersDoc.users, session.username) || {};
+  const ausloeserName = [u.vorname, u.nachname].filter(Boolean).join(" ") || "Jemand";
+
+  const jetzt = Date.now();
+  const faelligIso = new Date(jetzt + VK_POST_WARTE_MIN * 60000).toISOString();
+
+  const ergebnis = await vkPostMutiere(authHeader, (doc) => {
+    const alt = doc.eintraege.find((e) => e && e.terminId === terminId);
+    if (!alt) {
+      if (doc.eintraege.length >= VK_POST_MAX_EINTRAEGE) return { nichtsZuTun: true, voll: true };
+      doc.eintraege.push({
+        terminId,
+        art: artNeu ? "neu" : "geaendert",
+        faelligAb: faelligIso,
+        spaetestensAb: new Date(jetzt + VK_POST_DECKEL_MIN * 60000).toISOString(),
+        erstAb: new Date(jetzt).toISOString(),
+        ausloeser,
+        ausloeserName,
+        neu,
+        bestehend: bestehend.filter((x) => neu.indexOf(x) === -1),
+        inhaltGeaendert
+      });
+      return { geplant: true, faelligAb: faelligIso };
+    }
+
+    // Zusammenfuehren. ⚠️ "neu" gewinnt gegen "geaendert": wer einen Termin
+    // anlegt und ihn im Fenster nachbessert, hat immer noch einen NEUEN Termin
+    // angelegt -- die Meldung "hat sich geaendert" waere fuer alle, die ihn
+    // noch nie gesehen haben, schlicht falsch.
+    if (artNeu) alt.art = "neu";
+    alt.ausloeser = ausloeser;
+    alt.ausloeserName = ausloeserName;
+    alt.inhaltGeaendert = !!alt.inhaltGeaendert || inhaltGeaendert;
+    // Wer im Fenster erstmals dazukam, bleibt "neu" -- er bekommt die
+    // Einladung, nicht die Aenderungsmeldung, auch wenn danach noch einmal
+    // gespeichert wurde und er ab dann als "bestehend" gemeldet wird.
+    alt.neu = vkPostNamenListe((alt.neu || []).concat(neu));
+    alt.bestehend = vkPostNamenListe((alt.bestehend || []).concat(bestehend))
+      .filter((x) => alt.neu.indexOf(x) === -1);
+    // Die Uhr laeuft neu -- aber nie ueber den Deckel hinaus.
+    const deckel = Date.parse(String(alt.spaetestensAb || ""));
+    alt.faelligAb = (Number.isFinite(deckel) && deckel < jetzt + VK_POST_WARTE_MIN * 60000)
+      ? new Date(deckel).toISOString() : faelligIso;
+    return { geplant: true, faelligAb: alt.faelligAb };
+  });
+
+  if (ergebnis && ergebnis.voll) {
+    return json({ error: "Der Postausgang ist voll." }, 503, corsHeaders);
+  }
+  return json({ ok: true, faelligAb: (ergebnis && ergebnis.faelligAb) || faelligIso, wartetMin: VK_POST_WARTE_MIN }, 200, corsHeaders);
+}
+
+// ---------------------------------------------------------------------------
+// Der Lauf
+// ---------------------------------------------------------------------------
+
+// Reine Rechnung (ohne Nextcloud), damit sie sich einzeln pruefen laesst.
+// Faellig ist, was seine Wartezeit hinter sich hat ODER am Deckel angekommen
+// ist. Verfallen ist, was seit VK_POST_VERFALL_STD liegen geblieben ist.
+function vkPostSortieren(eintraege, jetzt) {
+  const faellig = [], bleibt = [];
+  const verfall = jetzt - VK_POST_VERFALL_STD * 3600000;
+  for (const e of (Array.isArray(eintraege) ? eintraege : [])) {
+    if (!e || !e.terminId) continue;
+    const erst = Date.parse(String(e.erstAb || ""));
+    if (Number.isFinite(erst) && erst < verfall) continue;   // stillschweigend weg
+    const ab = Date.parse(String(e.faelligAb || ""));
+    const deckel = Date.parse(String(e.spaetestensAb || ""));
+    const dran = (Number.isFinite(ab) && ab <= jetzt) || (Number.isFinite(deckel) && deckel <= jetzt);
+    (dran ? faellig : bleibt).push(e);
+  }
+  faellig.sort((a, b) => String(a.faelligAb || "").localeCompare(String(b.faelligAb || "")));
+  // Was ueber dem Deckel liegt, bleibt liegen und kommt im naechsten Lauf dran.
+  return { faellig: faellig.slice(0, VK_POST_MAX_JE_LAUF), bleibt: bleibt.concat(faellig.slice(VK_POST_MAX_JE_LAUF)) };
+}
+
+async function vkPostMailSenden(env, empfaengerMail, betreff, text) {
+  if (!env.BREVO_API_KEY || !empfaengerMail) return false;
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: empfaengerMail }],
+        subject: betreff,
+        textContent: text
+      })
+    });
+    if (!resp.ok) {
+      console.error("Vereinskalender-Mail fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("Vereinskalender-Mail fehlgeschlagen", e && e.message);
+    return false;
+  }
+}
+
+// Adresse serverseitig aus den Trainerdaten, nie aus dem Kalender-Datensatz --
+// gleiche Aufloesung wie handleNotifyUser und busplanAdresse.
+function vkPostAdresse(username, usersDoc, trainerdatenDoc) {
+  const u = getOwn((usersDoc && usersDoc.users) || {}, username);
+  if (!u) return "";
+  return String(buildTrainerdatenSummary(findTrainerdatenRecord(trainerdatenDoc, u)).email || "").trim();
+}
+
+// Ein faelliger Eintrag. Liest den Termin FRISCH -- das ist der ganze Zweck.
+async function vkPostEintragVerschicken(eintrag, kalender, usersDoc, trainerdatenDoc, env, authHeader, execCtx) {
+  const t = (Array.isArray(kalender.termine) ? kalender.termine : [])
+    .find((x) => x && x.id === eintrag.terminId);
+  // Termin im Wartefenster geloescht (oder von purgePastEvents weggeraeumt):
+  // dann gibt es nichts mehr zu melden. Kein Fehler, sondern der Normalfall,
+  // fuer den es das Fenster gibt.
+  if (!t) return { verworfen: "termin-weg" };
+
+  // ⚠️ Der Weg entscheidet sich am AKTUELLEN Stand, nicht am geplanten: wer
+  // einen Termin privat anlegt und im Fenster den Haken wegnimmt, bekommt den
+  // oeffentlichen Weg -- und umgekehrt. Alles andere waere eine Meldung ueber
+  // einen Termin in einer Form, die es nicht mehr gibt.
+  if (!t.privat) {
+    const empfaenger = [];
+    const selbst = normalizeUsername(String(eintrag.ausloeser || ""));
+    for (const [schluessel, u] of Object.entries((usersDoc && usersDoc.users) || {})) {
+      if (!u || u.archiviert || !istPersonal(u)) continue;
+      const name = normalizeUsername(u.username || schluessel);
+      if (!name || name === selbst) continue;
+      empfaenger.push(name);
+    }
+    if (!empfaenger.length) return { verworfen: "keine-empfaenger" };
+    // Der Text nennt bewusst weder Titel noch Ort -- Sperrbildschirm, gleiche
+    // Linie wie ueberall sonst. Und es geht KEINE Mail mit: ein oeffentlicher
+    // Termin ist kein Rundschreiben.
+    pushSenden(env, authHeader, execCtx, empfaenger, "kalender",
+      eintrag.art === "neu"
+        ? "Ein neuer Termin steht im Vereinskalender. Öffne ihn, dort stehen Tag, Uhrzeit und Ort."
+        : "Ein Termin im Vereinskalender hat sich geändert. Bitte prüfe Tag, Uhrzeit und Ort noch einmal nach.");
+    return { push: empfaenger.length };
+  }
+
+  // Privat: Mail UND Push, aber ausschliesslich an die tatsaechlich Geteilten.
+  // ⚠️ Gegen den AKTUELLEN Stand gefiltert -- wer im Wartefenster wieder
+  // ausgetragen wurde, bekommt nichts mehr. Ohne diese Zeile verschickte das
+  // Fenster genau das, was es verhindern soll.
+  const jetztGeteilt = Array.isArray(t.geteiltUsers) ? t.geteiltUsers.map(normalizeUsername) : [];
+  const neu = (eintrag.neu || []).filter((u) => jetztGeteilt.indexOf(u) !== -1);
+  const bestehend = eintrag.inhaltGeaendert
+    ? (eintrag.bestehend || []).filter((u) => jetztGeteilt.indexOf(u) !== -1)
+    : [];
+  if (!neu.length && !bestehend.length) return { verworfen: "keine-empfaenger" };
+
+  const von = String(eintrag.ausloeserName || "Jemand");
+  const titel = String(t.titel || "Termin");
+  let mails = 0;
+
+  // ⚠️ Der Betreff nennt bei einer Aenderung den Termintitel; der Push-Text
+  // NICHT. Ein Sperrbildschirm ist kein Postfach.
+  const pushText = "Ein geteilter Termin wurde angelegt oder geändert. Öffne den Vereinskalender, dort stehen Tag, Uhrzeit und Ort.";
+
+  const zustellen = async (username, betreff, text) => {
+    // ⚠️ Push VOR der Adressaufloesung -- wer keine Adresse in den
+    // Trainerdaten stehen hat, bekaeme sonst auch keine Push-Nachricht,
+    // obwohl sein Handy angemeldet ist. Gleiche Reihenfolge wie in
+    // handleNotifyUser.
+    pushSenden(env, authHeader, execCtx, [username], "kalender", pushText);
+    const adresse = vkPostAdresse(username, usersDoc, trainerdatenDoc);
+    if (!adresse) return;
+    if (await vkPostMailSenden(env, adresse, betreff, text)) mails++;
+  };
+
+  for (const u of neu) {
+    await zustellen(u, "Neuer privater Termin im Vereinskalender", vkPostBrief(t,
+      von + " hat einen privaten Termin mit dir geteilt.",
+      "Weitere Einzelheiten und eventuelle Anhänge findest du im Vereinskalender."));
+  }
+  for (const u of bestehend) {
+    await zustellen(u, "Privater Termin geändert: " + titel, vkPostBrief(t,
+      von + " hat einen mit dir geteilten privaten Termin geändert. Hier der neue Stand:",
+      "Bitte prüfe im Vereinskalender, ob der Termin so für dich passt."));
+  }
+  return { mails, empfaenger: neu.length + bestehend.length };
+}
+
+// Haengt sich an den bestehenden Fuenf-Minuten-Lauf (ABLAUFPLAN_CRON) statt
+// einen dritten Cron-Trigger zu verlangen -- gleiche Ueberlegung wie beim
+// Busplan am naechtlichen Lauf: ein neuer Trigger muesste von Hand im
+// Cloudflare-Dashboard angelegt werden und waere genau der Schritt, der beim
+// naechsten Deploy vergessen wird.
+//
+// ⚠️ Daraus folgt: die Wartezeit ist 10 Minuten PLUS bis zu fuenf Minuten
+// Takt. Das ist gewollt -- eine Benachrichtigung auf die Minute genau hat
+// niemand verlangt, ein eigener Minuten-Cron waere der teurere Weg.
+async function vkPostausgangLauf(env, authHeader, execCtx) {
+  const jetzt = Date.now();
+
+  // ⚠️ Reihenfolge bindend, gleiche Regel wie beim Ablaufplan: erst die
+  // Warteschlange kuerzen, dann verschicken. Andersherum meldete ein
+  // Fehlschlag beim Schreiben dieselben Termine in JEDEM Fuenf-Minuten-Lauf
+  // erneut -- und der Sinn dieses ganzen Blocks ist, dass niemand dieselbe
+  // Nachricht mehrfach bekommt. Eine ausgefallene Meldung ist der kleinere
+  // Schaden.
+  let faellig = [];
+  const ergebnis = await vkPostMutiere(authHeader, (doc) => {
+    const sortiert = vkPostSortieren(doc.eintraege, jetzt);
+    if (!sortiert.faellig.length && sortiert.bleibt.length === doc.eintraege.length) {
+      return { nichtsZuTun: true };
+    }
+    faellig = sortiert.faellig;
+    doc.eintraege = sortiert.bleibt;
+    return { entnommen: faellig.length };
+  }).catch((e) => { console.error("Vereinskalender-Postausgang nicht lesbar", e && e.message); return null; });
+
+  if (!ergebnis || !faellig.length) return { gesendet: 0 };
+
+  const kalender = await readJson(DAV_APPS["vereinskalender"], authHeader, null);
+  if (!kalender || !Array.isArray(kalender.termine)) return { gesendet: 0, fehler: "kalender" };
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+
+  let gesendet = 0;
+  for (const e of faellig) {
+    try {
+      const r = await vkPostEintragVerschicken(e, kalender, usersDoc, trainerdatenDoc, env, authHeader, execCtx);
+      if (r && !r.verworfen) gesendet++;
+    } catch (err) {
+      // Einzelner Fehlschlag darf die uebrigen Eintraege nicht mitreissen.
+      console.error("Vereinskalender-Benachrichtigung fehlgeschlagen", e && e.terminId, err && err.message);
+    }
+  }
+  return { gesendet };
 }
