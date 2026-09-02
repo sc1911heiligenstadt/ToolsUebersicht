@@ -24,7 +24,7 @@ Die Liste entsteht aus der Kachelübersicht selbst (`TOOLS` in `config.js`) und 
 | **[Fußballcamp](https://sc1911heiligenstadt.github.io/fussballcamp/)** | Fußballcamps anlegen, auf der Vereinsseite bewerben und die Anmeldungen der Kinder sammeln. | [`fussballcamp`](https://github.com/sc1911heiligenstadt/fussballcamp) |
 | **[Geschäftsstelle](https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html)** | Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung. | [`sc-heiligenstadt-budget`](https://github.com/sc1911heiligenstadt/sc-heiligenstadt-budget) |
 | **[Kadermanager](https://sc1911heiligenstadt.github.io/kadermanager/)** | Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung/Taktikboard, Spielberichte, Urlaub/Krank, Umfragen und Mannschaftskasse je Mannschaft. | [`kadermanager`](https://github.com/sc1911heiligenstadt/kadermanager) |
-| **[Kinder- und Jugendschutz](https://sc1911heiligenstadt.github.io/kinderschutz/)** | Die Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ganz oben steht unsere Kinder- und Jugendschutzbeauftragte mit Foto und Erreichbarkeit, dazu ein Knopf zum Anrufen und einer zum Mailschreiben. | [`kinderschutz`](https://github.com/sc1911heiligenstadt/kinderschutz) |
+| **[Kinder- und Jugendschutz](https://sc1911heiligenstadt.github.io/kinderschutz/)** | Die Anlaufstelle für den Kinder- und Jugendschutz im Verein. | [`kinderschutz`](https://github.com/sc1911heiligenstadt/kinderschutz) |
 | **[Kleiderbestellung](https://sc1911heiligenstadt.github.io/kleiderbestellung/)** | Trainer:innen bestellen Vereinskleidung/-ausrüstung mit ihrer Größe aus einem Artikelkatalog; Admin verwaltet Katalog und Bestellfenster und exportiert eine Lieferanten-Bestellliste. | [`kleiderbestellung`](https://github.com/sc1911heiligenstadt/kleiderbestellung) |
 | **[Kleiderbörse](https://sc1911heiligenstadt.github.io/kleiderboerse/)** | Vereinskleidung, aus der ein Kind herausgewachsen ist, an andere Familien weitergeben — kostenlos. | [`kleiderboerse`](https://github.com/sc1911heiligenstadt/kleiderboerse) |
 | **[Kontakte](https://sc1911heiligenstadt.github.io/kontakte/)** | Das Telefonbuch des Vereins: Wer erreicht wen? | [`kontakte`](https://github.com/sc1911heiligenstadt/kontakte) |
@@ -65,15 +65,20 @@ Erreichbar, aber bewusst nicht als Kachel gelistet:
 
 ## Was die Startseite selbst kann
 
+Sechs Reiter: **Dashboard**, **Feedback & Hilfe**, **💡 Ideen**, **Mein Konto**, **Einstellungen** (nur Administratoren) und **Info**.
+
 - **Kacheln oder Liste**, und die eigene Reihenfolge über den Knopf „Anordnen“. Beides hängt am Konto, nicht am Browser — am Laptop und am Handy steht die Übersicht gleich.
-- **Als App ablegen**: die Flotte lässt sich auf dem Startbildschirm ablegen und läuft dann wie eine eigene App.
-- **Benachrichtigungen aufs Handy** für geteilte Termine, neue Aufgaben, Dokumente zum Unterschreiben und weitere Anlässe — je Anlass einzeln abschaltbar unter „Mein Konto“.
+- **Werkzeug suchen** über der Kachelübersicht (gesucht wird im Namen des Werkzeugs), dazu die Filter **✉️ Mail** und **🔔 Push** für die Werkzeuge, die E-Mails verschicken bzw. sich auf dem Handy melden.
+- **Neuigkeiten** mit Bildern, Videos und Reaktionen — auf Wunsch mit einem selbst aufgezeichneten Bildschirmvideo und zusätzlich als Push-Nachricht. Meldungen räumen sich 14 Tage nach ihrem Datum selbst weg.
+- **Nächste Termine** aus Vereins- und Abwesenheitskalender, Geburtstage des Tages und der nächste Ablauf aus dem Ablaufplan.
+- **🔗 Nützliche Links** unter den Kacheln, gepflegt von Administratoren — auch ohne Anmeldung sichtbar.
+- **Meine ToDos** und **Unterschriften anfordern** als eigene Fenster in der Kopfzeile, dazu der **Materialcontainer-Code**.
+- **Mein Konto**: eigenes Foto (erscheint im Kadermanager und in der Besprechung), Freigaben für die Kontaktliste, **Unterlagen zum Herunterladen** (ansehen oder speichern), **Privatnachrichten** an einzelne Personen und die **Aktivitätspunkte** mit Widerspruchsmöglichkeit.
+- **Benachrichtigungen aufs Handy** für geteilte Termine, neue Aufgaben, Dokumente zum Unterschreiben, Busplan, Ablaufplan und weitere Anlässe — je Anlass einzeln abschaltbar unter „Mein Konto“.
 - **Nachricht an alle Handys** (Administratoren): eine eigene Mitteilung schreiben und sofort verschicken, wahlweise eingegrenzt auf Gruppen oder einzelne Personen. Vor dem Absenden steht da, wie viele Geräte wirklich erreicht werden.
-- **Neuigkeiten** mit Bildern, Videos und Reaktionen — auf Wunsch mit einem selbst aufgezeichneten Bildschirmvideo.
-- **Meine ToDos** und **Unterschriften anfordern** als eigene Fenster in der Kopfzeile.
-- **Eigenes Foto im Konto**, das im Kadermanager und in der Besprechung erscheint.
-- **Aktivitätspunkte** für die Arbeit mit den Werkzeugen, mit Widerspruchsmöglichkeit im eigenen Konto.
-- **Materialcontainer-Code** und **Feedback & Hilfe** samt Antwort auf die eigene Einreichung.
+- **💡 Ideen** und **Feedback & Hilfe** — beides mit Antwort an die Einreichenden, Ideen zusätzlich mit 👍 und wahlweise anonym.
+- **Einstellungen** (Administratoren): Nutzer und Gruppen, Mannschaften je Saison, Sichtbarkeit und Rechte der Werkzeuge samt Sicherung zum Herunterladen und Einspielen, Admin-Dashboard und Testansicht einer Gruppe.
+- **Als App ablegen**: die Übersicht lässt sich auf dem Startbildschirm ablegen und läuft dann wie eine eigene App.
 
 ## Zugang
 

@@ -519,844 +519,8 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
-    version: "1.48",
-    groups: [
-      {
-        title: "Jede Kachel hat wieder ihr eigenes Symbol",
-        items: [
-          "Der Fußball stand auf vier Kacheln gleichzeitig, und vier weitere Symbole waren doppelt vergeben. Beim Überfliegen der Startseite half das Bild dann nicht mehr beim Wiederfinden.",
-          "Neu: Mitgliedsantrag Nachwuchs ein Kind, Spielertool ein Stern, Fußballcamp ein Zelt, Vereinsaufgaben ein Haken, Geschäftsstelle ein Bürogebäude, Personalkosten ein Geldsack, Kleiderbörse das Recycling-Zeichen.",
-          "Kadermanager behält den Fußball, TrainerCheckliste die Klemmbrett-Liste, Vereinsbudget den Geldschein, Kleiderbestellung das Trikot und die Personalakte den Aktenordner.",
-          "Damit haben alle 40 Kacheln ein eigenes Symbol."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.47",
-    groups: [
-      {
-        title: "Vereinswappen jetzt vorne in der Kopfzeile",
-        items: [
-          "Das Wappen stand ganz rechts am Bildschirmrand, hinter Nutzernamen und Abmelden-Knopf. Es steht jetzt vorne neben dem Titel „Tools-Übersicht“ — dort, wo bisher das Werkzeugkasten-Symbol war — und eine Stufe größer.",
-          "Nur in dieser Übersicht. Die übrigen Werkzeuge behalten das Wappen rechts.",
-          "Am Handy bleibt das Wappen in der bisherigen Größe — die Kopfzeile ist dort schon voll genug."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.46",
-    groups: [
-      {
-        title: "Unterschrift landete am Handy an der falschen Stelle",
-        items: [
-          "Wer am Handy im Dokument nach unten wischte, zog dabei unbemerkt ein schmales, hohes Rechteck am Rand auf. Die Unterschrift wurde dann dort hineingequetscht — oben rechts auf Seite 1 statt unter dem Namen.",
-          "Ein solches Rechteck wird jetzt verworfen, mit dem Hinweis, das Feld breiter als hoch aufzuziehen. Ein Unterschriftsfeld ist immer breiter als hoch.",
-          "Die Unterschrift wird außerdem ins Feld eingepasst statt darauf gestreckt — das Blatt sieht so aus wie die Vorschau vor dem Absenden.",
-          "Tipp für Absender: Wer beim Anfordern selbst das Rechteck setzt, nimmt dem Unterzeichner diese Wahl ab."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.45",
-    groups: [
-      {
-        title: "Die Werkzeug-Suche fand nichts, wenn man den Suchbegriff einfügte",
-        items: [
-          "Wie bei der Anmeldung in 1.44: Ein „ä“ kann auf zwei Arten im Rechner stehen, und auf dem Bildschirm sieht beides gleich aus. Die Suche kannte nur die eine.",
-          "Wer „Plätze“ oder „Büro“ aus einer anderen App kopiert einfügte — von einem Mac oder iPhone kommt meist die zweite Art —, bekam eine leere Trefferliste, obwohl das Werkzeug da ist. Getippt hat es funktioniert.",
-          "Jetzt werden beide Arten gleich behandelt. Die Suche findet weiterhin sowohl „platze“ als auch „plaetze“; daran ändert sich nichts."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.44",
-    groups: [
-      {
-        title: "Anmeldung mit eingefügtem Namen schlug in einem Sonderfall fehl",
-        items: [
-          "Ein „ö“ kann auf zwei Arten im Rechner stehen: als ein Zeichen, oder als „o“ mit einem getrennt gespeicherten Pünktchen-Zeichen dahinter. Auf dem Bildschirm sieht beides gleich aus.",
-          "Beim Anmelden wird der Name in die Kontokennung umgeschrieben („Jörg Müller“ wird zu „joerg.mueller“). Das griff nur bei der ersten Art. Wer seinen Namen von einem Mac oder iPhone kopiert einfügte, landete bei einer Kennung, die es nicht gibt — und bekam „falsches Passwort“ statt der Anmeldung.",
-          "Jetzt werden beide Arten gleich behandelt. An bestehenden Konten ändert sich nichts.",
-          "Dieselbe Korrektur steckt in den Schlüsseln für Bestellungen von außerhalb des Vereins."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.43",
-    groups: [
-      {
-        title: "Ohne Häkchen „Vertrag benötigt“ landet der Eintrag als „Nur Kontaktdaten“",
-        items: [
-          "Wird ein Konto angelegt, das auch die Trainerdaten bekommt, entsteht dort automatisch ein Eintrag. Ob die Person einen Trainervertrag braucht, stand darin bisher nicht — die Verwaltung sah deshalb bei jedem neuen Konto Bankverbindung, Pauschale und Anlage 1, auch bei der Geschäftsstelle oder im Vorstand.",
-          "Neu wird beim Anlegen mitgeschrieben, ob ein Vertrag vorgesehen ist. Ohne Häkchen „Vertrag benötigt“ (und ohne Mitgliedschaft in der Gruppe „Trainer“) steht der Eintrag in den Trainerdaten sofort auf „Nur Kontaktdaten“, und die Vertragsfelder sind dort ausgeblendet.",
-          "Bereits vorhandene Einträge, die noch nie selbst eingereicht wurden, bekommen die Angabe beim nächsten Druck auf „Bestehende Mitglieder jetzt eintragen“ nachgetragen. Eine eingereichte Anmeldung und ein von Hand gesetzter Status werden dabei nie überschrieben."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.42",
-    groups: [
-      {
-        title: "Unterlagen: „Ansehen“ und „Speichern“ getrennt",
-        items: [
-          "Unter „Mein Konto“ hat jedes bereitliegende Dokument jetzt zwei Knöpfe: „Ansehen“ öffnet das PDF wie bisher in einem neuen Tab, „Speichern“ legt es direkt auf dem Gerät ab.",
-          "Bisher gab es nur „Öffnen“ — auf dem Handy war das Ablegen der Datei damit umständlich.",
-          "Neu steht dort auch offen dabei: Die Geschäftsstelle sieht, wann ein Dokument angesehen oder gespeichert wurde. Damit ist belegt, dass es angekommen ist."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.41",
-    groups: [
-      {
-        title: "Nachrichten an viele Empfänger gehen jetzt zügig raus",
-        items: [
-          "Bei einer Nachricht an viele Leute wurden die E-Mails eine nach der anderen verschickt. Wer weit hinten in der Liste stand, bekam seine deutlich später — bei der erlaubten Höchstzahl von 200 Empfängern dauerte das gemessen über drei Sekunden reine Wartezeit.",
-          "Jetzt gehen sie in Gruppen zu zehn gleichzeitig raus. Dieselbe Menge braucht damit ein Zehntel der Zeit.",
-          "Für das Push aufs Handy war das schon immer so — nur beim E-Mail-Versand fehlte es.",
-          "Am Ergebnis ändert sich nichts: Jeder bekommt weiterhin genau eine eigene Nachricht, und eine fehlerhafte Adresse zieht die anderen nicht mit."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.40",
-    groups: [
-      {
-        title: "Der Reiter „Info“ erklärt jetzt, was die App wirklich tut",
-        items: [
-          "Dort stand bisher ein einzelner Satz. Jetzt steht da, wofür die einzelnen Reiter da sind, was die App mit den Eingaben macht und wo etwas anderes hingehört.",
-          "Am Funktionsumfang ändert sich nichts — nur an der Beschreibung."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.39",
-    groups: [
-      {
-        title: "Die Gruppen „Trainer“ und „Spieler“ sind jetzt geschützt",
-        items: [
-          "Diese beiden Gruppen werden im ganzen Gateway an ihrem Namen erkannt — nicht an einer internen Nummer wie alle anderen.",
-          "Wer sie umbenannt hätte, hätte damit still die Vertragspflicht abgeschaltet: Das Zeichen auf der Trainerdaten-Kachel wäre für alle grün geworden und es wäre keine Erinnerung mehr rausgegangen. Ohne Fehlermeldung, ohne dass es jemand gemerkt hätte.",
-          "Umbenennen und Löschen sind für diese zwei Gruppen deshalb nicht mehr möglich, und ein zweiter Eintrag mit demselben Namen lässt sich nicht mehr anlegen. Alle anderen Gruppen bleiben frei änderbar."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.38",
-    groups: [
-      {
-        title: "Das Zeichen auf der Trainerdaten-Kachel prüft jetzt alles",
-        items: [
-          "Bisher schaute es nur auf Anschrift, Telefon und E-Mail. IBAN, Bankname und die Erklärung zur Nebentätigkeit blieben außen vor — die Kachel konnte also „Daten vollständig“ zeigen, obwohl das Formular beim Speichern etwas anderes gesagt hätte.",
-          "Jetzt zählen sie mit, bei allen mit Trainervertrag. Wer „andere Einnahmen“ angekreuzt hat, muss auch die Höhe angegeben haben.",
-          "Der BIC bleibt weiter freiwillig.",
-          "Wer keinen Trainervertrag bekommt, merkt nichts davon: Für ihn zählen wie bisher nur seine Kontaktdaten — eine Bankverbindung sieht er im Formular gar nicht."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.37",
-    groups: [
-      {
-        title: "Fehlende Pflichtangaben führen direkt zu den Trainerdaten",
-        items: [
-          "Wer sich anmeldet und seine Pflichtangaben in „Trainerdaten“ noch nicht vollständig hinterlegt hat, wird beim Anmelden einmal dorthin gebracht — mit einem Hinweis, was genau fehlt.",
-          "Pflicht sind Vorname, Nachname, Geburtsdatum, Straße und Hausnummer, PLZ, Ort, Telefonnummer und E-Mail-Adresse. Wer einen Trainervertrag bekommt, zusätzlich IBAN, Bankname und die Erklärung zur Nebentätigkeit.",
-          "Das passiert höchstens einmal pro Anmeldung. Wer die Angaben gerade nicht zur Hand hat, geht über „Zurück zum Dashboard“ weiter und wird in dieser Sitzung nicht noch einmal geschickt.",
-          "Die Kachel „Trainerdaten“ zeigt jetzt auch dann ein rotes Kreuz, wenn noch gar keine Daten hinterlegt sind. Vorher blieb sie in dem Fall leer — man sah also nicht, dass etwas fehlt.",
-          "Spielerkonten sind davon nicht betroffen: Sie sehen die Trainerdaten gar nicht."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.36",
-    groups: [
-      {
-        title: "Neu: Privatnachrichten an einzelne Personen",
-        items: [
-          "Im Tab „Mein Konto“ gibt es jetzt die Karte „Privatnachrichten“. Wer in irgendeinem Werkzeug Bearbeiten-Recht hat, kann damit einzelne Personen anschreiben — zum Beispiel, weil noch eine Unterlage fehlt.",
-          "Die Nachricht geht drei Wege gleichzeitig: sie bleibt im Postfach liegen, kommt als E-Mail und meldet sich auf dem Handy.",
-          "Auf die E-Mail kann man direkt antworten — die Antwort geht an den Absender, nicht an den Verein. In der App selbst gibt es keine Antwortfunktion.",
-          "Der Absender sieht, ob die Nachricht gelesen wurde, und nach dem Verschicken, wen sie wirklich erreicht hat. Wer keine E-Mail hinterlegt oder kein Handy angemeldet hat, ist schon vor dem Anhaken gekennzeichnet.",
-          "Angeschrieben werden können nur Mitarbeiterinnen und Mitarbeiter des Vereins, keine Spielerkonten. Höchstens zehn Empfänger je Nachricht — für eine Nachricht an alle bleibt die Rundnachricht im Tab „Einstellungen“.",
-          "Wer keine Meldungen aufs Handy möchte, schaltet unter „Benachrichtigungen aufs Handy“ den neuen Punkt „Persönliche Nachrichten“ aus. Die E-Mail kommt weiterhin.",
-          "Der Administrator sieht in den Einstellungen ein Protokoll: wer wann an wen geschrieben hat. Der Inhalt steht dort bewusst nicht — weder Überschrift noch Text.",
-          "Nachrichten verschwinden von selbst: gelesene nach 90 Tagen, ungelesene nach einem Jahr. Löschen kann jeder seine eigenen jederzeit.",
-          "Liegt eine ungelesene Nachricht bereit, steht eine kleine rote Zahl am Tab „Mein Konto“ — sie zählt zusammen mit bereitliegenden Unterlagen und verschwindet, sobald du die Nachricht als gelesen markierst.",
-          "Lange Listen werden nach 20 Einträgen gekürzt, ein Knopf zeigt den Rest. Ungelesene Nachrichten stehen dabei immer da, auch wenn sie älter sind — sonst verschwindet ausgerechnet das, worauf die rote Zahl am Tab zeigt.",
-          "Achtung: Überschrift und Text stehen sichtbar auf dem Sperrbildschirm des Empfängers und in seinem Postfach. Nichts Vertrauliches hineinschreiben — die Schreibmaske sagt das noch einmal an."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.35",
-    groups: [
-      {
-        title: "Die Werkzeugsuche findet jetzt genau das Werkzeug",
-        items: [
-          "Die Suche in der Leiste über den Kacheln vergleicht ab sofort nur noch den Namen des Werkzeugs.",
-          "Vorher wurde auch der Beschreibungstext unter dem Namen und die Überschrift der Gruppe durchsucht. Ein kurzes Wort brachte dadurch halbe Seiten voller Kacheln, die den Begriff nur irgendwo im Fließtext stehen hatten.",
-          "Groß- und Kleinschreibung sowie Umlaute sind weiter egal: „platze“ und „plaetze“ finden beide die Platzbelegung. Mehrere Wörter dürfen weiter in beliebiger Reihenfolge stehen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.34",
-    groups: [
-      {
-        title: "Neue Kachel: Kinder- und Jugendschutz",
-        items: [
-          "Die zentrale Anlaufstelle für den Kinder- und Jugendschutz im Verein. Ansprechpartnerin, Meldeweg, Schutzkonzept, Schulung, Fragen und Hilfsangebote an einem Ort.",
-          "Die Kachel sehen alle Angemeldeten — auch Spieler. Das ist Absicht: Jugendliche sind die wichtigste Zielgruppe.",
-          "Info und Meldeformular gehen auch ganz ohne Anmeldung. Eltern und Kinder erreichen sie über die Vereinsseite oder einen QR-Code.",
-          "Meldungen lesen ausschließlich die in der App eingetragenen Beauftragten. Der Administrator sieht sie nicht — und wer die Liste ändert, tut das nachweislich sichtbar für jeden."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.33",
-    groups: [
-      {
-        title: "Die Startseite ist für Verwalter deutlich schneller da",
-        items: [
-          "Wer die Übersicht mit Administrieren-Recht öffnet, wartete bisher rund eine Sekunde länger als nötig: Gruppen, Nutzer, Rückmeldungen, der Materialcontainer-Code und die Testansicht wurden streng nacheinander geholt — jede Abfrage erst, wenn die davor zurück war.",
-          "Jetzt laufen sie gemeinsam los. Gemessen an derselben Stelle: vorher 1263 Millisekunden, jetzt 266.",
-          "Eine der sechs Abfragen war außerdem doppelt — die Gruppenliste wurde für das Aufgaben-Panel ein zweites Mal geholt, obwohl sie schon vorlag. Sie ist entfallen.",
-          "Zu sehen ist das beim Öffnen der Seite und nach jedem Anmelden. An den Inhalten ändert sich nichts."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.32",
-    groups: [
-      {
-        title: "Rechte können nicht mehr versehentlich gelöscht werden",
-        items: [
-          "Konnte die Übersicht die gespeicherten Rechte nicht laden (Worker kurz nicht erreichbar), zeigte das Sichtbarkeits-Panel bisher jedes Werkzeug als „Öffentlich“ und ohne Gruppen — obwohl gespeichert etwas ganz anderes stand. Ein Druck auf „Speichern“ hätte genau dieses Bild festgeschrieben und alle Sehen-, Bearbeiten- und Administrieren-Gruppen gelöscht.",
-          "Jetzt steht in diesem Fall ein roter Kasten über der Liste, und Speichern ist gesperrt — im Sichtbarkeits-Panel wie im Bereich „Apps“ einer Gruppe. Ein Knopf „Erneut laden“ holt die Rechte nach; klappt es, verschwindet der Kasten von selbst.",
-          "Neu darunter: „💾 Rechte sichern“ lädt alle Rechte als Datei auf den eigenen Rechner — Sehen, Bearbeiten, Administrieren und Auto-Eintrag für jedes Werkzeug. Am besten nach jeder größeren Änderung.",
-          "„Sicherung einspielen“ ist der Weg zurück: Datei auswählen, die Abfrage nennt Datum und Anzahl, danach ist der alte Stand wieder da. Gruppen, die es zwischenzeitlich nicht mehr gibt, werden vorher beim Namen genannt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.31",
-    groups: [
-      {
-        title: "Welche Mannschaften im Aushang stehen",
-        items: [
-          "Jede Mannschaft hat in der Verwaltung ein neues Häkchen „In Übersichten anzeigen“. Es steht per Vorgabe, jede Mannschaft erscheint also weiterhin.",
-          "Nimmt man das Häkchen weg, verschwindet die Mannschaft aus „Wer betreut welche Mannschaft“ im Werkzeug „Kontakte“ — bleibt aber vollständig in der Liste stehen und behält ihre Trainer.",
-          "Gedacht ist das für die Einträge aus dem Altbestand, die keine echte Mannschaft sind: „U12-U15“, „U12-U23“ und Ähnliches. Die Trainer hängen weiter daran, nur im Aushang haben sie nichts zu suchen.",
-          "⚠️ Das ist ausdrücklich etwas anderes als „Archiviert“. Archivieren heißt aufgelöst und nimmt der Mannschaft auch die Trainer-Zuordnung — wer sie betreut hat, verliert sie in seinem Profil und damit flottenweit Filter und Rechte. Das neue Häkchen rührt daran nicht.",
-          "Zugeklappt steht bei einer so ausgeblendeten Mannschaft „nicht in Übersichten“ hinter dem Namen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.30",
-    groups: [
-      {
-        title: "Jahrgänge in der Mannschaftsliste",
-        items: [
-          "Jede Mannschaft hat in der Verwaltung ein neues Feld „Jahrgänge“. Leer lassen ist der Normalfall: dann steht der Jahrgang von selbst da, gerechnet aus Saison und Altersstufe. Bei den A-Junioren sind das in der Saison 2026/27 die Jahrgänge 2008 und 2009 — und in der nächsten Saison von allein 2009 und 2010.",
-          "Was im leeren Feld grau steht, ist genau das, was die Rechnung ergibt. Wird der Kurzname korrigiert, zieht diese Angabe sofort mit.",
-          "Ausgefüllt wird das Feld nur dort, wo sich nichts rechnen lässt: bei den Herren, bei den Mädchen und zum Beispiel bei einem Bambini-Kader über drei Jahrgänge. Ein Eintrag von Hand hat immer Vorrang.",
-          "Zu sehen ist der Jahrgang in der neuen Mannschafts-Übersicht im Werkzeug „Kontakte“."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.29",
-    groups: [
-      {
-        title: "Neues Werkzeug: Fußballcamp",
-        items: [
-          "Fußballcamps lassen sich anlegen, auf der Vereinsseite bewerben und mit einer Anmeldung für die Kinder versehen. Die Eltern brauchen dafür kein Vereinskonto — sie melden über einen Link an.",
-          "Steht ein Camp auf „Anmeldung offen“, erscheint es von selbst als Fenster auf der Vereins-Homepage. Dort muss dafür einmalig ein Schnipsel eingebaut werden; welches Camp erscheint, entscheidet danach allein die App.",
-          "Dazu gehören der Beitrag mit Kontoverbindung und Verwendungszweck, eine Warteliste, wenn das Camp voll ist, und die Aufgaben der Helfer je Camp-Tag.",
-          "Das Werkzeug steht in der Sichtbarkeits-Verwaltung als sensibel markiert: in den Anmeldungen stehen Gesundheitsangaben über Kinder. Wer das Camp nur sehen darf, bekommt diese Daten gar nicht erst geschickt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.28",
-    groups: [
-      {
-        title: "Am Handy",
-        items: [
-          "Bisher brach die Reiterleiste selbst um, die rechte Reiter-Gruppe darin aber nicht: Sie rutschte als ein Stück in die zweite Zeile und lief dort weiter über den rechten Rand hinaus. Jetzt bricht auch sie um, sobald sie zu breit wird. Zu sehen ist das nur, wenn genug Reiter nebeneinanderstehen — bis dahin sieht alles aus wie bisher."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.27",
-    groups: [
-      {
-        title: "Aus der Testansicht kommt man wieder zurück",
-        items: [
-          "Wer als Admin die Testansicht einer Gruppe eingeschaltet hat, kam nicht mehr zurück: Der Tab „Einstellungen“ verschwand — und darin stand die einzige Auswahl, mit der sich die Testansicht wieder ausschalten lässt.",
-          "Der Tab „Einstellungen“ bleibt jetzt sichtbar, solange man in Wirklichkeit Admin ist. Während einer Testansicht steht dort nur die Auswahl; alle Admin-Bereiche bleiben weiterhin ausgeblendet.",
-          "Zusätzlich ist das orange Zeichen „🎭 Testansicht ✕“ oben in der Kopfzeile jetzt ein Knopf: ein Klick darauf beendet die Testansicht sofort — von jedem Tab aus."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.26",
-    groups: [
-      {
-        title: "Abmelden räumt jetzt wirklich alles weg",
-        items: [
-          "Nach dem Abmelden blieben die Bereiche „Unterlagen zum Herunterladen“ und „Kontaktliste des Vereins“ auf der Seite stehen — auch auf der Anmeldemaske.",
-          "Damit stand dort noch, welche Unterlagen für dich bereitlagen und welche Angaben du für die Kontaktliste freigegeben hast, samt Telefonnummer und Anschrift.",
-          "Beide Bereiche verschwinden jetzt beim Abmelden vollständig und werden dabei geleert. An einem gemeinsam genutzten Gerät sieht der Nächste nichts mehr von dir.",
-          "Die zwei anderen Bereiche („Benachrichtigungen aufs Handy“ und „Meine Punkte“) waren davon nicht betroffen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.25",
-    groups: [
-      {
-        title: "Sichtbarkeit der Tools alphabetisch",
-        items: [
-          "Im Admin-Bereich unter „Sichtbarkeit der Tools“ stehen die Werkzeuge jetzt in alphabetischer Reihenfolge — in beiden Abschnitten, „Sensible Tools“ und „Weitere Tools“.",
-          "Bisher galt die Reihenfolge aus der Übersicht selbst. Bei inzwischen 38 Werkzeugen war das Suchen einer bestimmten Zeile mühsam."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.24",
-    groups: [
-      {
-        title: "Neues Werkzeug: die Kleiderbörse",
-        items: [
-          "Familien des Vereins geben Kleidung weiter, aus der ihr Kind herausgewachsen ist — Trikots, Trainingsanzüge, Jacken, Schuhe. Alles ist kostenlos, ein Preisfeld gibt es nicht.",
-          "Eltern brauchen dafür kein Vereinskonto: sie kommen über einen Link hinein, den der Verein an die Mannschaften verteilt, und stellen ihr Teil mit Foto, Größe und Zustand selbst ein.",
-          "Ein neues Angebot ist zunächst für niemanden sichtbar. Erst nach der Freigabe durch einen Bearbeiter erscheint es in der Börse.",
-          "In der Börse stehen nur Foto, Art, Größe und Zustand — weder der Name noch der Kontakt der anbietenden Familie. Wer etwas haben möchte, hinterlässt seine Angaben, und die Anfrage geht als E-Mail direkt an die anbietende Familie.",
-          "In dieser E-Mail steckt ein Link, der das Teil mit einem Klick wieder aus der Börse nimmt, sobald es vergeben ist.",
-          "Die Kachel trägt den Briefumschlag: hier werden E-Mails nach außen verschickt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.23",
-    groups: [
-      {
-        title: "Übersicht nach Briefumschlag und Glocke filtern",
-        items: [
-          "In der Leiste über den Kacheln stehen neben der Suche zwei neue Knöpfe: „✉️ Mail“ zeigt nur die Werkzeuge, die E-Mails nach außen verschicken, „🔔 Push“ nur die, die sich auf dem Handy melden.",
-          "Beide zusammen gedrückt zeigt die Werkzeuge, die beides tun. Ein zweiter Druck nimmt einen Filter wieder zurück.",
-          "Die beiden Symbole standen bisher nur auf den Kacheln und erklärten sich beim Überfahren mit der Maus — am Handy also gar nicht.",
-          "Der Filter lässt sich mit der Suche kombinieren und wird beim Abmelden zurückgenommen. Beim Anordnen fällt er weg, damit die gespeicherte Reihenfolge vollständig bleibt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.22",
-    groups: [
-      {
-        title: "Der Busplan erinnert an die zugesagte Fahrt",
-        items: [
-          "Drei Tage bevor eine Mannschaft ihren Bus hat, bekommen ihre Trainer eine Nachricht aufs Handy und eine E-Mail mit den Regeln des zugesagten Busses.",
-          "Im Tab „Mein Konto“ gibt es dafür einen neuen Schalter. Er betrifft nur die Handy-Nachricht — die E-Mail kommt weiterhin.",
-          "Wer erinnert wird, richtet sich nach den Mannschaften im eigenen Profil. Steht dort nichts, kommt auch nichts an; der Busplan zeigt in der Übersicht an, für welche Mannschaft das gerade der Fall ist.",
-          "Die Busplan-Kachel trägt jetzt Briefumschlag und Glocke."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.21",
-    groups: [
-      {
-        title: "Neuigkeiten können jetzt auf die Ideen verweisen",
-        items: [
-          "Im Feld „Verknüpftes Tool“ steht oben eine neue Gruppe „In der Tools-Übersicht“ — dort lässt sich „Ideen“ auswählen.",
-          "Ein Klick auf so eine Meldung springt direkt in den Ideen-Tab, genau wie eine verknüpfte Meldung sonst das Werkzeug öffnet.",
-          "Die Werkzeuge stehen unverändert darunter in der Gruppe „Werkzeuge“.",
-          "Spielerkonten sehen den Ideen-Tab nicht — für sie steht die Meldung ohne Link da, statt ins Leere zu führen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.20",
-    groups: [
-      {
-        title: "Tab „Mein Konto“ — vier Bereiche zum Aufklappen",
-        items: [
-          "„Kontaktliste des Vereins“, „Unterlagen zum Herunterladen“, „Benachrichtigungen aufs Handy“ und „Meine Punkte“ sind jetzt zugeklappt. Ein Klick auf die Überschrift öffnet den Bereich, ein zweiter schließt ihn wieder.",
-          "Damit passt die Seite wieder auf einen Blick — vorher musste man an allem vorbeiscrollen, um sein Passwort oder sein Foto zu erreichen.",
-          "Inhalte und Einstellungen sind unverändert. Nichts ist weg, es steht nur eingeklappt da.",
-          "Liegt eine neue Unterlage für dich bereit, klappt der Bereich „Unterlagen zum Herunterladen“ von selbst auf — die rote Zahl am Tab verschwindet also weiterhin erst, wenn du sie wirklich vor dir hattest.",
-          "Beim Abmelden klappen alle vier wieder zu. An einem gemeinsam genutzten Gerät sieht der Nächste nichts von dir stehen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.19",
-    groups: [
-      {
-        title: "Unterlagen zum Herunterladen — jetzt im Tab „Mein Konto“",
-        items: [
-          "Neue Karte „Unterlagen zum Herunterladen“ im Tab „Mein Konto“: Dort legt der Verein Dateien für dich ab. Ansehen, ausdrucken, weitergeben — alles kommt als PDF.",
-          "Zwei Bereiche: „Für dich persönlich“ (zum Beispiel dein Vertrag oder die Bestätigung fürs erweiterte Führungszeugnis) und „Für alle“ (Merkblätter, Vordrucke, Formulare).",
-          "Persönliches sieht nur der, für den es bestimmt ist — niemand sonst kann es abrufen.",
-          "Liegt etwas Neues für dich bereit, steht am Tab „Mein Konto“ eine kleine rote Zahl. Sie verschwindet, sobald du hineingeschaut hast.",
-          "Bereitgestellt wird in den Dokumentenvorlagen. Der Bereich lag zuvor kurzzeitig in den Trainerdaten und steht jetzt nur noch hier. Spielerkonten sehen ihn nicht."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.18",
-    groups: [
-      {
-        title: "💡 Ideen — was sollten wir im Verein anpacken?",
-        items: [
-          "Neuer Tab „💡 Ideen“ oben neben „Feedback & Hilfe“: Überschrift eintippen, absenden, fertig. Der Text darunter ist freiwillig.",
-          "Gemeint ist alles rund um den Verein — ein Fest, eine Aktion, etwas für die Jugend, für die Mitglieder oder ums Gelände. Was an den Werkzeugen selbst hakt oder fehlt, gehört weiterhin in „Feedback & Hilfe“.",
-          "Alle angemeldeten Mitarbeiter sehen alle Ideen — man erkennt also sofort, ob jemand dasselbe schon vorgeschlagen hat. Spielerkonten sehen den Tab nicht.",
-          "Mit 👍 kannst du einer Idee zustimmen. Sichtbar ist nur die Zahl, nie wer geklickt hat.",
-          "Wer möchte, kreuzt „Anonym einreichen“ an. Den anderen wird der Name dann nicht angezeigt — die Vereinsleitung sieht ihn, damit Rückfragen möglich bleiben.",
-          "Jede Idee hat einen Zustand: Neu, In Arbeit, Umgesetzt oder Nicht geplant. Umgesetztes und Abgelehntes rutscht in einen zugeklappten Block ans Ende der Liste.",
-          "Solange deine Idee auf „Neu“ steht, kannst du sie noch ändern oder zurückziehen. Sobald daran gearbeitet wird, steht sie fest.",
-          "Eine Antwort der Vereinsleitung liest nur, wer die Idee eingereicht hat — sie steht bei der Idee im Tab. Es gibt dazu bewusst keine Push-Nachricht, schau also ab und zu rein.",
-          "Der Tab „Feedback & Hilfe“ bleibt unverändert bestehen: dort meldest du, was an den Werkzeugen stört oder kaputt ist."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.17",
-    groups: [
-      {
-        title: "Nützliche Links auf der Startseite",
-        items: [
-          "Unter den Werkzeug-Kacheln steht jetzt ein Bereich „🔗 Nützliche Links“ mit Adressen anderer Webseiten — zum Beispiel dem Fußball-Verband oder der Vereins-Homepage.",
-          "Gepflegt wird er von Admins unter Einstellungen → „Links auf der Startseite“: Name, Adresse, ein Symbol und eine kurze Erklärung. Die Reihenfolge lässt sich mit ↑ und ↓ ändern.",
-          "Die Links sind für jeden Besucher sichtbar, auch ohne Anmeldung — anders als die Neuigkeiten. Deshalb gehört dort nichts Internes hinein.",
-          "Solange kein Link eingetragen ist, bleibt der Bereich ganz weg."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.16",
-    groups: [
-      {
-        title: "Testansicht steht jetzt neben dem Admin-Dashboard",
-        items: [
-          "Die Auswahl für die Testansicht („👑 Admin (echt)“) ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — direkt neben den Knopf „📊 Admin-Dashboard“.",
-          "Sie kann genau dasselbe wie vorher, und wie vorher sieht sie nur, wer Admin ist.",
-          "Die Kopfzeile wird dadurch am Handy noch einmal eine Zeile kürzer."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.15",
-    groups: [
-      {
-        title: "Kleinere Knöpfe in der Kopfzeile",
-        items: [
-          "Die Knöpfe oben — Materialcontainercode, Unterschriften, Meine ToDos, der eigene Name und Abmelden — sind eine Stufe kleiner geworden.",
-          "Dadurch passt oben wieder alles in eine Zeile, statt umzubrechen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.14",
-    groups: [
-      {
-        title: "Admin-Dashboard steht jetzt in den Einstellungen",
-        items: [
-          "Der goldene Knopf „📊 Admin-Dashboard“ ist aus der Kopfzeile in den Tab „Einstellungen“ gewandert — dort steht er ganz oben.",
-          "Er kann genau dasselbe wie vorher, und wie vorher sehen ihn nur Admins.",
-          "Die Kopfzeile hat dadurch am Handy eine Zeile weniger."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.13",
-    groups: [
-      {
-        title: "Neuigkeiten kommen auf Wunsch aufs Handy",
-        items: [
-          "Eine neue Meldung auf der Übersicht kann jetzt zusätzlich als Push-Nachricht rausgehen — dafür gibt es beim Anlegen ein Häkchen „Als Push-Nachricht an alle Handys senden“.",
-          "Das Häkchen ist immer aus, bis es jemand setzt: eine Push-Nachricht lässt sich nicht zurückholen. Vor dem Versand fragt die Seite noch einmal nach und zeigt, was auf den Handys stehen wird.",
-          "Wählbar ist, wer sie bekommt: alle Mitarbeiter ohne Spielerkonten, oder wirklich alle Konten.",
-          "Wer den Schalter „Mitteilungen des Vereins“ in seinem Konto ausgeschaltet hat, bekommt weiterhin nichts — daran ändert das Häkchen nichts.",
-          "Verschickte Meldungen stehen im Verlauf unter „Nachricht an alle Handys“, zusammen mit den von Hand geschriebenen Mitteilungen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.12",
-    groups: [
-      {
-        title: "Werkzeug suchen",
-        items: [
-          "Über den Kacheln steht neben „Anordnen“ ein Suchfeld. Es ist gleich da — nichts aufklappen, einfach hineintippen. Während des Tippens bleiben nur die passenden Werkzeuge stehen, in der Kachel- wie in der Listenansicht.",
-          "Gesucht wird in Name, Beschreibung und Kategorie. Wer nicht weiß, wie ein Werkzeug heißt, findet es also über das, was es tut: „urlaub“ führt zum Abwesenheitskalender.",
-          "Mehrere Wörter grenzen weiter ein, die Reihenfolge ist egal. Umlaute müssen nicht getippt werden — „platz“ findet auch „Plätze“.",
-          "Zurücknehmen mit dem ✕ im Feld oder mit der Escape-Taste. Die Suche wird nicht gespeichert: beim nächsten Aufruf steht die vollständige Übersicht da.",
-          "Suchen und „Anordnen“ gehen bewusst nicht gleichzeitig — beim Verschieben in einer gefilterten Liste würde die eigene Reihenfolge der ausgeblendeten Werkzeuge verloren gehen. Der erste getippte Buchstabe beendet deshalb das Anordnen, und ein Druck auf „Anordnen“ nimmt die Suche zurück."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.11",
-    groups: [
-      {
-        title: "Kontaktliste-Freigabe jetzt unter „Mein Konto“",
-        items: [
-          "Ob und mit welchen Angaben du in der Kontaktliste erscheinst, stellst du ab sofort hier im Tab „Mein Konto“ ein — vorher steckte das in „Trainerdaten“ unter „Meine Daten“.",
-          "Neben jedem Häkchen steht jetzt, was tatsächlich freigegeben würde: deine Nummer, deine Adresse. Vorher kreuzte man an, ohne zu sehen was.",
-          "Ist zu einer Angabe nichts hinterlegt, sagt die Karte das — statt eine Freigabe für etwas anzubieten, das gar nicht existiert.",
-          "Bereits gesetzte Freigaben bleiben unverändert bestehen, es ist nur die Bedienstelle umgezogen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.10",
-    groups: [
-      {
-        title: "Neue Kachel „Kontakte“",
-        items: [
-          "Das Telefonbuch des Vereins: Wer erreicht wen? Die Kachel zeigt Name, Telefonnummer, E-Mail-Adresse und Anschrift der Kolleginnen und Kollegen — am Handy genügt ein Tipp auf die Nummer zum Anrufen.",
-          "Es steht dort nur, was die jeweilige Person selbst freigegeben hat. Freigegeben wird in „Trainerdaten“ unter „Meine Daten“, einzeln je Angabe und jederzeit widerrufbar.",
-          "Wer nichts freigibt, taucht in der Liste gar nicht auf. Bankverbindung, Geburtsdatum und Dokumente sind dort grundsätzlich nie zu sehen.",
-          "Die Liste sehen nur angemeldete Personen des Vereins, keine Spielerkonten. Wer die Kachel sieht, steuerst du wie bei jedem anderen Werkzeug im Sichtbarkeits-Panel."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.9",
-    groups: [
-      {
-        title: "Mannschaften stehen wieder in der richtigen Reihenfolge",
-        items: [
-          "„D2“ stand ganz unten hinter „Zeugwart“ statt hinter „D1“. Grund war nicht die Sortierung, sondern die Altersstufe: beim Korrigieren des Kurznamens blieb die alte Angabe stehen, und „Sonstige“ sortiert hinten.",
-          "Altersstufe und Nummer kommen jetzt aus dem Kurznamen. Wer „D2“ schreibt, bekommt automatisch D-Junioren und die 2 — und die Zeile steht da, wo man sie sucht.",
-          "Das wirkt auch auf schon gespeicherte Mannschaften, ohne dass du sie neu speichern musst.",
-          "Namen ohne erkennbares Muster (z. B. „Alte Herren“) behalten die Stufe, die du von Hand einstellst."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.8",
-    groups: [
-      {
-        title: "Mannschaften: ab jetzt eine einzige Liste",
-        items: [
-          "Neuer Bereich „Mannschaften“ in den Einstellungen. Dort steht jede Mannschaft genau einmal — mit Kurznamen (B1), langem Namen (B-Junioren 1) und Liga.",
-          "An jeder Mannschaft hängen die Leute, die sie betreuen, mit ihrer Rolle: Trainer, Co-Trainer, Torwarttrainer oder Betreuer. So sieht man sofort, welche Mannschaft noch niemanden hat.",
-          "Die Liste gilt je Saison. Beim Saisonwechsel einmal „Saison kopieren“ drücken und anpassen — der alte Stand bleibt zum Nachschlagen stehen.",
-          "„Vorschlag aus den Profilen“ liest, was heute in den Trainerprofilen steht, fasst gleiche Mannschaften zusammen und schlägt Kurznamen vor. Einträge, die nach einem Altersbereich oder einer Rolle aussehen statt nach einer Mannschaft, werden rot markiert.",
-          "Der Schalter „Trainerprofile aus dieser Liste füllen“ ist zunächst AUS. Erst einschalten, wenn die Liste steht: ab dann wird das Feld „Mannschaft(en)“ beim Nutzer berechnet statt getippt — und wer an keiner Mannschaft hängt, hat auch im Profil keine mehr."
-        ]
-      },
-      {
-        title: "Alte Schreibweisen in den Daten",
-        items: [
-          "Für die Umstellung gab es kurzzeitig einen Umschreib-Lauf über die Daten aller Werkzeuge. Er hat nichts mehr gefunden — in den Daten stand keine alte Schreibweise mehr — und ist deshalb wieder ausgebaut.",
-          "Das Feld „Frühere Schreibweisen“ an der Mannschaft ist damit auch weg. Es hatte den Umschreib-Lauf gefüttert und danach keine Wirkung mehr."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.7",
-    groups: [
-      {
-        title: "Auswertung: alle benutzten Werkzeuge je Person",
-        items: [
-          "In der Aktivitäts-Auswertung standen je Person nur die drei meistgenutzten Werkzeuge. Jetzt stehen dort alle, die sie im Monat benutzt hat — weiterhin sortiert, das Häufigste zuerst.",
-          "Die Spalte heißt deshalb jetzt „Genutzte Werkzeuge“ statt „Meistgenutzt“."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.6",
-    groups: [
-      {
-        title: "Neue Kachel „Ablaufplan“",
-        items: [
-          "Getaktete Tage des Vereins stehen jetzt an einer Stelle: Medientag, Turniertag, Trainingslager, Feriencamp.",
-          "Ein Ablauf besteht aus Punkten mit Uhrzeit, beteiligten Mannschaften, Ort und einer Notiz zum Mitbringen. Angezeigt wird er als Zeitstrahl mit einer Marke, wo gerade „jetzt“ ist.",
-          "Wer angemeldet ist, sieht die Punkte seiner eigenen Mannschaften farbig und kann alles andere ausblenden.",
-          "Zum Weitergeben an Eltern und Spieler gibt es je Ablauf einen Link, der ohne Anmeldung funktioniert — wahlweise gleich auf eine Mannschaft eingestellt."
-        ]
-      },
-      {
-        title: "Der nächste Ablauf steht auf der Startseite",
-        items: [
-          "Über den nächsten Terminen steht eine Zeile mit dem nächsten Ablauf samt Datum und Anzahl der Punkte; ein Klick führt hinein.",
-          "Es ist bewusst nur der eine nächste Ablauf und nur eine Zeile — jeder Punkt einzeln hätte die Terminliste daneben verdrängt."
-        ]
-      },
-      {
-        title: "Neue Handy-Nachricht: Ablaufplan",
-        items: [
-          "Wer eine beteiligte Mannschaft im Profil hat, bekommt 15 Minuten vor seinem Punkt eine Erinnerung aufs Handy.",
-          "Der Schalter dafür steht wie bei den anderen Anlässen unter „Mein Konto“ und heißt „Ablaufplan — Erinnerung kurz vor meinem eigenen Punkt“."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.5",
-    groups: [
-      {
-        title: "Handy- und Laptop-Symbole auf den Kacheln entfallen",
-        items: [
-          "Die kleinen 📱/💻-Symbole oben rechts auf jeder Kachel sind weg — in der Kachel- wie in der Listenansicht. Praktisch alle Werkzeuge lassen sich ohnehin an beiden Geräten bedienen; das Symbolpaar stand auf fast jeder Kachel gleich und sagte damit nichts mehr.",
-          "An der Bedienung ändert sich nichts. Der Greifpunkt ⠿ zum Verschieben, die Statushinweise und die Symbole für E-Mail ✉️ und Handy-Nachricht 🔔 bleiben unverändert."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.4",
-    groups: [
-      {
-        title: "Admin-Dashboard: längere Liste der letzten Anmeldungen",
-        items: [
-          "Die Karte „Zuletzt aktiv“ heißt jetzt „Zuletzt angemeldet“ und zeigt die zehn jüngsten Anmeldungen statt fünf.",
-          "Das Auswahlfeld darüber ist weg. Die drei anderen Listen (Trainervertrag zuletzt eingereicht, Trainerkodex und Jugendschutzkonzept zuletzt bestätigt) entfallen damit — den Stand dazu zeigen weiterhin die Quoten-Kacheln oben und die Personalakte."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.3",
-    groups: [
-      {
-        title: "Greifpunkt zum Verschieben steht jetzt vorne",
-        items: [
-          "Beim Anordnen sitzt der Greifpunkt ⠿ dort, wo man hingreift: in der Kachelansicht oben links, in der Listenansicht ganz am Anfang der Zeile. Vorher stand er am rechten Ende, hinter Beschreibung und Symbolen.",
-          "An der Bedienung ändert sich sonst nichts — die Geräte-Symbole bleiben rechts, und der Greifpunkt erscheint weiterhin nur, solange „Anordnen“ eingeschaltet ist."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
-      {
-        title: "Werkzeug Spieltagscrew",
-        items: [
-          "Wer bei den Heimspielen der 1. Mannschaft welchen Posten übernimmt, steht jetzt an einer Stelle — Kassenhäuschen, Ordnungsdienst, Grill, Sprecher, Auf- und Abbau.",
-          "Die Posten werden einmal als Katalog gepflegt und jedem Spieltag als eigene Kopie mitgegeben. Beim Derby lassen sich dort vier Ordner statt zwei eintragen, ohne dass sich am Katalog etwas ändert — und eine spätere Änderung am Katalog fasst bereits besetzte Spieltage nicht an.",
-          "Die Zeiten stehen relativ zum Anstoß. Bei einem Spiel um 13:00 Uhr steht am Kassenhäuschen automatisch eine andere Uhrzeit als bei einem um 15:00 Uhr.",
-          "Wer helfen kann, trägt sich selbst ein. Ein voller Posten nimmt niemanden mehr an, und je Spieltag übernimmt jede Person höchstens einen Posten.",
-          "Sieben Tage vor dem Spieltag meldet sich die App bei allen, die noch keinen Posten haben — aber nur, wenn wirklich etwas frei ist. Am Vortag bekommt jeder Eingetragene seine eigene Erinnerung mit Posten und Uhrzeit.",
-          "Zu jedem Spieltag lässt sich ein Aushang drucken: alle Posten mit Namen und Uhrzeiten, für das Kassenhäuschen oder das Schwarze Brett."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
-      {
-        title: "Neuigkeiten räumen sich selbst auf",
-        items: [
-          "Meldungen verschwinden 14 Tage nach ihrem Datum automatisch — samt angehängter Bilder und Videos und der Reaktionen darauf. Alte Meldungen müssen nicht mehr von Hand gelöscht werden.",
-          "Die 14 Tage zählen ab dem Datum, das an der Meldung steht. Wer eine Meldung länger stehen lassen will, setzt ihr Datum einfach neu — dann läuft die Frist von vorn."
-        ]
-      }
-    ]
-  },
-  {
     version: "1.0",
     groups: [
-      {
-        title: "Bildschirmvideos für die Neuigkeiten",
-        items: [
-          "Beim Schreiben einer Meldung gibt es neben „Bild oder Video hinzufügen“ auch „Bildschirmvideo aufnehmen“: eine kurze Vorführung selbst aufzeichnen, statt sie in Worten zu beschreiben.",
-          "Unter dem Mauszeiger liegt im Video ein Kreis, und jeder Klick hinterlässt einen kurzen roten Ring — so ist beim Zusehen wirklich zu erkennen, wo gedrückt wurde. Bei einer reinen Bildschirmaufnahme zeichnet der Browser den Mauszeiger nicht mit; ohne diesen Kreis wäre gar nicht zu sehen, wohin die Maus zeigt.",
-          "Aufnehmen lässt sich ein einzelnes Vereins-Werkzeug, das Dashboard, die Tools-Übersicht selbst, oder frei ein beliebiges Fenster des Rechners. Die Klick-Kreise gibt es bei den ersten dreien — von Klicks außerhalb des Browsers erfährt eine Internetseite grundsätzlich nichts.",
-          "Beginnt die Aufnahme im Rahmen auf dem Dashboard, lässt sich von dort in ein Werkzeug klicken und die Aufnahme läuft mit — so wird ein ganzer Weg am Stück gezeigt, von der Kachel bis in die App. Die Werkzeuge stehen dabei in derselben Reihenfolge zur Wahl, in der sie auch auf der eigenen Übersicht liegen.",
-          "Die Länge ist begrenzt und die Bildqualität wird vorher passend eingestellt, damit das fertige Video sicher unter die Anhang-Grenze von 10 MB passt. Während der Aufnahme laufen Zeit und Größe in einer Leiste am unteren Rand mit; diese Leiste wird aus dem Bild herausgeschnitten und steht nicht im fertigen Video.",
-          "Die Aufnahme beginnt immer oben auf der Übersicht, obwohl der Knopf im Einstellungen-Bereich steht — sonst wäre das erste Bild jeder Vorführung das Pflege-Formular. Nach dem Beenden geht es automatisch zurück zum angefangenen Meldungs-Entwurf.",
-          "Ist die Aufnahme fertig, lässt sie sich ansehen und mit einem Knopf direkt an die Meldung hängen — oder herunterladen, wenn sie woanders gebraucht wird.",
-          "Aufgenommen wird als MP4, damit das Video auch auf älteren iPhones abspielt. Auf dem Handy selbst gibt es das Aufnehmen nicht: Bildschirmaufnahme im Browser können nur die Rechner-Browser."
-        ]
-      },
-      {
-        title: "Kacheln oder Liste — und die eigene Reihenfolge",
-        items: [
-          "Über den Werkzeugen steht ein Umschalter: Kacheln oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
-          "Der Knopf „Anordnen“ schaltet das Verschieben ein. Erst dann erscheinen die Greifpunkte, und erst dann lassen sich die Werkzeuge innerhalb ihrer Kategorie umsortieren — mit Maus wie mit dem Finger. Solange angeordnet wird, führt kein Klick versehentlich in ein Werkzeug.",
-          "Ansicht und Reihenfolge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich."
-        ]
-      },
-      {
-        title: "Nachricht an alle Handys",
-        items: [
-          "Administratoren können im Einstellungen-Bereich eine eigene Push-Nachricht schreiben und sofort verschicken — für Kurzfristiges, das zu keinem Werkzeug gehört: Training fällt aus, Platz gesperrt, Halle zu.",
-          "Zur Wahl steht, ob nur die Mitarbeiter oder alle Konten einschließlich der Spieler angeschrieben werden.",
-          "Unter dem Empfängerkreis steht „Eingrenzen“. Dort lassen sich einzelne Gruppen anhaken (Geschäftsstelle, Trainer, Vorstand …) und zusätzlich einzelne Personen — mit Suchfeld, weil die Liste alle Konten führt. Ohne Haken geht die Nachricht an den ganzen gewählten Kreis.",
-          "Die Haken können den Kreis nur verkleinern, nie erweitern. Wer ein Spielerkonto auswählt, während oben „Mitarbeiter — ohne Spielerkonten“ steht, erreicht es nicht — beim Umschalten des Kreises wird es aus der Auswahl genommen und das steht auch da.",
-          "Eine Auswahl, die niemanden trifft (leere Gruppe), wird abgelehnt statt stillschweigend an alle zu gehen — der häufigste und teuerste Bedienfehler an dieser Stelle.",
-          "Nach dem Absenden fällt die Eingrenzung zurück auf „alle im gewählten Kreis“: sie gilt für die eine Nachricht und soll die nächste nicht heimlich beschneiden.",
-          "Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden, und wie viele es insgesamt sind — „erreicht 15 von 87 Personen“. Eine Zahl ohne Vergleich klingt nach einer vollständigen Zustellung, und genau das ist sie meistens nicht. Die Sicherheitsabfrage nennt dieselbe Zahl noch einmal, denn zurückholen lässt sich eine Push-Nachricht nicht.",
-          "Darunter lassen sich zwei Listen aufklappen: wer die Nachricht bekommt und wer nicht. Die zweite ist die wichtigere — an ihr ist zu sehen, wen man ansprechen muss, damit er die Benachrichtigungen einschaltet. Beide Listen sieht nur, wer die Nachricht auch verschicken darf.",
-          "Eine Push-Nachricht erreicht nur, wer die Übersicht als App auf dem Startbildschirm abgelegt und danach in seinem Konto die Benachrichtigungen eingeschaltet hat. Auf dem iPhone gibt es Push ausschließlich für abgelegte Apps, im Safari-Fenster gar nicht.",
-          "Unter der Überschrift und unter dem Text steht je ein Knopf „🙂 Emoji“. Ein Druck darauf klappt eine Auswahl auf; ein Druck auf ein Zeichen setzt es genau dort ein, wo die Schreibmarke gerade steht. Zur Wahl stehen die Zeichen, um die es in einer kurzfristigen Mitteilung tatsächlich geht: Achtung, Fällt aus, Findet statt, Termin, Uhrzeit, Bus, Parken, Regen, Gewitter, Frost, Gesperrt, Feier und weitere.",
-          "Ein Emoji zählt wie zwei Zeichen. Passt es nicht mehr in die 100 bzw. 200 Zeichen, sagt die App das — angehängt und dann vom Server halbiert würde daraus auf dem Sperrbildschirm ein leeres Kästchen.",
-          "Unter „Zuletzt verschickt“ stehen die drei neuesten Nachrichten mit Absender, Zeitpunkt, erreichter Anzahl und der Eingrenzung. Protokolliert werden 30 — eine Push-Nachricht lässt sich nicht zurückholen, wer wann was an alle geschickt hat, ist der Nachweis dahinter.",
-          "Empfangen wird sie nur von denen, die im Tab „Mein Konto“ unter „Benachrichtigungen“ den Schalter „Mitteilungen des Vereins“ anhaben. Er ist wie alle anderen von Anfang an eingeschaltet und lässt sich einzeln abstellen."
-        ]
-      },
-      {
-        title: "Kachel Mitgliedsantrag",
-        items: [
-          "Der Aufnahmeantrag der Vereinsverwaltung hat eine eigene Kachel bekommen — sie führt direkt auf das Formular zum Ausfüllen und Unterschreiben am Handy.",
-          "Die Kachel ist bewusst öffentlich: wer Mitglied werden will, hat noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
-          "Ausgefüllt und unterschrieben geht der Antrag an die Geschäftsstelle. Über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand — der Antrag allein ist noch keine Mitgliedschaft."
-        ]
-      },
-      {
-        title: "Kachel Anmeldung Nachwuchs",
-        items: [
-          "Neue Jugendspieler werden über einen Link angemeldet — Aufnahmeantrag und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband entstehen daraus zusammen. Zweimal dieselben Angaben einzutragen entfällt.",
-          "Die Kachel ist wie der Mitgliedsantrag öffentlich: Eltern eines Neuzugangs haben noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
-          "Erstausstellung, Vereinswechsel, Rückkehrer und Namensänderung stehen zur Wahl. Beim Wechsel fragt das Formular nach dem bisherigen Verein und danach, ob die Abmeldung schon erfolgt ist oder der Verein sie übernehmen soll.",
-          "Die Nachweise, die der Verband als Anlage verlangt, lassen sich als Foto mit dem Handy mitschicken. Sie liegen getrennt von den übrigen Daten und sind nur für die Geschäftsstelle einsehbar.",
-          "Aus der eingegangenen Anmeldung erzeugt die Geschäftsstelle das ausgefüllte Verbandsformular auf Knopfdruck — mit den Unterschriften darauf. Zu tun bleibt der Vereinsstempel."
-        ]
-      },
-      {
-        title: "Antworten auf Feedback und Wünsche",
-        items: [
-          "Auf jede Einreichung aus dem Tab „Feedback & Hilfe“ kann jetzt geantwortet werden — direkt beim Eintrag im Einstellungen-Bereich.",
-          "Wer etwas eingereicht hat, findet die Antwort im Tab „Feedback & Hilfe“ unter „Meine Einreichungen“, zusammen mit dem eigenen Text und dem Stand (offen oder erledigt).",
-          "Zur Antwort kommt eine Push-Nachricht aufs Handy. Sie lässt sich im Tab „Mein Konto“ unter „Benachrichtigungen“ einzeln abschalten wie jeder andere Anlass auch.",
-          "Eine Antwort lässt sich nachträglich ändern; das Leeren des Feldes nimmt sie wieder zurück. Eine erneute Push-Nachricht geht nur raus, wenn wirklich neu geantwortet wurde."
-        ]
-      },
-      {
-        title: "Werkzeug Schulsport",
-        items: [
-          "Die Sport- und Fußball-AGs, die der Verein an Schulen und im Hort anbietet, haben ein eigenes Werkzeug — zusammen mit den Fußballcamps in den Ferien.",
-          "Eine AG wird einmal als Serie angelegt: Schule, Ort, Wochentag, Uhrzeit und Zeitraum. Alle Termine des Schuljahres entstehen daraus von selbst und lassen Ferien und Feiertage automatisch aus. Camps liegen umgekehrt genau in den Ferien.",
-          "Nach jeder Einheit meldet der Übungsleiter am Handy, ob sie stattgefunden hat und wie viele Kinder da waren. Fällt etwas aus, wird der Grund aus einer Liste gewählt.",
-          "Daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den Behörden und Fördermittelgeber verlangen. Die Schule kann ihn zusätzlich über einen Link digital gegenzeichnen — ohne eigenen Zugang zu den Vereins-Werkzeugen.",
-          "Von den teilnehmenden Kindern wird ausschließlich die Anzahl erfasst. Namen von Schülerinnen und Schülern werden dort nicht gespeichert."
-        ]
-      },
-      {
-        title: "Die Übersicht",
-        items: [
-          "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel nennt das geeignete Gerät — Handy, Laptop oder beides.",
-          "Die Werkzeuge lassen sich innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger — seit 1.5 über den Knopf „Anordnen“ über den Kacheln. Die eigene Reihenfolge hängt am Konto und gilt auf jedem Gerät.",
-          "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Die Handlung landet dort also im Postfach eines Empfängers und nicht nur in einer Liste.",
-          "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport, Spieltagscrew und der externe Fahrtenbuch-Link.",
-          "Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
-          "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung.",
-          "Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",
-          "Kacheln, Verlinkungen aus Neuigkeiten und das Termine-Widget öffnen im selben Tab; jedes Werkzeug hat oben einen Weg zurück zum Dashboard."
-        ]
-      },
-      {
-        title: "Als App auf dem Startbildschirm",
-        items: [
-          "Angemeldete Nutzer finden im Kopfbereich den Knopf „Als App ablegen“. Danach startet die Toolbox wie eine eigene App, ohne Browser-Adressleiste.",
-          "Auf Android übernimmt das der Systemdialog. Auf dem iPhone geht es nur über Safari von Hand — der Knopf öffnet dort eine Anleitung: Teilen-Symbol, dann „Zum Home-Bildschirm“.",
-          "Ist die App abgelegt, verschwindet der Knopf. Er erscheint auch gar nicht erst, wo der Browser nichts anbieten kann."
-        ]
-      },
-      {
-        title: "Neuigkeiten",
-        items: [
-          "Über den Kacheln laufen die Vereinsneuigkeiten als Karussell: eine Meldung sichtbar, per Pfeil blätterbar, mit Positionsanzeige.",
-          "Gepflegt werden sie im Reiter „Einstellungen“ — anlegen, ändern, löschen, mit Typ, Datum, Titel, Text und wahlweise einer Verknüpfung zu einem Werkzeug.",
-          "Jede Meldung lässt sich mit einem Emoji bereagieren. Eine Reaktion je Person und Meldung; ein erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt.",
-          "Wer mit der Maus über ein Emoji fährt, sieht die Namen der Personen, die so reagiert haben. Am Handy gibt es kein Überfahren, dort bleibt es beim Zähler.",
-          "An eine Meldung lassen sich bis zu vier Bilder oder Videos hängen (JPEG, PNG, GIF, WebP, MP4, WebM — je bis 10 MB). Sie erscheinen als kleine Vorschau unter der Meldung; ein Klick öffnet sie formatfüllend.",
-          "Für längere Videos gibt es zusätzlich ein Link-Feld — etwa für YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nie ungefragt eingebettet.",
-          "Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar — genau wie die Meldungen selbst. Wird eine Meldung gelöscht, sind ihre Bilder sofort nicht mehr erreichbar.",
-          "Neuigkeiten sind Vereinsinterna und erscheinen erst nach dem Anmelden, samt Zählern und Namen. Wer nicht angemeldet ist, bekommt sie gar nicht erst übertragen."
-        ]
-      },
-      {
-        title: "Nächste Termine",
-        items: [
-          "Das Widget zeigt bis zu acht anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten Einträge aus dem Abwesenheitskalender, sofern man darauf Zugriff hat.",
-          "Private Termine stehen in einem eigenen Bereich darunter und nur bei denen, die sie angelegt haben oder mit denen sie geteilt wurden.",
-          "Hat laut Trainerdaten jemand Geburtstag, steht das am Tag selbst ganz oben im Widget — ohne Geburtsjahr.",
-          "Zu Terminen mit Umfrage lässt sich direkt aus dem Dashboard zusagen."
-        ]
-      },
-      {
-        title: "Meine ToDos",
-        items: [
-          "Der Knopf „Meine ToDos“ im Kopfbereich öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
-          "Der Zähler am Knopf meldet, was offen ist. Er wird rot, wenn etwas überfällig ist.",
-          "Hier steht nur, was man sich selbst notiert. Was einem anderen aufgetragen wird, gehört in die Vereinsaufgaben — dorthin führt ein Knopf."
-        ]
-      },
-      {
-        title: "Unterschriften anfordern",
-        items: [
-          "Der Knopf „Unterschriften anfordern“ auf der anderen Seite des Kopfbereichs trägt den Unterschriften-Weg: ein PDF an eine Person schicken, die es am Bildschirm unterschreiben muss.",
-          "Der Absender legt fest, wo die Unterschrift stehen soll. Tut er es nicht, darf der Unterzeichner die Stelle selbst wählen; wählt niemand eine, kommt eine Nachweisseite ans Ende.",
-          "Unterschrieben wird per Freihand-Pad in der eigenen Sitzung. Den Zeitstempel setzt der Server — dadurch ist die Unterschrift an die Person gebunden.",
-          "Nur PDF, hart geprüft. Ein unterschriebenes Word-Dokument bliebe editierbar und wäre als Nachweis wertlos.",
-          "Bei mehreren Empfängern unterschreibt jeder eine eigene Kopie. Ablehnen ist möglich, verlangt aber eine Begründung.",
-          "Auf Wunsch wird der Empfänger zusätzlich per E-Mail benachrichtigt. Das ist ein Häkchen je Vorgang und steht bei jedem Öffnen wieder auf aus; der Betreff nennt den Dokumenttitel bewusst nicht.",
-          "Den Knopf sieht nur, wer Unterschriften anfordern darf — oder wer selbst ein offenes Dokument hat. Nach dem Unterschreiben verschwindet er wieder.",
-          "Das unterschriebene Dokument bleibt erhalten, auch wenn die zugehörige Erinnerung nach 14 Tagen abläuft. Einsehen dürfen es die Beteiligten und Administratoren."
-        ]
-      },
-      {
-        title: "Materialcontainer-Code",
-        items: [
-          "Der Knopf im Kopfbereich zeigt den Code des Zahlenschlosses am Materialcontainer.",
-          "Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",
-          "Der Code wird erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert. An unangemeldete Besucher geht er nie, und Spielerkonten bekommen ihn nicht — bei rund 200 Konten wäre das das Gegenteil eines Schlosses."
-        ]
-      },
       {
         title: "Anmelden und eigenes Konto",
         items: [
@@ -1365,36 +529,53 @@ const APP_CHANGELOG = [
           "Zum Anmelden genügt auch die eigene E-Mail-Adresse. Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Max Mustermann“, „max.mustermann“, „max_mustermann“, „max-mustermann“ oder „MaxMustermann“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
           "Steht die E-Mail-Adresse in den Trainerdaten, wird das Konto auch dann gefunden, wenn die Adresse nichts mit dem Namen zu tun hat.",
           "Passt eine Eingabe auf mehr als ein Konto, wird bewusst nicht geraten — die Anmeldung wird dann abgelehnt, damit niemand im fremden Konto landet.",
-          "Ein neues Passwort braucht mindestens 12 Zeichen mit Groß- und Kleinbuchstaben sowie einer Zahl oder einem Sonderzeichen.",
-          "Passwörter werden nie im Klartext gespeichert. Die Anmeldung gilt sieben Tage, danach ist eine neue nötig.",
+          "Ein neues Passwort braucht mindestens 12 Zeichen mit Groß- und Kleinbuchstaben sowie einer Zahl oder einem Sonderzeichen. Passwörter werden nie im Klartext gespeichert, und die Anmeldung gilt sieben Tage.",
+          "Wer seine Pflichtangaben in „Trainerdaten“ noch nicht vollständig hinterlegt hat, wird beim Anmelden einmal dorthin gebracht — mit einem Hinweis, was genau fehlt. Pflicht sind Vorname, Nachname, Geburtsdatum, Straße und Hausnummer, PLZ, Ort, Telefonnummer und E-Mail-Adresse; wer einen Trainervertrag bekommt, braucht zusätzlich IBAN, Bankname und die Erklärung zur Nebentätigkeit. Über „Zurück zum Dashboard“ geht es weiter, und in derselben Sitzung wird niemand ein zweites Mal geschickt.",
+          "Spielerkonten sind davon nicht betroffen: Sie sehen die Trainerdaten gar nicht.",
           "„Abmelden“ steht oben rechts neben dem eigenen Namen und ist damit aus jedem Reiter erreichbar.",
+          "Beim allerersten Besuch, wenn es noch kein Konto gibt, öffnet sich das Formular zum Anlegen des ersten Administrators. Danach ist dieser Weg dauerhaft zu."
+        ]
+      },
+      {
+        title: "Mein Konto: Angaben, Foto und Freigaben",
+        items: [
           "Der Reiter „Mein Konto“ zeigt Name, Nutzername, Trainerlizenz und Mannschaften, die eigenen Gruppen im Klartext, in welchen Werkzeugen man mehr als zusehen darf, wann das Passwort zuletzt geändert wurde und bis wann die Anmeldung gilt. Solange niemand angemeldet ist, heißt derselbe Reiter „Anmelden“.",
-          "Dort lässt sich auch das eigene Passwort ändern. Dabei werden alle Geräte abgemeldet — auch das eigene; eine neue Anmeldung danach ist normal."
-        ]
-      },
-      {
-        title: "Benachrichtigungen aufs Handy",
-        items: [
-          "Die Toolbox kann sich direkt auf dem Gerät melden, ohne den Umweg über eine E-Mail. Eingeschaltet wird das im Reiter „Mein Konto“ unter „Benachrichtigungen aufs Handy“ — für jedes Gerät einmal.",
-          "Jeder Anlass ist einzeln an- und abschaltbar: ein im Vereinskalender geteilter oder geänderter Termin, eine Vereinsaufgabe samt Rückfragen und Statusmeldungen, ein Dokument, das auf deine Unterschrift wartet, sowie Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge und das Fahrtenbuch.",
-          "Die Nachricht nennt nie einen Namen, einen Termin- oder Dokumenttitel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können. Was drinsteht, sieht man nach dem Antippen in der App.",
-          "Nachrichten gehen mit hoher Dringlichkeit raus, damit das Handy sie nicht im Energiesparmodus zurückhält und gesammelt zustellt.",
-          "Die E-Mails bestehen unverändert weiter. Benachrichtigungen kommen dazu, sie ersetzen nichts — wer sie nicht einschaltet, merkt keinen Unterschied.",
-          "In der Liste der angemeldeten Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus.",
-          "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt — Apple bietet Benachrichtigungen im normalen Safari-Fenster nicht an. Nötig ist außerdem iOS 16.4 oder neuer, also ein iPhone 8 oder jünger. Auf Android und am Rechner genügt der Browser.",
-          "Wird die Abfrage einmal abgelehnt, lässt sie sich nicht erneut stellen — das erlaubt nur der Browser selbst. In dem Fall steht in der Karte, wo es sich wieder freischalten lässt.",
-          "Die Schalter werden vom Server geliefert. Kommt ein Anlass dazu, erscheint er dort von selbst."
-        ]
-      },
-      {
-        title: "Eigenes Foto im Konto",
-        items: [
-          "Unter „Mein Konto“ lässt sich ein Bild von dir hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen.",
-          "Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein. Liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
+          "Dort lässt sich auch das eigene Passwort ändern. Dabei werden alle Geräte abgemeldet — auch das eigene; eine neue Anmeldung danach ist normal.",
+          "Die Karten darunter stehen zugeklappt da. Ein Klick auf die Überschrift öffnet eine Karte, ein zweiter schließt sie wieder — so passt die Seite auf einen Blick, und Passwort und Foto sind ohne Scrollen erreichbar.",
+          "Ob und mit welchen Angaben du in der Kontaktliste des Vereins erscheinst, stellst du hier ein. Neben jedem Häkchen steht, was tatsächlich freigegeben würde: deine Nummer, deine Adresse. Ist zu einer Angabe nichts hinterlegt, sagt die Karte das, statt eine Freigabe für etwas anzubieten, das es gar nicht gibt.",
+          "Ein Bild von dir lässt sich hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen. Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein; liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
           "Im Kadermanager erscheint dein Foto damit von selbst in der Kaderliste und auf dem Aufstellungsfeld — der Trainer muss nichts für dich hochladen. Hat er dort schon ein Bild von dir eingestellt, gilt deines. Für Spieler ohne eigenen Zugang bleibt der Weg über den Trainer bestehen.",
-          "In der Besprechung steht es auf deiner Teilnehmerkachel an der Stelle, an der sonst die Initialen stehen. Wer kein Bild hinterlegt hat, sieht dort weiterhin seine Initialen.",
-          "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen.",
-          "Administratoren können im Nutzer-Bereich ein Bild setzen oder entfernen — für Spieler ohne eigenes Gerät und als Notfallknopf bei einem unpassenden Bild."
+          "In der Besprechung steht das Foto auf deiner Teilnehmerkachel an der Stelle, an der sonst die Initialen stehen.",
+          "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen. Administratoren können im Nutzer-Bereich ein Bild setzen oder entfernen — für Spieler ohne eigenes Gerät und als Notfallknopf bei einem unpassenden Bild.",
+          "Beim Abmelden werden die persönlichen Karten geleert und zugeklappt. An einem gemeinsam genutzten Gerät sieht der Nächste nichts mehr von dir."
+        ]
+      },
+      {
+        title: "Unterlagen zum Herunterladen",
+        items: [
+          "In der Karte „Unterlagen zum Herunterladen“ legt der Verein Dateien für dich ab. Ansehen, ausdrucken, weitergeben — alles kommt als PDF.",
+          "Zwei Bereiche: „Für dich persönlich“ (zum Beispiel dein Vertrag oder die Bestätigung fürs erweiterte Führungszeugnis) und „Für alle“ (Merkblätter, Vordrucke, Formulare).",
+          "Persönliches sieht nur der, für den es bestimmt ist — niemand sonst kann es abrufen.",
+          "Jedes bereitliegende Dokument hat zwei Knöpfe: „Ansehen“ öffnet das PDF in einem neuen Tab, „Speichern“ legt es direkt auf dem Gerät ab.",
+          "Die Geschäftsstelle sieht, wann ein Dokument angesehen oder gespeichert wurde — damit ist belegt, dass es angekommen ist. In der Karte steht das offen dabei.",
+          "Liegt etwas Neues für dich bereit, steht am Tab „Mein Konto“ eine kleine rote Zahl, und die Karte klappt von selbst auf. Die Zahl verschwindet, sobald du hineingeschaut hast.",
+          "Bereitgestellt wird in den Dokumentenvorlagen. Spielerkonten sehen den Bereich nicht."
+        ]
+      },
+      {
+        title: "Privatnachrichten an einzelne Personen",
+        items: [
+          "Über die Karte „Privatnachrichten“ kann jeder, der in irgendeinem Werkzeug Bearbeiten-Recht hat, einzelne Personen anschreiben — zum Beispiel, weil noch eine Unterlage fehlt.",
+          "Die Nachricht geht drei Wege gleichzeitig: sie bleibt im Postfach liegen, kommt als E-Mail und meldet sich auf dem Handy.",
+          "Auf die E-Mail kann man direkt antworten — die Antwort geht an den Absender, nicht an den Verein. In der App selbst gibt es keine Antwortfunktion.",
+          "Der Absender sieht, ob die Nachricht gelesen wurde, und nach dem Verschicken, wen sie wirklich erreicht hat. Wer keine E-Mail hinterlegt oder kein Handy angemeldet hat, ist schon vor dem Anhaken gekennzeichnet.",
+          "Angeschrieben werden können nur Mitarbeiterinnen und Mitarbeiter des Vereins, keine Spielerkonten. Bearbeiter erreichen höchstens zehn Personen je Nachricht, Administratoren mehr — für eine Nachricht an alle bleibt die Rundnachricht im Reiter „Einstellungen“.",
+          "Wer keine Meldungen aufs Handy möchte, schaltet unter „Benachrichtigungen aufs Handy“ den Punkt „Persönliche Nachrichten“ aus. Die E-Mail kommt weiterhin.",
+          "Der Administrator sieht in den Einstellungen ein Protokoll: wer wann an wen geschrieben hat. Der Inhalt steht dort bewusst nicht — weder Überschrift noch Text.",
+          "Nachrichten verschwinden von selbst: gelesene nach 90 Tagen, ungelesene nach einem Jahr. Löschen kann jeder seine eigenen jederzeit.",
+          "Liegt eine ungelesene Nachricht bereit, steht eine kleine rote Zahl am Tab „Mein Konto“ — sie zählt zusammen mit bereitliegenden Unterlagen und verschwindet, sobald du die Nachricht als gelesen markierst.",
+          "Lange Listen werden nach 20 Einträgen gekürzt, ein Knopf zeigt den Rest. Ungelesene Nachrichten stehen dabei immer da, auch wenn sie älter sind.",
+          "Achtung: Überschrift und Text stehen sichtbar auf dem Sperrbildschirm des Empfängers und in seinem Postfach. Nichts Vertrauliches hineinschreiben — die Schreibmaske sagt das noch einmal an."
         ]
       },
       {
@@ -1413,15 +594,148 @@ const APP_CHANGELOG = [
         ]
       },
       {
+        title: "Die Übersicht der Werkzeuge",
+        items: [
+          "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel trägt ihr eigenes Symbol, damit sie sich beim Überfliegen der Startseite wiederfinden lässt.",
+          "Über den Werkzeugen steht ein Umschalter: Kacheln oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
+          "Der Knopf „Anordnen“ schaltet das Verschieben ein. Erst dann erscheinen die Greifpunkte ⠿ — in der Kachelansicht oben links, in der Listenansicht am Anfang der Zeile —, und erst dann lassen sich die Werkzeuge innerhalb ihrer Kategorie umsortieren, mit Maus wie mit dem Finger. Solange angeordnet wird, führt kein Klick versehentlich in ein Werkzeug.",
+          "Ansicht und Reihenfolge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich.",
+          "Neben dem Umschalter steht ein Suchfeld. Es ist gleich da — nichts aufklappen, einfach hineintippen. Gesucht wird ausschließlich im Namen des Werkzeugs; mehrere Wörter grenzen weiter ein, die Reihenfolge ist egal. Groß- und Kleinschreibung sowie Umlaute sind dabei egal: „platze“ und „plaetze“ finden beide die Platzbelegung.",
+          "Zurücknehmen lässt sich die Suche mit dem ✕ im Feld oder mit der Escape-Taste. Gespeichert wird sie nicht: beim nächsten Aufruf steht die vollständige Übersicht da.",
+          "Zwei Knöpfe daneben filtern die Übersicht: „✉️ Mail“ zeigt nur die Werkzeuge, die E-Mails nach außen verschicken, „🔔 Push“ nur die, die sich auf dem Handy melden. Beide zusammen gedrückt zeigt die Werkzeuge, die beides tun; ein zweiter Druck nimmt einen Filter zurück. Der Filter lässt sich mit der Suche kombinieren und wird beim Abmelden zurückgenommen.",
+          "Suchen und Filtern gehen bewusst nicht gleichzeitig mit „Anordnen“ — beim Verschieben in einer gefilterten Liste würde die eigene Reihenfolge der ausgeblendeten Werkzeuge verloren gehen.",
+          "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
+          "Die Trainerdaten-Kachel zeigt an, ob die eigenen Pflichtangaben vollständig sind. Gezählt werden Anschrift, Telefon und E-Mail, bei allen mit Trainervertrag zusätzlich IBAN, Bankname und die Erklärung zur Nebentätigkeit; wer „andere Einnahmen“ angekreuzt hat, muss auch deren Höhe angegeben haben. Der BIC bleibt freiwillig. Wer keinen Trainervertrag bekommt, sieht eine Bankverbindung im Formular gar nicht.",
+          "Einzelne Kacheln sind bewusst öffentlich, weil sie Leute erreichen sollen, die noch kein Vereinskonto haben: der Mitgliedsantrag, die Anmeldung für den Nachwuchs, der externe Fahrtenbuch-Link und der Kinder- und Jugendschutz. Diese Links lassen sich weitergeben und auf der Vereinsseite verlinken.",
+          "Unter den Kacheln steht ein Bereich „🔗 Nützliche Links“ mit Adressen anderer Webseiten — zum Beispiel dem Fußball-Verband oder der Vereins-Homepage. Gepflegt wird er von Administratoren unter Einstellungen → „Links auf der Startseite“: Name, Adresse, Symbol und eine kurze Erklärung, die Reihenfolge über ↑ und ↓. Die Links sind für jeden Besucher sichtbar, auch ohne Anmeldung — dort gehört also nichts Internes hinein. Solange kein Link eingetragen ist, bleibt der Bereich ganz weg.",
+          "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung. Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",
+          "Kacheln, Verlinkungen aus Neuigkeiten und das Termine-Widget öffnen im selben Tab; jedes Werkzeug hat oben einen Weg zurück zum Dashboard.",
+          "Der Reiter „Info“ beschreibt, wofür die einzelnen Reiter da sind, was die App mit den Eingaben macht und wo etwas anderes hingehört. Er ist nur für Angemeldete sichtbar."
+        ]
+      },
+      {
+        title: "Neuigkeiten",
+        items: [
+          "Über den Kacheln laufen die Vereinsneuigkeiten als Karussell: eine Meldung sichtbar, per Pfeil blätterbar, mit Positionsanzeige.",
+          "Gepflegt werden sie im Reiter „Einstellungen“ — anlegen, ändern, löschen, mit Typ, Datum, Titel, Text und wahlweise einer Verknüpfung. Verknüpfen lässt sich ein Werkzeug oder der Ideen-Tab; ein Klick auf die Meldung führt dann direkt dorthin. Spielerkonten sehen den Ideen-Tab nicht — für sie steht eine solche Meldung ohne Link da, statt ins Leere zu führen.",
+          "Jede Meldung lässt sich mit einem Emoji bereagieren. Eine Reaktion je Person und Meldung; ein erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt. Wer mit der Maus über ein Emoji fährt, sieht die Namen der Personen, die so reagiert haben; am Handy bleibt es beim Zähler.",
+          "An eine Meldung lassen sich bis zu vier Bilder oder Videos hängen (JPEG, PNG, GIF, WebP, MP4, WebM — je bis 10 MB). Sie erscheinen als kleine Vorschau unter der Meldung; ein Klick öffnet sie formatfüllend.",
+          "Für längere Videos gibt es zusätzlich ein Link-Feld — etwa für YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nie ungefragt eingebettet.",
+          "Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar — genau wie die Meldungen selbst. Wird eine Meldung gelöscht, sind ihre Bilder sofort nicht mehr erreichbar.",
+          "Neuigkeiten sind Vereinsinterna und erscheinen erst nach dem Anmelden, samt Zählern und Namen. Wer nicht angemeldet ist, bekommt sie gar nicht erst übertragen.",
+          "Eine Meldung kann zusätzlich als Push-Nachricht rausgehen — dafür gibt es beim Anlegen ein Häkchen. Es ist immer aus, bis es jemand setzt: eine Push-Nachricht lässt sich nicht zurückholen. Vor dem Versand fragt die Seite noch einmal nach und zeigt, was auf den Handys stehen wird. Wählbar ist, wer sie bekommt: alle Mitarbeiter ohne Spielerkonten, oder wirklich alle Konten.",
+          "Meldungen verschwinden 14 Tage nach ihrem Datum automatisch — samt angehängter Bilder und Videos und der Reaktionen darauf. Wer eine Meldung länger stehen lassen will, setzt ihr Datum neu; dann läuft die Frist von vorn."
+        ]
+      },
+      {
+        title: "Bildschirmvideos für die Neuigkeiten",
+        items: [
+          "Beim Schreiben einer Meldung gibt es neben „Bild oder Video hinzufügen“ auch „Bildschirmvideo aufnehmen“: eine kurze Vorführung selbst aufzeichnen, statt sie in Worten zu beschreiben.",
+          "Unter dem Mauszeiger liegt im Video ein Kreis, und jeder Klick hinterlässt einen kurzen roten Ring — so ist beim Zusehen wirklich zu erkennen, wo gedrückt wurde. Bei einer reinen Bildschirmaufnahme zeichnet der Browser den Mauszeiger nicht mit; ohne diesen Kreis wäre gar nicht zu sehen, wohin die Maus zeigt.",
+          "Aufnehmen lässt sich ein einzelnes Vereins-Werkzeug, das Dashboard, die Tools-Übersicht selbst, oder frei ein beliebiges Fenster des Rechners. Die Klick-Kreise gibt es bei den ersten dreien — von Klicks außerhalb des Browsers erfährt eine Internetseite grundsätzlich nichts.",
+          "Beginnt die Aufnahme im Rahmen auf dem Dashboard, lässt sich von dort in ein Werkzeug klicken und die Aufnahme läuft mit — so wird ein ganzer Weg am Stück gezeigt, von der Kachel bis in die App. Die Werkzeuge stehen dabei in derselben Reihenfolge zur Wahl, in der sie auch auf der eigenen Übersicht liegen.",
+          "Die Länge ist begrenzt und die Bildqualität wird vorher passend eingestellt, damit das fertige Video sicher unter die Anhang-Grenze von 10 MB passt. Während der Aufnahme laufen Zeit und Größe in einer Leiste am unteren Rand mit; diese Leiste wird aus dem Bild herausgeschnitten und steht nicht im fertigen Video.",
+          "Die Aufnahme beginnt immer oben auf der Übersicht, obwohl der Knopf im Einstellungen-Bereich steht — sonst wäre das erste Bild jeder Vorführung das Pflege-Formular. Nach dem Beenden geht es automatisch zurück zum angefangenen Meldungs-Entwurf.",
+          "Ist die Aufnahme fertig, lässt sie sich ansehen und mit einem Knopf direkt an die Meldung hängen — oder herunterladen, wenn sie woanders gebraucht wird.",
+          "Aufgenommen wird als MP4, damit das Video auch auf älteren iPhones abspielt. Auf dem Handy selbst gibt es das Aufnehmen nicht: Bildschirmaufnahme im Browser können nur die Rechner-Browser."
+        ]
+      },
+      {
+        title: "Nächste Termine",
+        items: [
+          "Das Widget zeigt bis zu acht anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten Einträge aus dem Abwesenheitskalender, sofern man darauf Zugriff hat.",
+          "Private Termine stehen in einem eigenen Bereich darunter und nur bei denen, die sie angelegt haben oder mit denen sie geteilt wurden.",
+          "Hat laut Trainerdaten jemand Geburtstag, steht das am Tag selbst ganz oben im Widget — ohne Geburtsjahr.",
+          "Zu Terminen mit Umfrage lässt sich direkt aus dem Dashboard zusagen.",
+          "Über den Terminen steht der nächste Ablauf aus dem Ablaufplan samt Datum und Anzahl der Punkte; ein Klick führt hinein. Es ist bewusst nur der eine nächste Ablauf und nur eine Zeile — jeder Punkt einzeln hätte die Terminliste daneben verdrängt."
+        ]
+      },
+      {
+        title: "Meine ToDos und der Materialcontainer-Code",
+        items: [
+          "Der Knopf „Meine ToDos“ im Kopfbereich öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
+          "Der Zähler am Knopf meldet, was offen ist. Er wird rot, wenn etwas überfällig ist.",
+          "Hier steht nur, was man sich selbst notiert. Was einem anderen aufgetragen wird, gehört in die Vereinsaufgaben — dorthin führt ein Knopf.",
+          "Der Knopf „Materialcontainercode“ zeigt den Code des Zahlenschlosses am Materialcontainer. Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",
+          "Der Code wird erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert. An unangemeldete Besucher geht er nie, und Spielerkonten bekommen ihn nicht — bei rund 200 Konten wäre das das Gegenteil eines Schlosses."
+        ]
+      },
+      {
+        title: "Unterschriften anfordern",
+        items: [
+          "Der Knopf „Unterschriften anfordern“ im Kopfbereich trägt den Unterschriften-Weg: ein PDF an eine Person schicken, die es am Bildschirm unterschreiben muss.",
+          "Der Absender legt fest, wo die Unterschrift stehen soll. Tut er es nicht, darf der Unterzeichner die Stelle selbst wählen; wählt niemand eine, kommt eine Nachweisseite ans Ende. Wer die Stelle schon beim Anfordern setzt, nimmt dem Unterzeichner diese Wahl ab.",
+          "Ein Unterschriftsfeld ist immer breiter als hoch; ein schmales, hohes Rechteck wird abgelehnt. Die Unterschrift wird ins Feld eingepasst statt darauf gestreckt — das Blatt sieht so aus wie die Vorschau vor dem Absenden.",
+          "Unterschrieben wird per Freihand-Pad in der eigenen Sitzung. Den Zeitstempel setzt der Server — dadurch ist die Unterschrift an die Person gebunden.",
+          "Nur PDF, hart geprüft. Ein unterschriebenes Word-Dokument bliebe editierbar und wäre als Nachweis wertlos.",
+          "Bei mehreren Empfängern unterschreibt jeder eine eigene Kopie. Ablehnen ist möglich, verlangt aber eine Begründung.",
+          "Auf Wunsch wird der Empfänger zusätzlich per E-Mail benachrichtigt. Das ist ein Häkchen je Vorgang und steht bei jedem Öffnen wieder auf aus; der Betreff nennt den Dokumenttitel bewusst nicht.",
+          "Den Knopf sieht nur, wer Unterschriften anfordern darf — oder wer selbst ein offenes Dokument hat. Nach dem Unterschreiben verschwindet er wieder.",
+          "Das unterschriebene Dokument bleibt erhalten, auch wenn die zugehörige Erinnerung nach 14 Tagen abläuft. Einsehen dürfen es die Beteiligten und Administratoren."
+        ]
+      },
+      {
+        title: "Ideen und Feedback & Hilfe",
+        items: [
+          "Im Reiter „💡 Ideen“ steht, was wir im Verein anpacken sollten: Überschrift eintippen, absenden, fertig. Der Text darunter ist freiwillig.",
+          "Gemeint ist alles rund um den Verein — ein Fest, eine Aktion, etwas für die Jugend, für die Mitglieder oder ums Gelände. Was an den Werkzeugen selbst hakt oder fehlt, gehört in „Feedback & Hilfe“.",
+          "Alle angemeldeten Mitarbeiter sehen alle Ideen — man erkennt also sofort, ob jemand dasselbe schon vorgeschlagen hat. Spielerkonten sehen den Reiter nicht.",
+          "Mit 👍 kannst du einer Idee zustimmen. Sichtbar ist nur die Zahl, nie wer geklickt hat.",
+          "Wer möchte, kreuzt „Anonym einreichen“ an. Den anderen wird der Name dann nicht angezeigt — die Vereinsleitung sieht ihn, damit Rückfragen möglich bleiben.",
+          "Jede Idee hat einen Zustand: Neu, In Arbeit, Umgesetzt oder Nicht geplant. Umgesetztes und Abgelehntes rutscht in einen zugeklappten Block ans Ende der Liste.",
+          "Solange deine Idee auf „Neu“ steht, kannst du sie noch ändern oder zurückziehen. Sobald daran gearbeitet wird, steht sie fest.",
+          "Eine Antwort der Vereinsleitung liest nur, wer die Idee eingereicht hat — sie steht bei der Idee im Reiter. Es gibt dazu bewusst keine Push-Nachricht, schau also ab und zu rein.",
+          "Im Reiter „Feedback & Hilfe“ meldest du, was an den Werkzeugen stört oder kaputt ist. Auf jede Einreichung kann geantwortet werden — direkt beim Eintrag im Einstellungen-Bereich.",
+          "Wer etwas eingereicht hat, findet die Antwort unter „Meine Einreichungen“, zusammen mit dem eigenen Text und dem Stand (offen oder erledigt). Zur Antwort kommt eine Push-Nachricht aufs Handy, einzeln abschaltbar wie jeder andere Anlass.",
+          "Eine Antwort lässt sich nachträglich ändern; das Leeren des Feldes nimmt sie wieder zurück. Eine erneute Push-Nachricht geht nur raus, wenn wirklich neu geantwortet wurde."
+        ]
+      },
+      {
+        title: "Benachrichtigungen aufs Handy",
+        items: [
+          "Die Toolbox kann sich direkt auf dem Gerät melden, ohne den Umweg über eine E-Mail. Eingeschaltet wird das im Reiter „Mein Konto“ unter „Benachrichtigungen aufs Handy“ — für jedes Gerät einmal.",
+          "Jeder Anlass ist einzeln an- und abschaltbar: ein im Vereinskalender geteilter oder geänderter Termin, eine Vereinsaufgabe samt Rückfragen und Statusmeldungen, ein Dokument, das auf deine Unterschrift wartet, eine persönliche Nachricht, eine Antwort auf deine Einreichung, sowie Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport, Spieltagscrew und das Fahrtenbuch.",
+          "Der Ablaufplan erinnert 15 Minuten vor dem eigenen Punkt, wenn eine beteiligte Mannschaft im Profil steht.",
+          "Der Busplan meldet sich drei Tage bevor eine Mannschaft ihren Bus hat, mit den Regeln des zugesagten Busses — an ihre Trainer. Der Schalter betrifft nur die Handy-Nachricht, die E-Mail kommt weiterhin. Wer erinnert wird, richtet sich nach den Mannschaften im eigenen Profil; steht dort nichts, kommt auch nichts an, und der Busplan zeigt in der Übersicht an, für welche Mannschaft das gerade der Fall ist.",
+          "Die Nachricht nennt nie einen Namen, einen Termin- oder Dokumenttitel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können. Was drinsteht, sieht man nach dem Antippen in der App.",
+          "Nachrichten gehen mit hoher Dringlichkeit raus, damit das Handy sie nicht im Energiesparmodus zurückhält und gesammelt zustellt.",
+          "Die E-Mails bestehen unverändert weiter. Benachrichtigungen kommen dazu, sie ersetzen nichts — wer sie nicht einschaltet, merkt keinen Unterschied.",
+          "In der Liste der angemeldeten Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus.",
+          "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt — Apple bietet Benachrichtigungen im normalen Safari-Fenster nicht an. Nötig ist außerdem iOS 16.4 oder neuer, also ein iPhone 8 oder jünger. Auf Android und am Rechner genügt der Browser.",
+          "Wird die Abfrage einmal abgelehnt, lässt sie sich nicht erneut stellen — das erlaubt nur der Browser selbst. In dem Fall steht in der Karte, wo es sich wieder freischalten lässt.",
+          "Die Schalter werden vom Server geliefert. Kommt ein Anlass dazu, erscheint er dort von selbst."
+        ]
+      },
+      {
+        title: "Nachricht an alle Handys",
+        items: [
+          "Administratoren können im Einstellungen-Bereich eine eigene Push-Nachricht schreiben und sofort verschicken — für Kurzfristiges, das zu keinem Werkzeug gehört: Training fällt aus, Platz gesperrt, Halle zu.",
+          "Zur Wahl steht, ob nur die Mitarbeiter oder alle Konten einschließlich der Spieler angeschrieben werden.",
+          "Unter dem Empfängerkreis steht „Eingrenzen“. Dort lassen sich einzelne Gruppen anhaken (Geschäftsstelle, Trainer, Vorstand …) und zusätzlich einzelne Personen — mit Suchfeld, weil die Liste alle Konten führt. Ohne Haken geht die Nachricht an den ganzen gewählten Kreis.",
+          "Die Haken können den Kreis nur verkleinern, nie erweitern. Wer ein Spielerkonto auswählt, während oben „Mitarbeiter — ohne Spielerkonten“ steht, erreicht es nicht — beim Umschalten des Kreises wird es aus der Auswahl genommen und das steht auch da.",
+          "Eine Auswahl, die niemanden trifft (leere Gruppe), wird abgelehnt statt stillschweigend an alle zu gehen — der häufigste und teuerste Bedienfehler an dieser Stelle.",
+          "Nach dem Absenden fällt die Eingrenzung zurück auf „alle im gewählten Kreis“: sie gilt für die eine Nachricht und soll die nächste nicht heimlich beschneiden.",
+          "Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden, und wie viele es insgesamt sind — „erreicht 15 von 87 Personen“. Eine Zahl ohne Vergleich klingt nach einer vollständigen Zustellung, und genau das ist sie meistens nicht. Die Sicherheitsabfrage nennt dieselbe Zahl noch einmal, denn zurückholen lässt sich eine Push-Nachricht nicht.",
+          "Darunter lassen sich zwei Listen aufklappen: wer die Nachricht bekommt und wer nicht. Die zweite ist die wichtigere — an ihr ist zu sehen, wen man ansprechen muss, damit er die Benachrichtigungen einschaltet. Beide Listen sieht nur, wer die Nachricht auch verschicken darf.",
+          "Eine Push-Nachricht erreicht nur, wer die Übersicht als App auf dem Startbildschirm abgelegt und danach in seinem Konto die Benachrichtigungen eingeschaltet hat. Auf dem iPhone gibt es Push ausschließlich für abgelegte Apps, im Safari-Fenster gar nicht.",
+          "Unter der Überschrift und unter dem Text steht je ein Knopf „🙂 Emoji“. Ein Druck darauf klappt eine Auswahl auf; ein Druck auf ein Zeichen setzt es genau dort ein, wo die Schreibmarke gerade steht. Zur Wahl stehen die Zeichen, um die es in einer kurzfristigen Mitteilung tatsächlich geht: Achtung, Fällt aus, Findet statt, Termin, Uhrzeit, Bus, Parken, Regen, Gewitter, Frost, Gesperrt, Feier und weitere.",
+          "Ein Emoji zählt wie zwei Zeichen. Passt es nicht mehr in die 100 bzw. 200 Zeichen, sagt die App das — angehängt und dann vom Server halbiert würde daraus auf dem Sperrbildschirm ein leeres Kästchen.",
+          "Unter „Zuletzt verschickt“ stehen die drei neuesten Nachrichten mit Absender, Zeitpunkt, erreichter Anzahl und der Eingrenzung. Protokolliert werden 30 — eine Push-Nachricht lässt sich nicht zurückholen, wer wann was an alle geschickt hat, ist der Nachweis dahinter.",
+          "Empfangen wird sie nur von denen, die im Reiter „Mein Konto“ den Schalter „Mitteilungen des Vereins“ anhaben. Er ist wie alle anderen von Anfang an eingeschaltet und lässt sich einzeln abstellen."
+        ]
+      },
+      {
         title: "Nutzer und Gruppen verwalten",
         items: [
           "Nutzer bearbeiten, löschen oder ihr Passwort zurücksetzen. Dem letzten Administrator lässt sich der Status nicht entziehen, und löschen lässt er sich auch nicht.",
           "Wird ein Vor- oder Nachname korrigiert, zieht der Anmeldename automatisch mit um. Kollidiert er mit einem bestehenden Konto, bleibt er unverändert und es kommt ein Warnhinweis.",
           "Text-Massenimport für größere Listen: ein Name je Zeile. Alle durchlaufen danach den normalen Erstanmelde-Weg.",
           "Die Nutzerliste hat genau zwei Abschnitte, Personal und Spieler, damit jedes Konto an genau einer Stelle steht. Darüber filtern eine Namenssuche und eine Gruppenauswahl.",
+          "Beim Anlegen wird mitgeschrieben, ob ein Trainervertrag vorgesehen ist. Ohne das Häkchen „Vertrag benötigt“ und ohne Mitgliedschaft in der Gruppe „Trainer“ steht der Eintrag in den Trainerdaten sofort auf „Nur Kontaktdaten“, und die Vertragsfelder sind dort ausgeblendet — Geschäftsstelle und Vorstand bekommen also keine Bankverbindung und keine Anlage 1 vorgelegt.",
           "Gruppen anlegen und Mitglieder zuordnen, direkt in der Nutzerliste oder in der Gruppenverwaltung.",
           "Ein Knopf „Umbenennen“ korrigiert einen Tippfehler im Gruppennamen. Geändert wird ausschließlich die Beschriftung — Mitglieder, Sichtbarkeiten, Bearbeiten- und Administrieren-Rechte bleiben unangetastet, intern führt die Gruppe weiter denselben unveränderlichen Schlüssel.",
-          "Beim allerersten Besuch, wenn es noch kein Konto gibt, öffnet sich das Formular zum Anlegen des ersten Administrators. Danach ist dieser Weg dauerhaft zu."
+          "Die Gruppen „Trainer“ und „Spieler“ sind geschützt: Umbenennen und Löschen sind für sie nicht möglich, und ein zweiter Eintrag mit demselben Namen lässt sich nicht anlegen. Sie werden im ganzen Gateway an ihrem Namen erkannt — wer sie umbenennt, schaltet still die Vertragspflicht ab. Alle anderen Gruppen bleiben frei änderbar.",
+          "Der Knopf „📊 Admin-Dashboard“ steht ganz oben im Reiter „Einstellungen“ und zeigt die Quoten des Vereins sowie die zehn jüngsten Anmeldungen. In der Aktivitäts-Auswertung stehen je Person alle Werkzeuge, die sie im Monat benutzt hat, das Häufigste zuerst."
         ]
       },
       {
@@ -1432,9 +746,26 @@ const APP_CHANGELOG = [
           "Bearbeiten erlaubt das Ändern von Daten und schließt Export, Druck und PDF ein.",
           "Administrieren schaltet die app-internen Verwaltungsfunktionen frei — etwa den vollen Trainerdaten-Zugriff samt Bankverbindung oder die Rechte-Matrix im Kadermanager. Dafür muss niemand globaler Administrator sein.",
           "Administrieren schließt Bearbeiten ein, und wer bearbeiten oder administrieren darf, sieht das Werkzeug automatisch. „Bearbeiten ohne Sehen“ lässt eine App nicht länger unsichtbar.",
-          "Als sensibel eingestufte Werkzeuge stehen im Sichtbarkeits-Bereich in einer eigenen aufklappbaren Sektion ganz oben und tragen ein Warnzeichen, damit ihre Rechtevergabe bewusst passiert. Alle übrigen stehen darunter in der Sektion „Weitere Tools“.",
-          "Welches Werkzeug als sensibel gilt, legt ein Häkchen je Zeile fest — dafür braucht es keine Code-Änderung.",
-          "Entfernt man einer Gruppe die letzte Zuordnung, wird das Werkzeug wieder versteckt statt für alle sichtbar. Eine gelöschte Gruppe verschwindet automatisch aus allen Zuordnungen."
+          "Als sensibel eingestufte Werkzeuge stehen im Sichtbarkeits-Bereich in einer eigenen aufklappbaren Sektion ganz oben und tragen ein Warnzeichen, damit ihre Rechtevergabe bewusst passiert. Alle übrigen stehen darunter in der Sektion „Weitere Tools“. Innerhalb beider Sektionen sind die Werkzeuge alphabetisch sortiert.",
+          "Welches Werkzeug als sensibel gilt, legt ein Häkchen je Zeile fest — dafür braucht es keine Code-Änderung. Beim Fußballcamp zum Beispiel bekommt jemand mit Sehen-Recht die Gesundheitsangaben der Kinder gar nicht erst geschickt.",
+          "Entfernt man einer Gruppe die letzte Zuordnung, wird das Werkzeug wieder versteckt statt für alle sichtbar. Eine gelöschte Gruppe verschwindet automatisch aus allen Zuordnungen.",
+          "Lassen sich die gespeicherten Rechte gerade nicht laden, steht ein roter Kasten über der Liste und Speichern ist gesperrt — im Sichtbarkeits-Panel wie im Bereich „Apps“ einer Gruppe. Ein Knopf „Erneut laden“ holt sie nach.",
+          "„💾 Rechte sichern“ lädt alle Rechte als Datei auf den eigenen Rechner — Sehen, Bearbeiten, Administrieren und Auto-Eintrag für jedes Werkzeug. Am besten nach jeder größeren Änderung. „Sicherung einspielen“ ist der Weg zurück: Datei auswählen, die Abfrage nennt Datum und Anzahl, danach ist der alte Stand wieder da. Gruppen, die es zwischenzeitlich nicht mehr gibt, werden vorher beim Namen genannt.",
+          "Mit der Testansicht im Reiter „Einstellungen“ sieht ein Administrator die Übersicht so, wie eine bestimmte Gruppe sie sieht. Das orange Zeichen „🎭 Testansicht ✕“ oben in der Kopfzeile beendet sie mit einem Klick, von jedem Reiter aus; der Reiter „Einstellungen“ bleibt währenddessen sichtbar, zeigt aber nur die Auswahl."
+        ]
+      },
+      {
+        title: "Mannschaften des Vereins",
+        items: [
+          "Im Bereich „Mannschaften“ in den Einstellungen steht jede Mannschaft genau einmal — mit Kurznamen (B1), langem Namen (B-Junioren 1) und Liga.",
+          "An jeder Mannschaft hängen die Leute, die sie betreuen, mit ihrer Rolle: Trainer, Co-Trainer, Torwarttrainer oder Betreuer. So sieht man sofort, welche Mannschaft noch niemanden hat.",
+          "Die Liste gilt je Saison. Beim Saisonwechsel einmal „Saison kopieren“ drücken und anpassen — der alte Stand bleibt zum Nachschlagen stehen.",
+          "„Vorschlag aus den Profilen“ liest, was heute in den Trainerprofilen steht, fasst gleiche Mannschaften zusammen und schlägt Kurznamen vor. Einträge, die nach einem Altersbereich oder einer Rolle aussehen statt nach einer Mannschaft, werden rot markiert.",
+          "Der Schalter „Trainerprofile aus dieser Liste füllen“ ist zunächst AUS. Erst einschalten, wenn die Liste steht: ab dann wird das Feld „Mannschaft(en)“ beim Nutzer berechnet statt getippt — und wer an keiner Mannschaft hängt, hat auch im Profil keine mehr.",
+          "Altersstufe und Nummer kommen aus dem Kurznamen: Wer „D2“ schreibt, bekommt automatisch D-Junioren und die 2, und die Zeile steht da, wo man sie sucht. Namen ohne erkennbares Muster (zum Beispiel „Alte Herren“) behalten die Stufe, die von Hand eingestellt wird.",
+          "Das Feld „Jahrgänge“ bleibt im Normalfall leer: dann steht der Jahrgang von selbst da, gerechnet aus Saison und Altersstufe. Bei den A-Junioren sind das in der Saison 2026/27 die Jahrgänge 2008 und 2009 — und in der nächsten Saison von allein 2009 und 2010. Ausgefüllt wird das Feld nur dort, wo sich nichts rechnen lässt: bei den Herren, bei den Mädchen oder bei einem Bambini-Kader über drei Jahrgänge. Ein Eintrag von Hand hat immer Vorrang.",
+          "Das Häkchen „In Übersichten anzeigen“ steht per Vorgabe. Nimmt man es weg, verschwindet die Mannschaft aus „Wer betreut welche Mannschaft“ im Werkzeug „Kontakte“ — bleibt aber vollständig in der Liste stehen und behält ihre Trainer. Gedacht ist das für Einträge, die keine echte Mannschaft sind, etwa „U12-U15“.",
+          "⚠️ Das ist ausdrücklich etwas anderes als „Archiviert“. Archivieren heißt aufgelöst und nimmt der Mannschaft auch die Trainer-Zuordnung — wer sie betreut hat, verliert sie in seinem Profil und damit flottenweit Filter und Rechte. Das Häkchen rührt daran nicht."
         ]
       },
       {
@@ -1443,15 +774,17 @@ const APP_CHANGELOG = [
           "Alle Vereins-Apps, die ihre Daten in derselben Nextcloud ablegen, nutzen diese eine Anmeldung. Kein eigenes Verbindungsformular, kein zusätzliches Passwort auf dem Gerät.",
           "Der Server prüft bei jedem Zugriff Anmeldung und Gruppenrechte und greift dann selbst auf die Cloud zu. Die Zugangsdaten dazu liegen nur dort.",
           "Ändern zwei Geräte gleichzeitig dieselbe Datei, wird das erkannt und gemeldet, statt still zu überschreiben.",
-          "Auch der gesamte E-Mail-Versand der Flotte läuft über diese Stelle — keine App verschickt selbst."
+          "Auch der gesamte E-Mail-Versand der Flotte läuft über diese Stelle — keine App verschickt selbst. Nachrichten an viele Empfänger gehen in Gruppen gleichzeitig raus; jeder bekommt weiterhin genau eine eigene Nachricht, und eine fehlerhafte Adresse zieht die anderen nicht mit."
         ]
       },
       {
-        title: "Bedienung am Handy",
+        title: "Am Handy und als App auf dem Startbildschirm",
         items: [
-          "Die Übersicht ist für das Handy gebaut; die Kacheln stapeln sich auf schmalen Bildschirmen.",
+          "Die Übersicht ist für das Handy gebaut; die Kacheln stapeln sich auf schmalen Bildschirmen, und die Kopfknöpfe tragen dort kürzere Beschriftungen.",
           "Eingabefelder sind mindestens 16 Pixel groß, damit der iPhone-Browser beim Antippen nicht ungefragt in die Seite hineinzoomt und verschoben stehen bleibt.",
-          "Auf schmalen Bildschirmen tragen die Kopfknöpfe kürzere Beschriftungen, damit die Kopfzeile nicht unnötig wächst."
+          "Angemeldete Nutzer finden im Kopfbereich den Knopf „Als App ablegen“. Danach startet die Toolbox wie eine eigene App, ohne Browser-Adressleiste.",
+          "Auf Android übernimmt das der Systemdialog. Auf dem iPhone geht es nur über Safari von Hand — der Knopf öffnet dort eine Anleitung: Teilen-Symbol, dann „Zum Home-Bildschirm“.",
+          "Ist die App abgelegt, verschwindet der Knopf. Er erscheint auch gar nicht erst, wo der Browser nichts anbieten kann."
         ]
       }
     ]
