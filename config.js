@@ -88,7 +88,7 @@ const TOOLS = [
     name: "Mitgliedsantrag Nachwuchs",
     description: "Neue Jugendspieler in einem Durchgang anmelden: Aufnahmeantrag nach § 4 und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband, unterschrieben am Handy. Nachweise wie Geburtsurkunde oder Spielerpass lassen sich als Foto mitschicken.",
     url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/nachwuchs.html",
-    icon: "⚽",
+    icon: "🧒",
     category: "Verein"
   },
   {
@@ -96,7 +96,7 @@ const TOOLS = [
     name: "Vereinsaufgaben",
     description: "Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer Historie. Zeigt auf einen Blick, wer was offen hat und wo etwas liegen bleibt.",
     url: "https://sc1911heiligenstadt.github.io/Vereinsaufgaben/",
-    icon: "🗂️",
+    icon: "✅",
     category: "Verein",
     mail: true,
     push: true
@@ -147,7 +147,7 @@ const TOOLS = [
     name: "Geschäftsstelle",
     description: "Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung.",
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
-    icon: "📋",
+    icon: "🏢",
     category: "Verein"
   },
   {
@@ -155,7 +155,7 @@ const TOOLS = [
     name: "Spielertool",
     description: "Bewertung und Förderung von Nachwuchsspielern im Vereinsbetrieb.",
     url: "https://sc1911heiligenstadt.github.io/spielertool-test/",
-    icon: "⚽",
+    icon: "⭐",
     category: "Verein"
   },
   {
@@ -189,7 +189,7 @@ const TOOLS = [
     name: "Personalkosten",
     description: "Personalkosten / Aufwandsentschädigungen der Mannschaften planen und auswerten (nur für berechtigte Gruppe).",
     url: "https://sc1911heiligenstadt.github.io/Personalkosten/",
-    icon: "💶",
+    icon: "💰",
     category: "Verein"
   },
   {
@@ -380,7 +380,7 @@ const TOOLS = [
     name: "Kleiderbörse",
     description: "Vereinskleidung, aus der ein Kind herausgewachsen ist, an andere Familien weitergeben — kostenlos. Eltern stellen ihr Teil mit Foto, Größe und Zustand über einen Link ein, ganz ohne Vereinskonto; nach der Freigabe steht es in der Börse. Wer etwas haben möchte, drückt einen Knopf, und die Anfrage geht als E-Mail direkt an die anbietende Familie — Namen und Kontaktdaten stehen dabei nie in der Börse. Ist das Teil vergeben, nimmt ein Klick aus der Mail es wieder heraus.",
     url: "https://sc1911heiligenstadt.github.io/kleiderboerse/",
-    icon: "👕",
+    icon: "♻️",
     category: "Verein",
     mail: true
   },
@@ -389,7 +389,7 @@ const TOOLS = [
     name: "Fußballcamp",
     description: "Fußballcamps anlegen, auf der Vereinsseite bewerben und die Anmeldungen der Kinder sammeln. Ein Camp wird mit Zeitraum, Platzzahl und Beitrag angelegt; steht es auf „Anmeldung offen“, erscheint es von selbst als Fenster auf der Homepage. Die Eltern melden ohne Vereinskonto an — welche Felder gefragt werden, entscheidet ihr je Camp. Ist das Camp voll, läuft eine Warteliste mit. Die Bestätigungsmail trägt Beitrag, Kontoverbindung und einen Link, über den die Eltern selbst ändern oder absagen. Dazu die Aufgaben für die Helfer: je Camp-Tag, mit Selbsteintrag wie in der Spieltagscrew.",
     url: "https://sc1911heiligenstadt.github.io/fussballcamp/",
-    icon: "⚽",
+    icon: "🏕️",
     category: "Verein",
     mail: true
   },
@@ -518,6 +518,20 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.48",
+    groups: [
+      {
+        title: "Jede Kachel hat wieder ihr eigenes Symbol",
+        items: [
+          "Der Fußball stand auf vier Kacheln gleichzeitig, und vier weitere Symbole waren doppelt vergeben. Beim Überfliegen der Startseite half das Bild dann nicht mehr beim Wiederfinden.",
+          "Neu: Mitgliedsantrag Nachwuchs ein Kind, Spielertool ein Stern, Fußballcamp ein Zelt, Vereinsaufgaben ein Haken, Geschäftsstelle ein Bürogebäude, Personalkosten ein Geldsack, Kleiderbörse das Recycling-Zeichen.",
+          "Kadermanager behält den Fußball, TrainerCheckliste die Klemmbrett-Liste, Vereinsbudget den Geldschein, Kleiderbestellung das Trikot und die Personalakte den Aktenordner.",
+          "Damit haben alle 40 Kacheln ein eigenes Symbol."
+        ]
+      }
+    ]
+  },
   {
     version: "1.47",
     groups: [
