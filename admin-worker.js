@@ -3357,10 +3357,11 @@ async function handleLivekitMute(request, body, env, authHeader, corsHeaders) {
 // der Personalakte vorbehalten. Trainerdaten selbst bleibt PROVISION_ONLY
 // (IBAN etc.) -- hier wird nur serverseitig gelesen und stark gefiltert.
 async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Trainerdaten parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, PROVISION_ONLY_PATHS.trainerdaten, { version: 1, trainer: [] });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
-  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const trainerdatenDoc = await datei();
   // "Heute" serverseitig ist ohne Zeitzonen-Bezug reines UTC -- Europe/Berlin
   // wird deshalb erzwungen, sonst wäre der Treffer in den ersten Stunden nach
   // Mitternacht MESZ/MEZ (UTC-Tageswechsel liegt davor) um bis zu zwei Stunden
@@ -3404,8 +3405,9 @@ async function handleKontakteListe(request, env, authHeader, corsHeaders) {
   // Trainerdaten-Datei enthaelt IBAN -- ausgeliefert wird davon wie bisher
   // NICHTS vor der Rechtepruefung, der Read ist fuer Unberechtigte reine Last.
   let cfgP = null, docP = null;
-  const session = await getVerifiedSession(request, env, authHeader, () => {
-    cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (userMayAccessTool schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
     docP = prefetchJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
   });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -3470,15 +3472,25 @@ async function handleKontakteListe(request, env, authHeader, corsHeaders) {
 // Trainerdaten-Satzes mit anschliessendem delete: die Quelldatei enthaelt IBAN,
 // Bankverbindung, Geburtsdatum und Vertragspfade.
 async function handleKontakteMannschaften(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // VIER Reads in EINER Runde (seit 2026-09-02): nutzer.json (Sitzung),
+  // sichtbarkeit.json (Rechte), Mannschaften und Trainerdaten starten gemeinsam.
+  // Vorher DREI serielle Runden -- der teuerste Handler der Kontakte-App.
+  // Herausgegeben wird weiter erst nach der Rechtepruefung.
+  let cfgP = null, mP = null, tP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (userMayAccessTool schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    mP = prefetchJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
+    tP = prefetchJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (session.art === USER_ART_SPIELER) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
-  if (!(await userMayAccessTool("kontakte", session, env, authHeader))) {
+  if (!(await userMayAccessTool("kontakte", session, env, authHeader, cfgP))) {
     return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
   }
 
-  const mDoc = await readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc());
-  const tDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const mDoc = await (mP || readJson(MANNSCHAFTEN_URL, authHeader, leeresMannschaftenDoc()));
+  const tDoc = await (tP || readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }));
 
   // Saisonwahl wie in mannschaftenAntwort: ohne Angabe die laufende, eine
   // andere nur, wenn es sie wirklich gibt.
@@ -3965,10 +3977,11 @@ async function attachChecklistSignaturen(out, rohSection, authHeader) {
 // hat und das volle trainerEintraege-Array Namen/Adressen/Unterschriften ALLER
 // anderen Trainer enthält (Minimal-Disclosure, wie list-birthdays-today).
 async function handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Checkliste parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, DAV_APPS.trainercheckliste, { trainerEintraege: [] });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const user = getOwn(session.usersDoc.users, session.username);
-  const checklisteDoc = await readJson(DAV_APPS.trainercheckliste, authHeader, { trainerEintraege: [] });
+  const checklisteDoc = await datei();
   // Gleiche Match-Konvention wie handlePersonalakteOverview: linkedUsername (falls
   // je gesetzt) vor Namensfallback; TrainerCheckliste kennt aktuell kein
   // linkedUsername-Feld, der Zweig ist also Zukunftsvorsorge, kein toter Code-Pfad.
@@ -4062,7 +4075,9 @@ async function handleUpdateGroupMembers(request, body, env, authHeader, corsHead
 // Gruppe konfigurierten Tools (Button "Bestehende Mitglieder jetzt eintragen").
 // Batch pro App (1 Read + 1 Write), idempotent — bereits vorhandene Einträge bleiben.
 async function handleProvisionGroup(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (sessionMitDatei, seit 2026-09-02);
+  // Admin- und Gruppen-Pruefung stehen wie bisher VOR dem await.
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const groupId = String(body.groupId || "");
@@ -4070,7 +4085,7 @@ async function handleProvisionGroup(request, body, env, authHeader, corsHeaders)
   const group = getOwn(usersDoc.groups || {}, groupId);
   if (!group) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
 
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await datei();
   const apps = provisionAppsForGroups(config, [groupId]);
   const members = (group.memberUsernames || [])
     .map((u) => getOwn(usersDoc.users, u))
@@ -4469,13 +4484,14 @@ async function handleGetMaterialcontainerCode(request, env, authHeader, corsHead
 // ist erlaubt und heißt "noch keiner hinterlegt" -- so lässt sich der Eintrag
 // auch wieder leeren, ohne dass ein alter Code stehen bleibt.
 async function handleSetMaterialcontainerCode(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const code = String(body.code == null ? "" : body.code).trim().slice(0, 60);
   const hinweis = String(body.hinweis == null ? "" : body.hinweis).trim().slice(0, 200);
 
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await datei();
   config.version = config.version || 1;
   config.materialcontainer = {
     code,
@@ -5619,7 +5635,8 @@ async function handleDokumentLoeschen(request, body, env, authHeader, corsHeader
 // Admin legt fest, welche Gruppen zuweisen dürfen. Read-modify-write wie
 // set-materialcontainer-code, damit tools/news/materialcontainer erhalten bleiben.
 async function handleSetAufgabenGruppen(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const vorhandene = (session.usersDoc && session.usersDoc.groups) || {};
@@ -5634,7 +5651,7 @@ async function handleSetAufgabenGruppen(request, body, env, authHeader, corsHead
     return raus;
   };
 
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await datei();
   config.version = config.version || 1;
   const bisher = (config.aufgaben && typeof config.aufgaben === "object") ? config.aufgaben : {};
   // Zwei getrennte Stufen in EINEM Objekt: Aufgaben zuweisen und Unterschriften
@@ -6941,13 +6958,14 @@ async function handleNewsDateiPut(request, body, env, authHeader, corsHeaders) {
 // nicht abrufbar -- eine gelöschte Meldung entzieht ihren Bildern sofort den
 // Zugang, ohne dass in Nextcloud etwas angefasst werden muss.
 async function handleNewsDateiGet(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, env.NEXTCLOUD_URL, { version: 1, tools: {} });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const id = String((body && body.id) || "");
   if (!FILE_ID_RE.test(id)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
 
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await datei();
   let treffer = null;
   for (const n of (Array.isArray(config.news) ? config.news : [])) {
     for (const m of (n && Array.isArray(n.medien) ? n.medien : [])) {
@@ -7296,14 +7314,15 @@ async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
 // Leerer Text loescht die Antwort wieder (Tippfehler zuruecknehmen) und schickt
 // dann natuerlich nichts.
 async function handleFeedbackAntwort(request, body, env, authHeader, corsHeaders, execCtx) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Datei parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, FEEDBACK_URL, { version: 1, entries: [] });
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const id = String(body.id || "").trim();
   if (!/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
   const text = String(body.text || "").trim().slice(0, 2000);
 
-  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  const doc = await datei();
   doc.version = doc.version || 1;
   doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
 
@@ -7348,10 +7367,11 @@ async function handleFeedbackAntwort(request, body, env, authHeader, corsHeaders
 // ⚠️ Gefiltert wird auf session.username, NICHT auf einen Namen aus dem Body --
 // sonst waere das die admin-only Liste fuer jeden.
 async function handleMeineFeedbacks(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Datei parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, FEEDBACK_URL, { version: 1, entries: [] });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
-  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  const doc = await datei();
   const alle = Array.isArray(doc.entries) ? doc.entries : [];
   const meine = alle
     .filter((f) => f && normalizeUsername(String(f.username || "")) === normalizeUsername(session.username))
@@ -9699,12 +9719,18 @@ async function handleSchulsportFreigabeSenden(request, body, env, authHeader, co
 
 // ---------- schulsport-archiv-load ----------
 async function handleSchulsportArchivLoad(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Rechte, Archiv.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (userMayAccessTool schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(SCHULSPORT_ARCHIV_URL, authHeader, { version: 1, schuljahre: [] });
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await userMayAccessTool("schulsport", session, env, authHeader))) {
+  if (!(await userMayAccessTool("schulsport", session, env, authHeader, cfgP))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
-  const data = await readJson(SCHULSPORT_ARCHIV_URL, authHeader, { version: 1, schuljahre: [] });
+  const data = await (docP || readJson(SCHULSPORT_ARCHIV_URL, authHeader, { version: 1, schuljahre: [] }));
   return json({ data }, 200, corsHeaders);
 }
 
@@ -9795,14 +9821,20 @@ async function handleSchulsportSchuljahrArchivieren(request, body, env, authHead
 
 // ---------- schulsport-erinnerung-push ----------
 async function handleSchulsportErinnerungPush(request, body, env, authHeader, corsHeaders, execCtx) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Rechte, App-Datei.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (resolveEditPermission schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(DAV_APPS["schulsport"], authHeader, null);
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveEditPermission("schulsport", session, env, authHeader))) {
+  if (!(await resolveEditPermission("schulsport", session, env, authHeader, cfgP))) {
     return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
   }
   const massnahmeId = String(body.massnahmeId || "");
 
-  const doc = await readJson(DAV_APPS["schulsport"], authHeader, null);
+  const doc = await (docP || readJson(DAV_APPS["schulsport"], authHeader, null));
   if (!doc) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
 
   const heute = new Date();
@@ -10328,12 +10360,18 @@ async function handleWikiFrageLog(request, body, env, authHeader, corsHeaders) {
 // ---------- wiki-fragen-list ----------
 // Neueste zuerst. Bearbeiten-Recht statt blosser Sichtbarkeit, siehe Kopf.
 async function handleWikiFragenList(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Rechte, Protokoll.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (resolveEditPermission schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(VEREINSWIKI_FRAGEN_URL, authHeader, null);
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveEditPermission("vereinswiki", session, env, authHeader))) {
+  if (!(await resolveEditPermission("vereinswiki", session, env, authHeader, cfgP))) {
     return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
   }
-  const doc = normalisiereFrageProtokoll(await readJson(VEREINSWIKI_FRAGEN_URL, authHeader, null));
+  const doc = normalisiereFrageProtokoll(await (docP || readJson(VEREINSWIKI_FRAGEN_URL, authHeader, null)));
   return json({ fragen: doc.fragen.slice().reverse(), max: VEREINSWIKI_FRAGEN_MAX }, 200, corsHeaders);
 }
 
@@ -12402,10 +12440,11 @@ async function pushAbosMutieren(authHeader, aendern) {
 // ---------- Aktionen fuer den Konto-Tab ----------
 
 async function handlePushStatus(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Abo-Datei parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, PUSH_ABOS_URL, leerePushDoc());
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
-  const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  const doc = await datei();
   const username = normalizeUsername(session.username);
   return json({
     ok: true,
@@ -13182,11 +13221,17 @@ async function handlePushRundnachricht(request, body, env, authHeader, corsHeade
 // und beides will das Panel im selben Moment -- zwei Aktionen waeren vier Reads
 // fuer eine Ansicht.
 async function handlePushRundnachrichtVerlauf(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Abos, Verlauf. Vorher
+  // DREI serielle Runden. Die Admin-Pruefung steht wie bisher VOR dem await.
+  let abosP = null, rundP = null;
+  const session = await getVerifiedSession(request, env, authHeader, () => {
+    abosP = prefetchJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+    rundP = prefetchJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, leereRundDoc());
+  });
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
-  const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
-  const rundDoc = await readJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, leereRundDoc());
+  const abosDoc = await (abosP || readJson(PUSH_ABOS_URL, authHeader, leerePushDoc()));
+  const rundDoc = await (rundP || readJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, leereRundDoc()));
   const eintraege = Array.isArray(rundDoc.eintraege) ? rundDoc.eintraege : [];
 
   // `auswahl` ist additiv: ein aelterer Client ignoriert das Feld, ein neuer
@@ -17559,14 +17604,20 @@ function unterlagenZugang(session) {
 }
 
 async function handleUnterlagenMeine(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Datei und -- nur fuer
+  // Nicht-Admins -- die Rechte-Datei fuer das darfVerteilen weiter unten.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (!unterlagenZugang(session)) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
 
-  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const doc = await (docP || readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc()));
   const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
   const name = normalizeUsername(session.username);
-  const darfVerteilen = await resolveEditPermission("dokumentenvorlagen", session, env, authHeader);
+  const darfVerteilen = await resolveEditPermission("dokumentenvorlagen", session, env, authHeader, cfgP);
 
   const meine = alle.map((e) => unterlageFuerNutzer(e, name, false)).filter(Boolean);
   // Neueste zuerst -- wer hereinschaut, sucht das gerade Dazugekommene.
@@ -17582,17 +17633,23 @@ async function handleUnterlagenMeine(request, env, authHeader, corsHeaders) {
 // (`unterlageFuerNutzer`). Zwei getrennte Regeln liefen unweigerlich auseinander,
 // und ein Eintrag, der in der Liste fehlt, muss auch einzeln unerreichbar sein.
 async function handleUnterlagenDatei(request, body, env, authHeader, corsHeaders, execCtx) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Datei und -- nur fuer
+  // Nicht-Admins -- die Rechte-Datei fuer das istAdmin weiter unten.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (!unterlagenZugang(session)) return json({ error: "Kein Zugriff" }, 403, corsHeaders);
 
   const id = String((body && body.id) || "");
   if (!FILE_ID_RE.test(id)) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
 
-  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const doc = await (docP || readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc()));
   const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
   const roh = alle.find((e) => e && e.id === id);
-  const istAdmin = await resolveEditPermission("dokumentenvorlagen", session, env, authHeader);
+  const istAdmin = await resolveEditPermission("dokumentenvorlagen", session, env, authHeader, cfgP);
   if (!roh || !unterlageFuerNutzer(roh, normalizeUsername(session.username), istAdmin)) {
     return json({ error: "Nicht gefunden" }, 404, corsHeaders);
   }
@@ -17728,15 +17785,21 @@ async function handleUnterlageVerteilen(request, body, env, authHeader, corsHead
 }
 
 async function handleUnterlageEntfernen(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Rechte, Datei.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (resolveEditPermission schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader))) {
+  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader, cfgP))) {
     return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
   }
   const id = String((body && body.id) || "");
   if (!FILE_ID_RE.test(id)) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
 
-  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const doc = await (docP || readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc()));
   const alle = Array.isArray(doc.eintraege) ? doc.eintraege : [];
   if (!alle.some((e) => e && e.id === id)) return json({ error: "Nicht gefunden" }, 404, corsHeaders);
 
@@ -17761,12 +17824,18 @@ async function handleUnterlageEntfernen(request, body, env, authHeader, corsHead
 // persoenliche Eintraege. Eigene Aktion statt eines Schalters an
 // `unterlagen-meine`, damit der Lese-Weg des Konto-Tabs keinen Admin-Zweig traegt.
 async function handleUnterlagenAlle(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Rechte, Datei.
+  let cfgP = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins (resolveEditPermission schliesst bei Admins kurz).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader))) {
+  if (!(await resolveEditPermission("dokumentenvorlagen", session, env, authHeader, cfgP))) {
     return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
   }
-  const doc = await readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc());
+  const doc = await (docP || readJson(UNTERLAGEN_URL, authHeader, leeresUnterlagenDoc()));
   const alle = (Array.isArray(doc.eintraege) ? doc.eintraege : [])
     .map((e) => unterlageFuerNutzer(e, normalizeUsername(session.username), true))
     .filter(Boolean);
@@ -18779,8 +18848,10 @@ async function handleBusplanAnfragenLoad(request, env, authHeader, corsHeaders) 
   // sichtbarkeit.json (Rechte) und die Anfragen-Datei starten gemeinsam; vorher
   // liefen sie nacheinander. Herausgegeben wird weiter erst nach der Rechtepruefung.
   let cfgP = null, docP = null;
-  const session = await getVerifiedSession(request, env, authHeader, () => {
-    cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Rechte-Datei nur fuer Nicht-Admins: userMayAccessTool schliesst bei Admins
+    // kurz, der Read waere fuer sie reine Last (Muster handleDavLoad).
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
     docP = prefetchJson(BUSPLAN_ANFRAGEN_URL, authHeader, { version: 1, anfragen: [] });
   });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -18918,14 +18989,22 @@ async function handleBusplanAnfrageEntscheiden(request, body, env, authHeader, c
 // Bearbeiten-Recht. Eine schon entschiedene eigene Anfrage bleibt stehen --
 // sonst koennte jemand eine Absage einfach verschwinden lassen.
 async function handleBusplanAnfrageLoeschen(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json parallel zur Sitzung (seit 2026-09-02); beide Rechte-
+  // pruefungen bedienen sich aus derselben Promise. Die Anfragen-Datei bleibt
+  // BEWUSST in der Retry-Schleife unten: dort wird sie mit jsonCache.delete
+  // frisch gelesen, ein Prefetch liefe genau dem zuwider.
+  let cfgP = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Nur fuer Nicht-Admins: beide Rechtepruefungen schliessen bei Admins kurz.
+    if (!payload.isAdmin) cfgP = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await userMayAccessTool("busplan", session, env, authHeader))) {
+  if (!(await userMayAccessTool("busplan", session, env, authHeader, cfgP))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
   const id = busplanAnfrageText(body.id, 80);
   if (!id) return json({ error: "Keine Anfrage angegeben" }, 400, corsHeaders);
-  const darfAlles = await resolveEditPermission("busplan", session, env, authHeader);
+  const darfAlles = await resolveEditPermission("busplan", session, env, authHeader, cfgP);
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     jsonCache.delete(BUSPLAN_ANFRAGEN_URL);
@@ -22793,9 +22872,10 @@ async function handleKsStand(request, body, env, authHeader, corsHeaders) {
 
 async function handleKsMeldungen(request, env, authHeader, corsHeaders) {
   try {
-    const session = await getVerifiedSession(request, env, authHeader);
+    // Datei parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+    const { session, datei } = await sessionMitDatei(request, env, authHeader, KINDERSCHUTZ_URL, ksLeer());
     if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    const doc = ksNormalisiere(await datei());
     if (!ksDarfMeldungenLesen(doc, session)) {
       return json({ error: "Nur die eingetragenen Kinder- und Jugendschutzbeauftragten können Meldungen einsehen." }, 403, corsHeaders);
     }
@@ -23021,12 +23101,13 @@ async function handleKsAnhangGet(request, body, env, authHeader, corsHeaders) {
 
 async function handleKsSchulungSchritt(request, body, env, authHeader, corsHeaders) {
   try {
-    const session = await getVerifiedSession(request, env, authHeader);
+    // Datei parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+    const { session, datei } = await sessionMitDatei(request, env, authHeader, KINDERSCHUTZ_URL, ksLeer());
     if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
     const kapitelId = capStr((body && body.kapitelId) || "", 60);
     if (!kapitelId) throw new KsFehler("Fehlendes Kapitel.", 400);
 
-    const doc = ksNormalisiere(await readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()));
+    const doc = ksNormalisiere(await datei());
     const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
     const mich = normalizeUsername(String(session.username || ""));
     let fertig = false;
@@ -23806,12 +23887,18 @@ function pnMailInhalt(anVorname, vonName, titel, text, zielPfad, mitAntwort) {
 // Aktion. Gleiche Ueberlegung wie bei push-rundnachricht-verlauf: der Konto-Tab
 // will alles im selben Moment, drei Aktionen waeren drei Reads derselben Datei.
 async function handlePnInfo(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Drei Reads in EINER Runde (seit 2026-09-02): Sitzung, Rechte, Postfach. Der
+  // cfg-Prefetch stand schon da, startete aber erst NACH der Sitzung.
+  let cfg = null, docP = null;
+  const session = await getVerifiedSession(request, env, authHeader, () => {
+    cfg = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    docP = prefetchJson(PN_URL, authHeader, leeresPnDoc());
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const ich = normalizeUsername(session.username);
-  const cfg = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
-  const doc = await readJson(PN_URL, authHeader, leeresPnDoc());
+  if (!cfg) cfg = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const doc = await (docP || readJson(PN_URL, authHeader, leeresPnDoc()));
   const liste = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
   const usersDoc = session.usersDoc;
 
@@ -24177,9 +24264,10 @@ async function handlePnLoeschen(request, body, env, authHeader, corsHeaders) {
 // jemand als Ueberschrift gewaehlt hat ("Fuehrungszeugnis abgelaufen") -- damit
 // stuende der Anlass jeder Nachricht im Klartext im Panel.
 async function handlePnProtokoll(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Postfach parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
+  const { session, datei } = await sessionMitDatei(request, env, authHeader, PN_URL, leeresPnDoc());
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
-  const doc = await readJson(PN_URL, authHeader, leeresPnDoc());
+  const doc = await datei();
   const liste = Array.isArray(doc.nachrichten) ? doc.nachrichten : [];
   const usersDoc = session.usersDoc;
   const eintraege = liste.slice(0, 200).map((n) => ({

@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.2",
+    groups: [
+      {
+        title: "Auch beim Klicken antwortet das Gateway jetzt in einer Runde",
+        items: [
+          "Nach den Start-Abfragen sind jetzt auch 23 Klick-Aktionen umgestellt — Feedback beantworten, Unterlagen abrufen, Kinderschutz-Meldungen lesen, Push-Verlauf, Wiki-Fragen, Materialcontainer-Code setzen und weitere. Jede spart beim Klick einen Nextcloud-Zugriff (200 bis 450 Millisekunden).",
+          "Zwei davon lasen sogar drei Dateien nacheinander und brauchen jetzt eine Runde statt drei: „Wer betreut welche Mannschaft“ in den Kontakten und der Verlauf der Rundnachrichten.",
+          "An den Inhalten und Rechten ändert sich nichts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.1",
     groups: [
       {
