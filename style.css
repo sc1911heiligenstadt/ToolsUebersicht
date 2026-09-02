@@ -1515,6 +1515,12 @@ main { flex: 1; min-width: 0; }
      eigene Zeile brauchte. Gekuerzt bleibt der Sinn erhalten -- der volle Text
      steht weiterhin im title und in der Ueberschrift des Fensters. */
   .btn-lang { display: none; }
+  /* Das Wappen ist am Rechner auf 56px gewachsen (siehe .header-logo oben).
+     Am Handy bleibt es auf den alten 44px: dort ist die Kopfzeile mit allen
+     Knoepfen ohnehin schon rund 235px hoch -- fast ein Drittel des Bildschirms --
+     und die zusaetzlichen 12px gehen voll auf diese Hoehe (am 2026-09-02 bei
+     375px nachgemessen: 234,7px -> 245,3px). Michel-Vorgabe: am Handy kleiner. */
+  .header-logo { height: 44px; }
   /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen
      Neuigkeiten und Kacheln. Den seitlichen Rand liefert dort schon <main>, hier
      bleibt nur der Abstand nach unten — derselbe wie unter dem Neuigkeiten-Banner. */
