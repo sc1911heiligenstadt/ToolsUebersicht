@@ -96,7 +96,8 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
          fcAutoSchliessenLauf, fcFeedbackLauf, fcNaechtlicherLauf,
          handleFcAnmelden, handleFcAnmeldungSpeichern, handleFcTeilnehmer,
          handleFcCampSpeichern, handleFcLoad, handleFcAufraeumen,
-         handleFcFeedbackInfo, handleFcFeedbackSenden, handleFcAbsagen,
+         handleFcFeedbackInfo, handleFcFeedbackSenden, handleFcAbsagen, handleFcMeineInfo,
+         fcFelderPruefen, FC_FELDER,
          handleFcEinstellungenSpeichern,
          fcMailBauen, fcMailVorlage, fcMailVorlagenPruefen, fcMailVorlagenFuerAdmin,
          FC_BETREUER_FELDER, FC_FEEDBACK_FRAGEN, FC_FEEDBACK_NOTEN,
@@ -1070,10 +1071,144 @@ zusage("Im Bearbeiten-Modus werden bezahlt/Notiz NICHT mitgeschickt",
 zusage("Das Formular nimmt nur eingeschaltete Felder",
   APPJS.includes('FORMULAR_FELDER.filter((f) => f.fest || konf[f.id] === "optional" || konf[f.id] === "pflicht")'));
 // ⚠️ Ja/Nein braucht DREI Zustaende, sonst wird aus "nicht beantwortet" ein "nein".
-zusage("Ja/Nein bietet auch \"nicht beantwortet\" an",
-  APPJS.includes("— nicht beantwortet —"));
+// ⚠️ ZWEIMAL: einmal fuer `janein`, einmal fuer `janein_text`. Ein blosses
+// includes bliebe gruen, wenn eine der beiden Auswahlen den Zustand verliert --
+// und aus "nicht beantwortet" wuerde dort still ein "nein".
+zusage("Beide Ja/Nein-Auswahlen bieten \"nicht beantwortet\" an",
+  (APPJS.match(/— nicht beantwortet —/g) || []).length === 2,
+  String((APPJS.match(/— nicht beantwortet —/g) || []).length));
 zusage("Bei Rechteverlust faellt der Modus zurueck",
   /raeumeWasNichtMehrErlaubtIst[\s\S]{0,3000}anmBearbeiten = false;/.test(APPJS));
+
+// =========================================================================
+abschnitt("12. Ja/Nein mit Nachfrage (Allergien, Medikamente ...)");
+// =========================================================================
+
+const JN = ["allergien", "medikamente", "krankheiten", "essenHinweis"];
+JN.forEach((id) => zusage(`${id} ist vom Typ janein_text`, bau.FC_FELDER[id].typ === "janein_text",
+  bau.FC_FELDER[id].typ));
+// ⚠️ Gegenprobe: nicht ALLE Textfelder umstellen. Bei der Krankenkasse und der
+// Anschrift gibt es nichts mit Ja/Nein zu beantworten.
+zusage("krankenkasse bleibt ein Textfeld", bau.FC_FELDER.krankenkasse.typ === "text");
+zusage("bemerkung bleibt ein Textfeld", bau.FC_FELDER.bemerkung.typ === "text");
+
+// ⚠️ Die Liste steht doppelt (Worker wirksam, config.js fuer die Anzeige).
+const cTypen = {};
+[...CONFIGJS.matchAll(/\{ id: "(\w+)",\s+gruppe: "\w+",\s+label: "[^"]*",\s+typ: "(\w+)"/g)]
+  .forEach((m) => { cTypen[m[1]] = m[2]; });
+JN.forEach((id) => zusage(`...und config.js kennt ${id} auch so`, cTypen[id] === "janein_text", cTypen[id]));
+
+// ---- Speichern -----------------------------------------------------------
+const konfPflicht = { allergien: "pflicht", medikamente: "optional" };
+const campJN = { felder: konfPflicht };
+
+let p = bau.fcFelderPruefen(campJN, { kindVorname: "A", kindNachname: "B", elternName: "C",
+  elternEmail: "c@example.org", allergienHat: "nein", allergien: "wird verworfen" });
+zusage("\"nein\" wird gespeichert", p.allergienHat === "nein", p.allergienHat);
+// ⚠️ Sonst stuende an der Anmeldung "nein" und daneben ein alter Text -- zwei
+// Stellen, die dieselbe Frage unterschiedlich beantworten.
+zusage("...und der Text wird dabei GELEERT", p.allergien === "", JSON.stringify(p.allergien));
+
+p = bau.fcFelderPruefen(campJN, { kindVorname: "A", kindNachname: "B", elternName: "C",
+  elternEmail: "c@example.org", allergienHat: "ja", allergien: "  Nüsse  " });
+zusage("\"ja\" speichert beides", p.allergienHat === "ja" && p.allergien === "Nüsse", JSON.stringify(p));
+
+// ⚠️ Ein PFLICHTfeld waere mit nur einem Wert gar nicht erfuellbar: "nein" saehe
+// aus wie eine fehlende Antwort. Genau dafuer gibt es das Paar.
+let jnFehler = null;
+try {
+  bau.fcFelderPruefen(campJN, { kindVorname: "A", kindNachname: "B", elternName: "C",
+    elternEmail: "c@example.org" });
+} catch (e) { jnFehler = e; }
+zusage("Pflichtfrage ohne Antwort -> 400", !!jnFehler && jnFehler.status === 400, jnFehler && jnFehler.message);
+
+// ⚠️ "ja" ohne Text ist KEINE Antwort -- unabhaengig von der Pflichtstufe. Sonst
+// stuende am Platz "Allergien: (nichts)" und niemand wuesste, ob das ein
+// Versehen war.
+jnFehler = null;
+try {
+  bau.fcFelderPruefen({ felder: { medikamente: "optional" } }, { kindVorname: "A", kindNachname: "B",
+    elternName: "C", elternEmail: "c@example.org", medikamenteHat: "ja", medikamente: "   " });
+} catch (e) { jnFehler = e; }
+zusage("\"ja\" ohne Text -> 400, auch bei einem FREIWILLIGEN Feld",
+  !!jnFehler && jnFehler.status === 400, jnFehler && jnFehler.message);
+
+// ⚠️ Ein erfundener Wert ist keine Antwort.
+// ⚠️ An einem FREIWILLIGEN Feld pruefen: bei einem Pflichtfeld wirft die
+// Pflichtpruefung, und dann belegt der Lauf nur, dass etwas fehlte -- nicht,
+// dass der erfundene Wert verworfen wurde.
+p = bau.fcFelderPruefen({ felder: { allergien: "optional" } }, { kindVorname: "A", kindNachname: "B",
+  elternName: "C", elternEmail: "c@example.org", allergienHat: "vielleicht", allergien: "x" });
+zusage("Ein erfundener Ja/Nein-Wert wird nicht angenommen", p.allergienHat === "", p.allergienHat);
+zusage("...und der Text faellt mit weg", p.allergien === "", JSON.stringify(p.allergien));
+
+// ---- Ende zu Ende ---------------------------------------------------------
+frisch({ status: "offen", felder: { allergien: "pflicht", medikamente: "optional" } }, []);
+r = await bau.handleFcAnmelden(anfrage(), { token: "tok1", datenschutz: true, agb: true, agbStand: "stand-1",
+  daten: { kindVorname: "Max", kindNachname: "Muster", elternName: "E", elternEmail: "e@example.org",
+           allergienHat: "ja", allergien: "Nüsse", medikamenteHat: "nein", medikamente: "egal" } },
+  ENV, AUTH, {}, null);
+zusage("Anmeldung mit Ja/Nein geht durch", r.status === 200, JSON.stringify(r.__json));
+zusage("...\"ja\" landet mit Text in der Datei",
+  anm0().allergienHat === "ja" && anm0().allergien === "Nüsse", JSON.stringify({ h: anm0().allergienHat, t: anm0().allergien }));
+zusage("...\"nein\" landet ohne Text",
+  anm0().medikamenteHat === "nein" && anm0().medikamente === "", JSON.stringify({ h: anm0().medikamenteHat, t: anm0().medikamente }));
+
+// ⚠️ Die Eltern-Ansicht MUSS `<id>Hat` mitbekommen -- es steht nicht in
+// FC_FELDER und faellt aus der Feldschleife heraus. Ohne das saehen sie beim
+// Aendern eine unbeantwortete Frage, obwohl sie laengst geantwortet haben.
+r = await bau.handleFcMeineInfo(anfrage(), { token: anm0().token }, ENV, AUTH, {});
+zusage("meine-info gibt die Ja/Nein-Antwort mit",
+  r.__json.anmeldung.allergienHat === "ja" && r.__json.anmeldung.medikamenteHat === "nein",
+  JSON.stringify(r.__json.anmeldung));
+
+// ---- Verwaltungs-Korrektur ------------------------------------------------
+frisch({ felder: { allergien: "pflicht" } }, [{ allergienHat: "ja", allergien: "Nüsse" }]);
+RECHT = { canEdit: true, canAdmin: true };
+r = await bau.handleFcAnmeldungSpeichern(anfrage(),
+  { campId: "c1", anmeldung: { id: "a1", felder: { allergienHat: "nein", allergien: "Nüsse" } } }, ENV, AUTH, {});
+zusage("Die Verwaltung kann auf \"nein\" stellen", r.status === 200, JSON.stringify(r.__json));
+zusage("...und der Text geht dabei mit weg",
+  anm0().allergienHat === "nein" && anm0().allergien === "", JSON.stringify({ h: anm0().allergienHat, t: anm0().allergien }));
+zusage("...beide Haelften stehen im Verlauf",
+  (camp0().verlauf || []).some((e) => e.was === "geaendert-verwaltung" &&
+    (e.felder || []).includes("allergienHat") && (e.felder || []).includes("allergien")),
+  JSON.stringify(camp0().verlauf));
+
+frisch({ felder: { allergien: "pflicht" } }, [{ allergienHat: "nein", allergien: "" }]);
+r = await bau.handleFcAnmeldungSpeichern(anfrage(),
+  { campId: "c1", anmeldung: { id: "a1", felder: { allergienHat: "ja", allergien: "" } } }, ENV, AUTH, {});
+zusage("Verwaltung: \"ja\" ohne Text -> 400", r.status === 400, JSON.stringify(r.__json));
+zusage("...und der alte Stand bleibt", anm0().allergienHat === "nein");
+
+// ---- Client ---------------------------------------------------------------
+zusage("oeffentlich.js rendert den neuen Typ", OEFFJS.includes('if (f.typ === "janein_text")'));
+zusage("...der Textkasten haengt an der Antwort", OEFFJS.includes('data-detail-fuer='));
+// ⚠️ Und er startet ZUGEKLAPPT, wenn die Antwort nicht "ja" ist. Steht er
+// von Anfang an offen, ist der ganze Umbau umsonst -- die Eltern schreiben dann
+// wieder "keine" hinein.
+zusage("...und startet zugeklappt, wenn nicht \"ja\"",
+  OEFFJS.includes('<div class="jn-detail${hatWert === "ja" ? "" : " fc-hidden"}"'));
+// ⚠️ Ohne `:checked` laege immer der erste Knopf vor -- also ueberall "ja".
+zusage("...gelesen wird mit :checked", OEFFJS.includes('[data-feld-hat="${CSS.escape(f.id)}"]:checked'));
+zusage("...bei \"nein\" wird kein Text mitgeschickt",
+  OEFFJS.includes('daten[f.id] = hat === "ja" ? String((el && el.value) || "").trim() : "";'));
+// ⚠️ Das Aufklappen wird in baueFormular verdrahtet -- beide Eltern-Seiten
+// bekommen es damit, ohne dass jemand daran denken muss.
+zusage("Das Aufklappen haengt an baueFormular",
+  /function baueFormular[\s\S]{0,3000}?querySelectorAll\("\[data-feld-hat\]"\)/.test(OEFFJS));
+// ⚠️ Ohne das Paar stuende beim Aendern nie ein Knopf vorgewaehlt da.
+zusage("baueFormular reicht BEIDE Werte durch",
+  OEFFJS.includes('f.typ === "janein_text" ? { hat: w[f.id + "Hat"], text: w[f.id] } : w[f.id]'));
+
+zusage("app.js liest die Ja/Nein-Haelfte beim Korrigieren",
+  APPJS.includes('querySelectorAll("[data-af-hat]")'));
+// ⚠️ Ein `janein_text` mit "nein" hat einen LEEREN Text und faellt sonst aus der
+// Detailansicht -- eine beantwortete Frage saehe aus wie eine offene.
+zusage("Die Detailansicht zeigt auch ein \"nein\"",
+  APPJS.includes('if (hat === "nein") return zeile(f.label, "nein");'));
+zusage("Der Export traegt \"nein\" statt einer leeren Zelle",
+  /if \(f\.typ === "janein_text"\)[\s\S]{0,200}?return "nein";/.test(APPJS));
 
 // =========================================================================
 const gesamt = gruen + funde.length;

@@ -435,6 +435,65 @@ const MUTATIONEN = [
    '<option value=""${g === "" ? " selected" : ""}>— nicht beantwortet —</option>',
    ""],
 
+  // ---------- 13. Ja/Nein mit Nachfrage ----------
+  ["Allergien wird wieder ein nacktes Textfeld", "admin-worker.js",
+   '  allergien:        { typ: "janein_text", max: 500, sensibel: true },',
+   '  allergien:        { typ: "text", max: 500, sensibel: true },'],
+
+  ["Der Client kennt den neuen Typ nicht mehr", "config.js",
+   'typ: "janein_text", detail: "Welche Allergien?"',
+   'typ: "mehrzeilig", detail: "Welche Allergien?"'],
+
+  // ⚠️ Die gefaehrlichste: bei "nein" bliebe ein alter Text stehen -- an der
+  // Anmeldung staende dann "nein" UND eine Allergie.
+  ["Bei \"nein\" bleibt der alte Text stehen", "admin-worker.js",
+   '      const text = hat === "ja"\n        ? capStr(wert === null || wert === undefined ? "" : String(wert), def.max || 500).trim()\n        : "";',
+   '      const text = capStr(wert === null || wert === undefined ? "" : String(wert), def.max || 500).trim();'],
+
+  ["\"ja\" ohne Text wird angenommen", "admin-worker.js",
+   '      if (hat === "ja" && !text) fehlend.push(id);',
+   "      void text;"],
+
+  ["Die Pflichtfrage laesst sich unbeantwortet lassen", "admin-worker.js",
+   '      if (stufe === "pflicht" && !hat) fehlend.push(id);',
+   "      void hat;"],
+
+  ["Ein erfundener Ja/Nein-Wert wird uebernommen", "admin-worker.js",
+   '      const hat = rohHat === "ja" || rohHat === "nein" ? rohHat : "";\n      sauber[id + "Hat"] = hat;',
+   '      const hat = String(rohHat || "");\n      sauber[id + "Hat"] = hat;'],
+
+  ["meine-info verschweigt die Ja/Nein-Antwort", "admin-worker.js",
+   '        sicht[id + "Hat"] = anmeldung[id + "Hat"];',
+   "        void id;"],
+
+  ["Die Verwaltung darf \"ja\" ohne Text speichern", "admin-worker.js",
+   '              throw new FcFehler("Bei \u201eja\u201c muss auch dastehen, worum es geht.", 400);',
+   "              void 0;"],
+
+  ["oeffentlich.js liest den ersten Knopf statt den gedrueckten", "oeffentlich.js",
+   '`[data-feld-hat="${CSS.escape(f.id)}"]:checked`',
+   '`[data-feld-hat="${CSS.escape(f.id)}"]`'],
+
+  ["Bei \"nein\" schickt der Client doch einen Text mit", "oeffentlich.js",
+   'daten[f.id] = hat === "ja" ? String((el && el.value) || "").trim() : "";',
+   'daten[f.id] = String((el && el.value) || "").trim();'],
+
+  ["baueFormular reicht nur den Text durch", "oeffentlich.js",
+   'f.typ === "janein_text" ? { hat: w[f.id + "Hat"], text: w[f.id] } : w[f.id]',
+   "w[f.id]"],
+
+  ["Der Textkasten steht von Anfang an offen", "oeffentlich.js",
+   '<div class="jn-detail${hatWert === "ja" ? "" : " fc-hidden"}"',
+   '<div class="jn-detail"'],
+
+  ["Die Verwaltung liest die Ja/Nein-Haelfte nicht mehr", "app.js",
+   '  wurzel.querySelectorAll("[data-af-hat]").forEach((el) => {',
+   "  [].forEach((el) => {"],
+
+  ["Die Detailansicht verschluckt ein \"nein\"", "app.js",
+   '        if (hat === "nein") return zeile(f.label, "nein");',
+   "        void hat;"],
+
   ["Die Anmeldeliste faellt auf den alten Marker zurueck", "app.js",
    "const gesund = [a.allergien, a.medikamente, a.krankheiten, a.essenHinweis].some((w) => !istLeereAngabe(w));",
    "const gesund = [a.allergien, a.medikamente, a.krankheiten, a.essenHinweis].some(Boolean);"]

@@ -111,7 +111,7 @@ function frisch(anmeldungExtra, campExtra) {
       id: "a1", token: "elterntok", nummer: 1, status: "angemeldet", bezahlt: false,
       kindVorname: "Gracjan", kindNachname: "Jozwiak",
       elternName: "Anna Jozwiak", elternEmail: "anna@example.org",
-      elternTelefon: "0170 1234567", allergien: "Erdnuss",
+      elternTelefon: "0170 1234567", allergienHat: "ja", allergien: "Erdnuss",
       agbStand: "stand-1", agbAm: "2026-08-01T10:00:00Z",
       erstelltAm: "2026-08-01T10:00:00Z", geaendertAm: "", elternAenderung: "", absageGrund: ""
     }, anmeldungExtra || {})]
@@ -124,7 +124,7 @@ const camp = () => DOC.camps[0];
 const daten = (aenderung) => Object.assign({
   kindVorname: "Gracjan", kindNachname: "Jozwiak",
   elternName: "Anna Jozwiak", elternEmail: "anna@example.org",
-  elternTelefon: "0170 1234567", allergien: "Erdnuss"
+  elternTelefon: "0170 1234567", allergienHat: "ja", allergien: "Erdnuss"
 }, aenderung || {});
 
 // =========================================================================

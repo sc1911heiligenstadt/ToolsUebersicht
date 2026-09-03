@@ -121,7 +121,9 @@ const anmKoerper = (nachname) => ({
   token: "tok1", datenschutz: true, agb: true, agbStand: "stand-1",
   daten: { kindVorname: "Lena", kindNachname: nachname || "Muster",
            elternName: "Anja Muster", elternEmail: (nachname || "muster").toLowerCase() + "@example.org",
-           allergien: "keine" }
+           // ⚠️ Seit `janein_text` ist „keine“ keine Eingabe mehr, sondern die
+           // Antwort „nein“ auf die Frage — der Text bleibt leer.
+           allergienHat: "nein", allergien: "" }
 });
 
 // =========================================================================

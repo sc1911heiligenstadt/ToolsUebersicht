@@ -150,7 +150,9 @@ const anmKoerper = () => ({
   token: "tok1", datenschutz: true, agb: true, agbStand: "stand-1",
   daten: { kindVorname: "Lena", kindNachname: "Muster",
            elternName: "Anja Muster", elternEmail: "eltern@example.org",
-           allergien: "keine" }
+           // ⚠️ Seit `janein_text` ist „keine“ die Antwort „nein“ auf die
+           // Frage, keine Eingabe mehr.
+           allergienHat: "nein", allergien: "" }
 });
 
 async function anmelden() {

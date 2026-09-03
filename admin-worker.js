@@ -19179,12 +19179,29 @@ const FC_FELDER = {
   elternEmail:      { typ: "email", max: 160, fest: true },
   elternTelefon:    { typ: "text",  max: 60 },
   elternAnschrift:  { typ: "text",  max: 200 },
-  allergien:        { typ: "text",  max: 500, sensibel: true },
-  medikamente:      { typ: "text",  max: 500, sensibel: true },
-  krankheiten:      { typ: "text",  max: 500, sensibel: true },
+  // ⚠️ `janein_text` ist ein PAAR aus zwei gespeicherten Werten: `<id>Hat`
+  // ("ja" | "nein" | "") und `<id>` (der Text, nur bei "ja").
+  //
+  // Anlass (Michel, 2026-09-03): in ein Pflicht-Textfeld "Allergien" schreiben
+  // die Eltern "keine" -- und dann steht auf jeder Liste dieselbe
+  // Nicht-Information. Mit der Frage davor gibt es das gar nicht erst.
+  //
+  // ⚠️ ZWEI Werte, nicht einer. Ein einzelnes Feld, das bei "nein" leer bleibt,
+  // koennte "nein" nicht von "noch nicht beantwortet" unterscheiden -- genau der
+  // Grund, aus dem `alleinNachHause` vom Haken zur Ja/Nein-Frage wurde. Und ein
+  // PFLICHTfeld waere so gar nicht erfuellbar: "nein" saehe aus wie eine
+  // fehlende Antwort.
+  //
+  // ⚠️ Bei "nein" wird der Text GELEERT, nicht aufbewahrt. Sonst stuende an der
+  // Anmeldung "nein" und daneben ein alter Text -- zwei Stellen, die dieselbe
+  // Frage unterschiedlich beantworten (dieselbe Ueberlegung wie beim entfallenen
+  // Foto-Haeckchen).
+  allergien:        { typ: "janein_text", max: 500, sensibel: true },
+  medikamente:      { typ: "janein_text", max: 500, sensibel: true },
+  krankheiten:      { typ: "janein_text", max: 500, sensibel: true },
   krankenkasse:     { typ: "text",  max: 100, sensibel: true },
   vegetarisch:      { typ: "haken" },
-  essenHinweis:     { typ: "text",  max: 300, sensibel: true },
+  essenHinweis:     { typ: "janein_text", max: 300, sensibel: true },
   // ⚠️ Hier stand bis 2026-08-21 `einwilligungFoto: { typ: "haken" }`. Entfallen
   // (Michel-Entscheidung): die Foto-Einwilligung regelt allein Punkt 16 der
   // Teilnahmebedingungen, und die sind Pflicht. Solange das Feld hier fehlt, wird
@@ -20329,6 +20346,26 @@ function fcFelderPruefen(camp, roh) {
       return;
     }
 
+    // Ja/Nein mit Nachfrage. Gespeichert werden ZWEI Werte.
+    if (def.typ === "janein_text") {
+      const rohHat = roh ? roh[id + "Hat"] : undefined;
+      const hat = rohHat === "ja" || rohHat === "nein" ? rohHat : "";
+      sauber[id + "Hat"] = hat;
+      // ⚠️ Der Text ueberlebt ein "nein" NICHT. Wer von "ja" auf "nein" wechselt,
+      // loescht damit die Angabe -- und genau das soll er auch.
+      const text = hat === "ja"
+        ? capStr(wert === null || wert === undefined ? "" : String(wert), def.max || 500).trim()
+        : "";
+      sauber[id] = text;
+
+      if (stufe === "pflicht" && !hat) fehlend.push(id);
+      // ⚠️ "ja" ohne Text ist KEINE Antwort, unabhaengig von der Pflichtstufe:
+      // wer angibt, dass es etwas gibt, muss sagen was -- sonst steht am Platz
+      // "Allergien: (nichts)" und niemand weiss, ob das ein Versehen war.
+      if (hat === "ja" && !text) fehlend.push(id);
+      return;
+    }
+
     // Ja/Nein. Als Pflicht muss EINE der beiden Antworten dastehen -- anders als
     // beim Haken ist "nein" hier eine vollwertige Antwort und keine Verweigerung.
     //
@@ -20565,7 +20602,16 @@ async function handleFcMeineInfo(request, body, env, authHeader, corsHeaders) {
                     // die Eltern saehen im Aendern-Formular eine leere
                     // Pflichtfrage, die sie nie gestellt bekommen haben.
                     rolle: anmeldung.rolle || fcRollenAmCamp(camp)[0] };
-    Object.keys(FC_FELDER).forEach((id) => { if (anmeldung[id] !== undefined) sicht[id] = anmeldung[id]; });
+    // ⚠️ Bei `janein_text` gehört der Begleitwert `<id>Hat` MIT. Er steht
+    // nicht in FC_FELDER, fällt aus dieser Schleife also heraus — und dann
+    // sähen die Eltern beim Ändern eine unbeantwortete Frage vor sich,
+    // obwohl sie längst geantwortet haben.
+    Object.keys(FC_FELDER).forEach((id) => {
+      if (anmeldung[id] !== undefined) sicht[id] = anmeldung[id];
+      if (FC_FELDER[id].typ === "janein_text" && anmeldung[id + "Hat"] !== undefined) {
+        sicht[id + "Hat"] = anmeldung[id + "Hat"];
+      }
+    });
 
     return json({
       camp: {
@@ -21466,6 +21512,27 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
           if (!def.fest && ((camp.felder || {})[id] || "aus") === "aus") return;
 
           const roheingabe = roh.felder[id];
+
+          // Ja/Nein mit Nachfrage: dasselbe Paar wie im Eltern-Weg. ⚠️ Bewusst
+          // eine eigene Abzweigung mit `return` statt eines weiteren `else if`
+          // -- der Typ schreibt ZWEI Felder, und der gemeinsame Rumpf unten
+          // schreibt genau eines.
+          if (def.typ === "janein_text") {
+            const rohHat = roh.felder[id + "Hat"];
+            const hat = rohHat === "ja" || rohHat === "nein" ? rohHat : "";
+            const text = hat === "ja"
+              ? capStr(String(roheingabe === null || roheingabe === undefined ? "" : roheingabe), def.max || 500).trim()
+              : "";
+            if (hat === "ja" && !text) {
+              throw new FcFehler("Bei „ja“ muss auch dastehen, worum es geht.", 400);
+            }
+            if (fcWertSchluessel(a[id + "Hat"]) !== fcWertSchluessel(hat)) feldGeaendert.push(id + "Hat");
+            if (fcWertSchluessel(a[id]) !== fcWertSchluessel(text)) feldGeaendert.push(id);
+            a[id + "Hat"] = hat;
+            a[id] = text;
+            return;
+          }
+
           let wert;
           if (def.typ === "haken") {
             wert = roheingabe === true || roheingabe === "true";
