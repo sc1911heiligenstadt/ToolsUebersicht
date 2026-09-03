@@ -19243,9 +19243,19 @@ const FC_FEEDBACK_FRAGEN = [
   { id: "besser",       typ: "text",   frage: "Was sollen wir beim nächsten Mal besser machen?" }
 ];
 
-// Schulnoten-Richtung: 1 ist die beste. Die Beschriftung steht im Client an
-// JEDEM Knopf, damit niemand raten muss, ob 1 oder 5 gut ist.
-const FC_FEEDBACK_NOTEN = [1, 2, 3, 4, 5];
+// Schulnoten 1 bis 6, Richtung wie in der Schule: 1 ist die beste
+// (Michel-Vorgabe 2026-09-03, vorher 1-5).
+//
+// ⚠️ Die Beschriftung steht im Client an JEDEM Knopf und benutzt die echten
+// Schulnoten-Woerter (sehr gut … ungenuegend). Eine nackte Skala beantwortet
+// nicht, welche Seite gut ist -- Schulnote und Sternchen laufen genau
+// andersherum. Mit den Schulwoertern kann sich niemand vertun.
+//
+// ⚠️ Nichts weiter unten darf die LAENGE dieser Liste annehmen: die Verteilung
+// in fcFeedbackAuswertung wird daraus gebaut, nicht als [0,0,0,0,0] getippt.
+// Sonst faellt beim naechsten Aendern der Skala genau eine Note aus der
+// Auswertung heraus, ohne dass es jemand merkt.
+const FC_FEEDBACK_NOTEN = [1, 2, 3, 4, 5, 6];
 const FC_FEEDBACK_TEXT_MAX = 1000;
 const FC_FEEDBACK_MAX_JE_CAMP = 500;   // so viele Anmeldungen kann ein Camp hoechstens haben
 
@@ -21823,7 +21833,7 @@ function fcFeedbackAuswertung(camp) {
   const noten = {};
   const janein = {};
   FC_FEEDBACK_FRAGEN.forEach((f) => {
-    if (f.typ === "note") noten[f.id] = { anzahl: 0, summe: 0, verteilung: [0, 0, 0, 0, 0] };
+    if (f.typ === "note") noten[f.id] = { anzahl: 0, summe: 0, verteilung: FC_FEEDBACK_NOTEN.map(() => 0) };
     if (f.typ === "janein") janein[f.id] = { ja: 0, nein: 0 };
   });
 
@@ -21837,7 +21847,10 @@ function fcFeedbackAuswertung(camp) {
         const n = Number(v);
         noten[f.id].anzahl++;
         noten[f.id].summe += n;
-        noten[f.id].verteilung[n - 1]++;
+        // ⚠️ `indexOf` statt `n - 1`: der Platz in der Verteilung kommt aus der
+        // Liste selbst. Mit `n - 1` haengt die Auswertung stillschweigend daran,
+        // dass die Skala bei 1 beginnt und keine Luecke hat.
+        noten[f.id].verteilung[FC_FEEDBACK_NOTEN.indexOf(n)]++;
       } else if (f.typ === "janein" && (v === "ja" || v === "nein")) {
         janein[f.id][v]++;
       } else if (f.typ === "text" && v) {

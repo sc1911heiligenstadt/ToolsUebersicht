@@ -250,7 +250,19 @@ const MUTATIONEN = [
 
   ["Die Notenskala im Client wird umgedreht", "config.js",
    '  { wert: 1, label: "sehr gut" },',
-   '  { wert: 5, label: "sehr gut" },'],
+   '  { wert: 6, label: "sehr gut" },'],
+
+  ["Die Skala im Client verliert die 6", "config.js",
+   '  { wert: 6, label: "ungenügend" }',
+   '  { wert: 5, label: "ungenügend" }'],
+
+  ["Die Verteilung bleibt bei fuenf Plaetzen stehen", "admin-worker.js",
+   "verteilung: FC_FEEDBACK_NOTEN.map(() => 0) };",
+   "verteilung: [0, 0, 0, 0, 0] };"],
+
+  ["Die Note landet ueber n-1 statt ueber ihren Platz in der Liste", "admin-worker.js",
+   "        noten[f.id].verteilung[FC_FEEDBACK_NOTEN.indexOf(n)]++;",
+   "        noten[f.id].verteilung[n - 2]++;"],
 
   ["feedback.js liest den ersten Knopf statt den gedrueckten", "feedback.js",
    'const gewaehlt = document.querySelector(`input[data-frage="${CSS.escape(f.id)}"]:checked`);',

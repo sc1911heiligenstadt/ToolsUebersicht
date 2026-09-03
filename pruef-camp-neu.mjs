@@ -530,8 +530,16 @@ const aus = bau.fcFeedbackAuswertung(camp0());
 zusage("Auswertung zaehlt die Antworten", aus.anzahl === 3, String(aus.anzahl));
 zusage("Auswertung zaehlt die verschickten Boegen", aus.gebeten === 3, String(aus.gebeten));
 zusage("Der Schnitt stimmt (1+2+3)/3 = 2", aus.schnitte.gesamt === 2, String(aus.schnitte.gesamt));
+// ⚠️ Die Erwartung wird AUS DER SKALA gebaut, nicht als "[1,1,1,0,0]"
+// getippt: sonst muss diese Zeile bei jeder Änderung der Notenskala von Hand
+// nachgezogen werden, und wer das vergisst, sieht einen Fund, wo keiner ist.
+const erwartet = bau.FC_FEEDBACK_NOTEN.map((n) => (n <= 3 ? 1 : 0));
 zusage("Die Verteilung stimmt",
-  JSON.stringify(aus.verteilung.gesamt.verteilung) === "[1,1,1,0,0]", JSON.stringify(aus.verteilung.gesamt.verteilung));
+  JSON.stringify(aus.verteilung.gesamt.verteilung) === JSON.stringify(erwartet),
+  JSON.stringify(aus.verteilung.gesamt.verteilung) + " erwartet " + JSON.stringify(erwartet));
+zusage("...und ist genau so lang wie die Skala",
+  aus.verteilung.gesamt.verteilung.length === bau.FC_FEEDBACK_NOTEN.length,
+  aus.verteilung.gesamt.verteilung.length + " gegen " + bau.FC_FEEDBACK_NOTEN.length);
 zusage("Ja/Nein wird gezaehlt", aus.janein.wieder.ja === 2 && aus.janein.wieder.nein === 1, JSON.stringify(aus.janein));
 zusage("Freitexte kommen paarweise heraus", aus.texte.length === 2, JSON.stringify(aus.texte));
 // ⚠️ Ein Schnitt wie 1.6666666666666667 wuerde so in der Anzeige stehen.
@@ -593,6 +601,11 @@ zusage("...und es sind wirklich alle acht gefunden worden",
   cFragen.length === 8, "gefunden: " + cFragen.length);
 
 const cNoten = [...CONFIGJS.matchAll(/\{ wert: (\d), label: "/g)].map((m) => Number(m[1]));
+zusage("Die Skala geht von 1 bis 6",
+  JSON.stringify(bau.FC_FEEDBACK_NOTEN) === "[1,2,3,4,5,6]", JSON.stringify(bau.FC_FEEDBACK_NOTEN));
+zusage("Eine 6 wird angenommen, eine 7 nicht",
+  bau.fcFeedbackPruefen({ gesamt: 6 }).gesamt === 6 &&
+  bau.fcFeedbackPruefen({ gesamt: 6, training: 7 }).training === undefined);
 zusage("Notenskala deckt sich", JSON.stringify(cNoten) === JSON.stringify(bau.FC_FEEDBACK_NOTEN),
   "config: " + JSON.stringify(cNoten) + "\n        worker: " + JSON.stringify(bau.FC_FEEDBACK_NOTEN));
 
