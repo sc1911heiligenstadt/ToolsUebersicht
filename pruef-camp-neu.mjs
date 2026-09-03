@@ -1,0 +1,639 @@
+// Pruefstand fuer die fuenf Erweiterungen vom 2026-09-03:
+//
+//   1. Anmeldeschluss schliesst das Camp von selbst
+//   2. Konfektionsgroesse auf der Betreuer-Liste
+//   3. Mail "Beitrag eingegangen" mit dem Tagesablauf
+//   4. Feldspieler oder Torwart
+//   5. Feedbackbogen nach dem Camp (anonym)
+//
+// ⚠️ Der Code wird AUS DER DATEI GEZOGEN und AUSGEFUEHRT, nicht nachgebaut.
+// Fehlt eine Marke, bricht der Lauf ab -- ein Pruefstand, der seinen eigenen
+// Nachbau prueft, sagt nichts ueber die App.
+//
+//   node pruef-camp-neu.mjs [pfad-zu-admin-worker.js]
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const HIER = dirname(fileURLToPath(import.meta.url));
+const PFAD = process.argv[2] || join(HIER, "admin-worker.js");
+const QUELLE = readFileSync(PFAD, "utf8");
+// Ohne Vorgabe die App nebenan; mit FC_APP_DIR eine andere Fassung.
+const APP = (process.env.FC_APP_DIR || join(HIER, "..", "fussballcamp")) + "/";
+const CONFIGJS = readFileSync(APP + "config.js", "utf8");
+const APPJS = readFileSync(APP + "app.js", "utf8");
+const OEFFJS = readFileSync(APP + "oeffentlich.js", "utf8");
+const FEEDBACKJS = readFileSync(APP + "feedback.js", "utf8");
+const INDEXHTML = readFileSync(APP + "index.html", "utf8");
+const FEEDBACKHTML = readFileSync(APP + "feedback.html", "utf8");
+
+function schneide(vonMarke, bisMarke, name) {
+  const a = QUELLE.indexOf(vonMarke);
+  if (a < 0) throw new Error("ABBRUCH: Startmarke fuer " + name + " nicht gefunden: " + vonMarke);
+  const b = bisMarke === null ? QUELLE.length : QUELLE.indexOf(bisMarke, a);
+  if (b < 0) throw new Error("ABBRUCH: Endmarke fuer " + name + " nicht gefunden: " + bisMarke);
+  return QUELLE.slice(a, b);
+}
+
+const capStrQ = schneide("function capStr(v, max) {", "\n}\n", "capStr") + "\n}\n";
+const kboQ    = schneide("function kboBremse(map, max, request) {", "function kboNormalize(", "kboBremse/kboHexToken");
+const fcQ     = schneide("const FUSSBALLCAMP_URL =", null, "Fussballcamp-Abschnitt");
+
+// ⚠️ Diese Marken nageln die VERDRAHTUNG fest, nicht das Verhalten. Ohne sie
+// liefen die Zusagen unten gruen durch, waehrend der Lauf gar nicht mehr an der
+// Nacht haengt -- und niemand merkte es, weil jede Funktion fuer sich stimmt.
+for (const marke of [
+  "await fcAutoSchliessenLauf(authHeader);",
+  "await fcFeedbackLauf(env, authHeader, \"\");",
+  "async function fcAutoSchliessenLauf(authHeader) {",
+  "async function fcFeedbackLauf(env, authHeader, nurCampId) {",
+  "async function fcBezahltMail(env, camp, a, einst) {",
+  "const FC_FEEDBACK_FENSTER_TAGE",
+  "case \"fussballcamp-feedback-info\":",
+  "case \"fussballcamp-feedback-senden\":"
+]) {
+  if (!QUELLE.includes(marke)) throw new Error("ABBRUCH: Marke fehlt im Worker: " + marke);
+}
+
+// ---- Attrappen -----------------------------------------------------------
+let DOC = null;
+let RECHT = { canEdit: true, canAdmin: true };
+let MAILS = [];
+let BETREUER_VON = null;   // null = fcIstBetreuer bleibt im Original
+
+const kopf = `
+class ConflictError extends Error {}
+function json(obj, status, corsHeaders) { return { __json: obj, status }; }
+const NOTIFY_FROM_EMAIL = "test@example.org";
+const NOTIFY_FROM_NAME = "Test";
+const USER_ART_SPIELER = "spieler";
+const DAV_APPS = { vereinskalender: "https://example.invalid/vereinskalender.json" };
+const jsonCache = new Map();
+function aufgabenAnzeigeName() { return ""; }
+async function getVerifiedSession() { return null; }
+async function userMayAccessTool() { return true; }
+async function resolveEditPermission() { return true; }
+async function resolveAdminPermission() { return true; }
+async function readJson(url, auth, fallback) { return JSON.parse(JSON.stringify(__DOC() ?? fallback)); }
+async function readJsonWithRev(url, auth, fallback) { return { data: JSON.parse(JSON.stringify(__DOC() ?? fallback)), rev: "r1" }; }
+async function writeJson(url, auth, doc, rev) { __SETDOC(JSON.parse(JSON.stringify(doc))); }
+`;
+
+const fuss = `
+async function fcSession(request, env, authHeader, corsHeaders) {
+  return { fehler: null, session: { username: __RECHT().wer || "michel", usersDoc: {} },
+           canEdit: __RECHT().canEdit, canAdmin: __RECHT().canAdmin };
+}
+async function fcKalenderNachziehen() { return "unveraendert"; }
+return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
+         fcRollenAmCamp, fcRollePruefen, fcTorwartZahl,
+         fcFeedbackPruefen, fcFeedbackAuswertung,
+         fcAutoSchliessenLauf, fcFeedbackLauf, fcNaechtlicherLauf,
+         handleFcAnmelden, handleFcAnmeldungSpeichern, handleFcTeilnehmer,
+         handleFcCampSpeichern, handleFcLoad, handleFcAufraeumen,
+         handleFcFeedbackInfo, handleFcFeedbackSenden,
+         FC_BETREUER_FELDER, FC_FEEDBACK_FRAGEN, FC_FEEDBACK_NOTEN,
+         FC_FEEDBACK_FENSTER_TAGE, FC_FEEDBACK_TAGE_VORGABE, FC_ROLLEN };
+`;
+
+const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
+  kopf + capStrQ + "\n" + kboQ + "\n" + fcQ + "\n" + fuss
+)(
+  () => DOC, (d) => { DOC = d; }, () => RECHT,
+  async (url, opt) => { try { MAILS.push(JSON.parse(opt.body)); } catch (_) {} return { ok: true }; },
+  globalThis.crypto
+);
+
+// ---- Zusagen -------------------------------------------------------------
+let gruen = 0;
+const funde = [];
+function zusage(text, bedingung, detail) {
+  if (bedingung) { gruen++; console.log("  ok  " + text); }
+  else { funde.push({ text, detail }); console.log("  X   " + text + (detail ? "\n        " + detail : "")); }
+}
+function abschnitt(t) { console.log("\n" + t); }
+
+const AUTH = "Basic x";
+const ENV = { BREVO_API_KEY: "k" };
+let ipZaehler = 0;
+const anfrage = () => ({ headers: { get: (h) => (h === "CF-Connecting-IP" ? "10.0.0." + (++ipZaehler) : null) } });
+
+const heute = bau.fcHeuteBerlin();
+const inTagen = (n) => new Date(Date.parse(heute + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+
+// Ein frisches Dokument mit genau einem Camp.
+function frisch(campExtra, anmeldungen) {
+  DOC = bau.fcLeer();
+  DOC.einstellungen.iban = "DE02120300000000202051";
+  DOC.einstellungen.agbText = "Bedingungen";
+  DOC.einstellungen.agbStand = "stand-1";
+  const camp = Object.assign({
+    id: "c1", token: "tok1", name: "Herbstcamp 2026", status: "offen",
+    vonDatum: inTagen(30), bisDatum: inTagen(34),
+    taeglichVon: "09:00", taeglichBis: "16:00", ort: "Sportplatz",
+    plaetze: 20, preis: 18000, preisFrueh: 0, preisFruehBis: "",
+    anmeldungVon: "", anmeldungBis: "",
+    ablauf: "", fuerFeldspieler: true, fuerTorwart: false,
+    felder: { geburtsdatum: "optional", trikotgroesse: "optional", elternTelefon: "optional",
+              elternAnschrift: "optional", allergien: "optional" },
+    tage: [], anmeldungen: [], verlauf: [], feedback: [], aufgeraeumtAm: ""
+  }, campExtra || {});
+  camp.anmeldungen = (anmeldungen || []).map((a, i) => Object.assign({
+    id: "a" + (i + 1), token: "atok" + (i + 1), nummer: i + 1, status: "angemeldet",
+    bezahlt: false, bezahltAm: "", bezahltVon: "", notiz: "",
+    kindVorname: "Kind" + (i + 1), kindNachname: "Test",
+    elternName: "Eltern", elternEmail: "eltern" + (i + 1) + "@example.org",
+    elternAnschrift: "Musterweg 1", elternTelefon: "0170 1", trikotgroesse: "152",
+    allergien: "", betrag: 18000, rolle: "feldspieler",
+    erstelltAm: new Date().toISOString(), geaendertAm: "",
+    agbStand: "stand-1", feedbackGebetenAm: "", feedbackAm: ""
+  }, a));
+  DOC.camps.push(camp);
+  MAILS = [];
+  return camp;
+}
+const camp0 = () => DOC.camps[0];
+const anm0 = (i) => DOC.camps[0].anmeldungen[i || 0];
+
+// =========================================================================
+abschnitt("1. Der Anmeldeschluss schliesst das Camp von selbst");
+// =========================================================================
+
+frisch({ status: "offen", anmeldungBis: inTagen(-1) });
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Frist gestern abgelaufen -> Status geschlossen", camp0().status === "geschlossen", camp0().status);
+zusage("Der Verlauf haelt fest, dass es automatisch war",
+  (camp0().verlauf || []).some((e) => e.was === "status" && e.von === "automatisch" && e.grund === "anmeldeschluss"),
+  JSON.stringify(camp0().verlauf));
+
+// ⚠️ Die Grenze ist EINSCHLIESSLICH: fcNimmtAn lehnt erst ab, wenn heute GROESSER
+// als anmeldungBis ist. Schloesse der Lauf schon am Stichtag selbst, waere die
+// Anmeldung einen Tag frueher zu als angekuendigt.
+frisch({ status: "offen", anmeldungBis: heute });
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Am Stichtag selbst bleibt das Camp offen", camp0().status === "offen", camp0().status);
+
+frisch({ status: "offen", anmeldungBis: "" });
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Camp ohne Anmeldeschluss bleibt offen", camp0().status === "offen");
+
+frisch({ status: "entwurf", anmeldungBis: inTagen(-5) });
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Ein Entwurf wird nicht geschlossen", camp0().status === "entwurf", camp0().status);
+
+frisch({ status: "geschlossen", anmeldungBis: inTagen(-5) });
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Ein schon geschlossenes Camp bekommt keinen zweiten Verlaufseintrag",
+  camp0().status === "geschlossen" && (camp0().verlauf || []).length === 0);
+
+frisch({ status: "offen", anmeldungBis: inTagen(-5), aufgeraeumtAm: new Date().toISOString() });
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Ein aufgeraeumtes Camp bleibt unangetastet", camp0().status === "offen");
+
+// ⚠️ Der Lauf darf nichts verschicken. Ein Statuswechsel ist keine Nachricht an
+// die Eltern -- ginge hier eine Mail raus, bekaeme jede Familie eines
+// abgelaufenen Camps nachts Post.
+frisch({ status: "offen", anmeldungBis: inTagen(-1) }, [{}, {}]);
+await bau.fcAutoSchliessenLauf(AUTH);
+zusage("Das automatische Schliessen verschickt nichts", MAILS.length === 0, JSON.stringify(MAILS));
+
+// =========================================================================
+abschnitt("2. Konfektionsgroesse auf der Betreuer-Liste");
+// =========================================================================
+
+zusage("FC_BETREUER_FELDER traegt trikotgroesse", bau.FC_BETREUER_FELDER.includes("trikotgroesse"),
+  JSON.stringify(bau.FC_BETREUER_FELDER));
+
+// ⚠️ Die Liste steht DOPPELT (Worker wirksam, config.js nur Anzeige). Laufen sie
+// auseinander, zeigt die App eine Spalte, die gar nicht ankommt -- oder
+// umgekehrt gibt der Worker etwas heraus, das niemand erwartet.
+const cBetreuer = JSON.parse((CONFIGJS.match(/const BETREUER_FELDER = (\[[^\]]*\])/) || [])[1] || "[]");
+zusage("Worker- und config.js-Liste sind identisch",
+  JSON.stringify(cBetreuer) === JSON.stringify(bau.FC_BETREUER_FELDER),
+  "config: " + JSON.stringify(cBetreuer) + "\n        worker: " + JSON.stringify(bau.FC_BETREUER_FELDER));
+
+frisch({}, [{ trikotgroesse: "140", rolle: "torwart" }]);
+// Betreuer ohne Bearbeiten-Recht: das Gate ist "steht auf einer Aufgabe".
+camp0().tage = [{ datum: inTagen(30), jobs: [{ id: "j1", besetzung: [{ username: "betreuer" }] }] }];
+RECHT = { canEdit: false, canAdmin: false, wer: "betreuer" };
+let r = await bau.handleFcTeilnehmer(anfrage(), { campId: "c1" }, ENV, AUTH, {});
+const t0 = r.__json.teilnehmer[0];
+zusage("Der Betreuer bekommt die Konfektionsgroesse", t0.trikotgroesse === "140", JSON.stringify(t0));
+zusage("Der Betreuer bekommt die Ausrichtung", t0.rolle === "torwart", JSON.stringify(t0));
+// ⚠️ Die Gegenprobe ist der eigentliche Datenschutz dieser Aktion.
+zusage("Der Betreuer bekommt WEITERHIN keine Anschrift", t0.elternAnschrift === undefined);
+zusage("Der Betreuer bekommt WEITERHIN keine E-Mail", t0.elternEmail === undefined);
+zusage("Der Betreuer bekommt WEITERHIN keinen Beitragsstand",
+  t0.bezahlt === undefined && t0.betrag === undefined);
+zusage("Der Betreuer bekommt WEITERHIN keinen Aendern-Token", t0.token === undefined);
+RECHT = { canEdit: true, canAdmin: true };
+
+// =========================================================================
+abschnitt("3. Mail 'Beitrag eingegangen' mit dem Tagesablauf");
+// =========================================================================
+
+const ABLAUF = "08:30 Ankunft\n09:00 Training\n12:00 Mittagessen";
+frisch({ ablauf: ABLAUF }, [{}]);
+r = await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+zusage("Haken auf bezahlt -> genau eine Mail", MAILS.length === 1, JSON.stringify(MAILS.map((m) => m.subject)));
+zusage("Betreff nennt das Camp", MAILS[0] && /Beitrag eingegangen: Herbstcamp 2026/.test(MAILS[0].subject), MAILS[0] && MAILS[0].subject);
+zusage("Die Mail traegt den Ablauf", MAILS[0] && MAILS[0].textContent.includes(ABLAUF));
+zusage("Die Mail nennt den Betrag", MAILS[0] && MAILS[0].textContent.includes("180,00 €"));
+zusage("Die Mail geht an die Eltern", MAILS[0] && MAILS[0].to[0].email === "eltern1@example.org");
+zusage("bezahltMailAm ist vermerkt", !!anm0().bezahltMailAm, anm0().bezahltMailAm);
+
+// ⚠️ Der Haken laesst sich beliebig oft hin und her stellen (Korrektur einer
+// Fehlbuchung). Jedes Mal eine Mail hiesse, der Familie dreimal dieselbe
+// Zahlung zu bestaetigen.
+MAILS = [];
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: false } }, ENV, AUTH, {});
+zusage("Haken zuruecknehmen verschickt nichts", MAILS.length === 0);
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+zusage("Zweites Setzen verschickt KEINE zweite Mail", MAILS.length === 0, JSON.stringify(MAILS.map((m) => m.subject)));
+
+frisch({ ablauf: "" }, [{}]);
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+zusage("Camp ohne Ablauf: die Mail geht trotzdem raus", MAILS.length === 1);
+zusage("...und traegt keine leere Ablauf-Ueberschrift",
+  MAILS[0] && !MAILS[0].textContent.includes("So läuft das Camp ab"), MAILS[0] && MAILS[0].textContent.slice(0, 400));
+
+frisch({}, [{ bezahlt: true, bezahltAm: heute }]);
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: false } }, ENV, AUTH, {});
+zusage("Alte bezahlte Anmeldung ohne bezahltMailAm: Zuruecknehmen schickt KEINE Mail",
+  MAILS.length === 0, JSON.stringify(MAILS.map((m) => m.subject)));
+
+frisch({}, [{ status: "warteliste" }]);
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+zusage("Warteliste: keine Mail (dort soll niemand ueberwiesen haben)", MAILS.length === 0);
+
+frisch({}, [{ elternEmail: "" }]);
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+zusage("Ohne hinterlegte Adresse: keine Mail, aber der Haken steht",
+  MAILS.length === 0 && anm0().bezahlt === true);
+
+// ⚠️ Der Ablauf wird beim SPEICHERN des Camps uebernommen -- ohne diesen Weg
+// stuende er nie in der Datei, und alle Zusagen darueber liefen ins Leere.
+frisch({}, []);
+await bau.handleFcCampSpeichern(anfrage(), { camp: {
+  id: "c1", name: "Herbstcamp 2026", vonDatum: inTagen(30), bisDatum: inTagen(34),
+  plaetze: 20, ablauf: ABLAUF, fuerFeldspieler: true, fuerTorwart: false
+} }, ENV, AUTH, {});
+zusage("Camp speichern uebernimmt den Ablauf", camp0().ablauf === ABLAUF, camp0().ablauf);
+
+// =========================================================================
+abschnitt("4. Feldspieler oder Torwart");
+// =========================================================================
+
+zusage("fcRollenAmCamp: nur Feldspieler",
+  JSON.stringify(bau.fcRollenAmCamp({ fuerFeldspieler: true, fuerTorwart: false })) === '["feldspieler"]');
+zusage("fcRollenAmCamp: nur Torwart",
+  JSON.stringify(bau.fcRollenAmCamp({ fuerFeldspieler: false, fuerTorwart: true })) === '["torwart"]');
+zusage("fcRollenAmCamp: beides",
+  JSON.stringify(bau.fcRollenAmCamp({ fuerFeldspieler: true, fuerTorwart: true })) === '["feldspieler","torwart"]');
+// ⚠️ Ein Camp aus der Zeit vor diesen Feldern gilt als FELDSPIELER-Camp, nicht
+// als "beides". Sonst bekaemen alle bestehenden Camps ueber Nacht eine
+// Pflichtfrage, die ihre schon vorliegenden Anmeldungen nie beantwortet haben.
+zusage("fcRollenAmCamp: Altbestand ohne Felder -> Feldspieler",
+  JSON.stringify(bau.fcRollenAmCamp({})) === '["feldspieler"]');
+zusage("fcNormalisiere macht den Altbestand ausdruecklich",
+  (() => { const d = bau.fcLeer(); d.camps.push({ id: "x", status: "offen" }); bau.fcNormalisiere(d);
+           return d.camps[0].fuerFeldspieler === true && d.camps[0].fuerTorwart === false; })());
+
+async function melde(daten) {
+  return bau.handleFcAnmelden(anfrage(), {
+    token: "tok1", datenschutz: true, agb: true, agbStand: "stand-1",
+    daten: Object.assign({ kindVorname: "Max", kindNachname: "Muster",
+                           elternName: "Eltern", elternEmail: "e@example.org" }, daten || {})
+  }, ENV, AUTH, {}, null);
+}
+
+frisch({ status: "offen", fuerFeldspieler: true, fuerTorwart: true }, []);
+r = await melde({});
+zusage("Camp mit beiden Ausrichtungen: ohne Angabe -> 400", r.status === 400, JSON.stringify(r.__json));
+zusage("...und die Meldung nennt beide Begriffe",
+  r.__json.error.includes("Feldspieler") && r.__json.error.includes("Torwart"), r.__json.error);
+zusage("...und es entsteht KEINE halbe Anmeldung", camp0().anmeldungen.length === 0);
+
+r = await melde({ rolle: "torwart" });
+zusage("Camp mit beiden: rolle torwart wird uebernommen",
+  r.status === 200 && camp0().anmeldungen[0].rolle === "torwart", JSON.stringify(r.__json));
+
+// ⚠️ Der Client entscheidet NICHT mit: bei einem Camp mit nur einer Ausrichtung
+// gilt sie, egal was mitgeschickt wird.
+frisch({ status: "offen", fuerFeldspieler: true, fuerTorwart: false }, []);
+r = await melde({ rolle: "torwart" });
+zusage("Reines Feldspieler-Camp: mitgeschicktes 'torwart' wird verworfen",
+  r.status === 200 && camp0().anmeldungen[0].rolle === "feldspieler", camp0().anmeldungen[0] && camp0().anmeldungen[0].rolle);
+
+frisch({ status: "offen", fuerFeldspieler: false, fuerTorwart: true }, []);
+r = await melde({});
+zusage("Reines Torwartcamp: ohne Angabe wird 'torwart' gesetzt",
+  r.status === 200 && camp0().anmeldungen[0].rolle === "torwart", camp0().anmeldungen[0] && camp0().anmeldungen[0].rolle);
+
+frisch({}, []);
+r = await bau.handleFcCampSpeichern(anfrage(), { camp: {
+  id: "c1", name: "X", vonDatum: inTagen(3), bisDatum: inTagen(4), plaetze: 5,
+  fuerFeldspieler: false, fuerTorwart: false
+} }, ENV, AUTH, {});
+zusage("Camp ohne jede Ausrichtung wird abgelehnt (400)", r.status === 400, JSON.stringify(r.__json));
+
+// ⚠️ Ein aelterer Client schickt die Haken gar nicht mit -- dann darf die
+// Ausrichtung eines bestehenden Camps nicht stillschweigend zurueckfallen.
+frisch({ fuerFeldspieler: false, fuerTorwart: true }, []);
+r = await bau.handleFcCampSpeichern(anfrage(), { camp: {
+  id: "c1", name: "X", vonDatum: inTagen(3), bisDatum: inTagen(4), plaetze: 5
+} }, ENV, AUTH, {});
+// ⚠️ Der Statuscode gehoert dazu. Ohne ihn sieht eine ABGELEHNTE Speicherung
+// (400) genauso aus wie eine gelungene, bei der die Ausrichtung stehenblieb --
+// in beiden Faellen steht am Camp noch der alte Wert.
+zusage("...und das Speichern gelingt ueberhaupt", r.status === 200, JSON.stringify(r.__json));
+zusage("Fehlende Haken lassen die Ausrichtung stehen",
+  camp0().fuerTorwart === true && camp0().fuerFeldspieler === false,
+  JSON.stringify({ f: camp0().fuerFeldspieler, t: camp0().fuerTorwart }));
+
+frisch({ fuerFeldspieler: true, fuerTorwart: true },
+  [{ rolle: "torwart" }, { rolle: "torwart", status: "warteliste" }, { rolle: "feldspieler" }, { rolle: "torwart", status: "abgesagt" }]);
+zusage("fcTorwartZahl zaehlt nur die ANGEMELDETEN Torhueter", bau.fcTorwartZahl(camp0()) === 1, String(bau.fcTorwartZahl(camp0())));
+r = await bau.handleFcLoad(anfrage(), ENV, AUTH, {});
+zusage("handleFcLoad liefert die Torwart-Zahl mit", r.__json.camps[0].torwarte === 1, String(r.__json.camps[0].torwarte));
+zusage("handleFcLoad liefert die Ausrichtung mit",
+  r.__json.camps[0].fuerFeldspieler === true && r.__json.camps[0].fuerTorwart === true);
+
+// =========================================================================
+abschnitt("5. Feedbackbogen: Versand");
+// =========================================================================
+
+// ⚠️ Aus ist aus. Der Bogen verschickt Post an Familien, deren Camp schon
+// gelaufen ist -- das soll jemand bewusst einschalten.
+frisch({ status: "abgeschlossen", vonDatum: inTagen(-8), bisDatum: inTagen(-4) }, [{}, {}]);
+r = await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Ausgeschaltet: nichts verschickt, und der Lauf sagt das auch",
+  MAILS.length === 0 && r.aus === true, JSON.stringify(r));
+
+DOC.einstellungen.feedbackAktiv = true;
+DOC.einstellungen.feedbackTage = 2;
+r = await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Eingeschaltet, Camp vor 4 Tagen zu Ende: zwei Boegen", MAILS.length === 2, JSON.stringify(r));
+zusage("Der Betreff fragt nach dem Camp", /Wie war das Herbstcamp 2026\?/.test(MAILS[0].subject), MAILS[0].subject);
+zusage("Die Mail nennt die Anonymitaet ausdruecklich", MAILS[0].textContent.includes("anonym"));
+zusage("Die Mail traegt den Feedback-Link mit dem Eltern-Token",
+  MAILS[0].textContent.includes("feedback.html?a=atok1"), MAILS[0].textContent.slice(0, 500));
+zusage("feedbackGebetenAm ist vermerkt", !!anm0().feedbackGebetenAm);
+
+MAILS = [];
+await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Zweiter Lauf schickt nichts nach", MAILS.length === 0);
+
+// ⚠️⚠️ Die OBERE Fenstergrenze -- der wichtigste Fall dieses Abschnitts. Ohne
+// sie ginge in der Nacht, in der jemand den Haken das erste Mal setzt, an die
+// Eltern JEDES je gelaufenen Camps eine Mail. Das ist der Fehler, den man genau
+// einmal macht.
+frisch({ status: "abgeschlossen", vonDatum: inTagen(-400), bisDatum: inTagen(-396) }, [{}, {}]);
+DOC.einstellungen.feedbackAktiv = true;
+DOC.einstellungen.feedbackTage = 2;
+await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Camp von vor einem Jahr bekommt KEINEN Bogen mehr", MAILS.length === 0, JSON.stringify(MAILS.map((m) => m.subject)));
+zusage("Das Fenster ist auf 21 Tage begrenzt", bau.FC_FEEDBACK_FENSTER_TAGE === 21, String(bau.FC_FEEDBACK_FENSTER_TAGE));
+
+// Genau an der oberen Kante muss er noch gehen, einen Tag darueber nicht mehr.
+const kante = 2 + bau.FC_FEEDBACK_FENSTER_TAGE;
+frisch({ status: "abgeschlossen", vonDatum: inTagen(-kante - 4), bisDatum: inTagen(-kante) }, [{}]);
+DOC.einstellungen.feedbackAktiv = true; DOC.einstellungen.feedbackTage = 2;
+await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Am letzten Tag des Fensters geht der Bogen noch", MAILS.length === 1);
+
+frisch({ status: "abgeschlossen", vonDatum: inTagen(-kante - 5), bisDatum: inTagen(-kante - 1) }, [{}]);
+DOC.einstellungen.feedbackAktiv = true; DOC.einstellungen.feedbackTage = 2;
+await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Einen Tag spaeter nicht mehr", MAILS.length === 0);
+
+frisch({ status: "offen", vonDatum: inTagen(2), bisDatum: inTagen(6) }, [{}]);
+DOC.einstellungen.feedbackAktiv = true; DOC.einstellungen.feedbackTage = 2;
+await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Ein Camp, das noch laeuft, bekommt keinen Bogen", MAILS.length === 0);
+
+frisch({ status: "abgeschlossen", vonDatum: inTagen(-8), bisDatum: inTagen(-4) },
+  [{ status: "abgesagt" }, { status: "warteliste" }, { elternEmail: "" }]);
+DOC.einstellungen.feedbackAktiv = true; DOC.einstellungen.feedbackTage = 2;
+await bau.fcFeedbackLauf(ENV, AUTH, "");
+zusage("Abgesagte, Wartende und Anmeldungen ohne Adresse bekommen nichts", MAILS.length === 0);
+
+// =========================================================================
+abschnitt("6. Feedbackbogen: antworten (und die Anonymitaet)");
+// =========================================================================
+
+function bogenCamp() {
+  frisch({ status: "abgeschlossen", vonDatum: inTagen(-8), bisDatum: inTagen(-4) }, [{}, {}, {}]);
+  DOC.einstellungen.feedbackAktiv = true;
+  DOC.einstellungen.feedbackTage = 2;
+}
+
+bogenCamp();
+r = await bau.handleFcFeedbackInfo(anfrage(), { token: "atok1" }, ENV, AUTH, {});
+zusage("feedback-info liefert die Fragen", r.status === 200 && r.__json.fragen.length === bau.FC_FEEDBACK_FRAGEN.length);
+zusage("feedback-info nennt das Camp", r.__json.campName === "Herbstcamp 2026");
+// ⚠️ KEIN Kindername und keine Elterndaten. Den Bogen mit "Hallo Familie Meier"
+// zu eroeffnen waere das Gegenteil der Zusage in der Mail.
+zusage("feedback-info gibt KEINEN Kindernamen heraus",
+  !JSON.stringify(r.__json).includes("Kind1") && !JSON.stringify(r.__json).includes("eltern1@"),
+  JSON.stringify(r.__json).slice(0, 300));
+zusage("feedback-info sagt, dass noch nicht geantwortet wurde", r.__json.schonBeantwortet === false);
+
+r = await bau.handleFcFeedbackInfo(anfrage(), { token: "gibtsnicht" }, ENV, AUTH, {});
+zusage("Unbekannter Token -> 404", r.status === 404);
+
+frisch({ status: "offen", vonDatum: inTagen(2), bisDatum: inTagen(6) }, [{}]);
+r = await bau.handleFcFeedbackInfo(anfrage(), { token: "atok1" }, ENV, AUTH, {});
+zusage("Camp laeuft noch -> 410, nicht 200", r.status === 410, JSON.stringify(r.__json));
+
+bogenCamp();
+r = await bau.handleFcFeedbackSenden(anfrage(), { token: "atok1", antworten: {
+  gesamt: 1, training: 2, essen: 3, organisation: 2, anlage: 1, wieder: "ja",
+  gut: "Die Trainer waren super", besser: "Mehr Schatten"
+} }, ENV, AUTH, {});
+zusage("Antwort wird angenommen", r.status === 200, JSON.stringify(r.__json));
+zusage("Sie liegt am Camp, nicht an der Anmeldung", camp0().feedback.length === 1);
+zusage("feedbackAm ist gesetzt (damit niemand zweimal abstimmt)", !!anm0().feedbackAm);
+
+// ⚠️ HIER steht die Anonymitaet oder faellt. Der Eintrag darf keinen Verweis auf
+// die Anmeldung tragen -- keine Id, keine Nummer, keinen Token -- und keinen
+// Zeitstempel, ueber den er sich mit feedbackAm wieder zusammenbringen liesse.
+const eintrag = camp0().feedback[0];
+zusage("Der Eintrag traegt NUR 'antworten'",
+  JSON.stringify(Object.keys(eintrag)) === '["antworten"]', JSON.stringify(eintrag));
+const eintragText = JSON.stringify(eintrag);
+zusage("...keine Anmeldungs-Id, keine Nummer, kein Token",
+  !eintragText.includes("a1") && !eintragText.includes("atok1"), eintragText);
+zusage("...und keinen Zeitstempel",
+  !/\d{4}-\d{2}-\d{2}T/.test(eintragText), eintragText);
+// ⚠️ feedbackAm ist bewusst nur ein DATUM. Eine Uhrzeit auf die Sekunde waere
+// eine Angabe, die niemand braucht, und neben einem Zeitstempel am Eintrag die
+// Zuordnung selbst.
+zusage("feedbackAm ist nur ein Datum, keine Uhrzeit",
+  /^\d{4}-\d{2}-\d{2}$/.test(anm0().feedbackAm), anm0().feedbackAm);
+// ⚠️ Ein Verlaufseintrag traegt einen Zeitstempel und liefe damit parallel zur
+// Antwortliste -- die Reihenfolge waere ueber ihn wieder herstellbar.
+zusage("Es entsteht KEIN Verlaufseintrag zum Feedback",
+  !(camp0().verlauf || []).some((e) => String(e.was || "").includes("feedback")),
+  JSON.stringify(camp0().verlauf));
+
+r = await bau.handleFcFeedbackSenden(anfrage(), { token: "atok1", antworten: { gesamt: 5 } }, ENV, AUTH, {});
+zusage("Zweite Antwort derselben Familie -> 409", r.status === 409, JSON.stringify(r.__json));
+zusage("...und sie landet nicht doch in der Liste", camp0().feedback.length === 1);
+
+r = await bau.handleFcFeedbackSenden(anfrage(), { token: "atok2", antworten: {} }, ENV, AUTH, {});
+zusage("Leerer Bogen -> 400", r.status === 400, JSON.stringify(r.__json));
+zusage("...und feedbackAm bleibt leer, der Bogen also weiter offen",
+  !camp0().anmeldungen[1].feedbackAm);
+
+r = await bau.handleFcFeedbackSenden(anfrage(), { token: "atok2", antworten: {
+  gesamt: 9, erfunden: "hallo", wieder: "vielleicht", gut: "  ok  "
+} }, ENV, AUTH, {});
+const e2 = camp0().feedback.find((x) => x.antworten.gut === "ok");
+zusage("Ungueltige Note, unbekannte Frage und unklares Ja/Nein fallen weg",
+  !!e2 && e2.antworten.gesamt === undefined && e2.antworten.erfunden === undefined && e2.antworten.wieder === undefined,
+  JSON.stringify(e2));
+
+// Die zufaellige Einfuegestelle laesst sich nur statistisch belegen: bei 40
+// Durchgaengen mit je zwei vorhandenen Eintraegen darf die neue Antwort nicht
+// jedes Mal hinten landen.
+let vorneMal = 0;
+for (let i = 0; i < 40; i++) {
+  bogenCamp();
+  camp0().feedback = [{ antworten: { gesamt: 1 } }, { antworten: { gesamt: 2 } }];
+  await bau.handleFcFeedbackSenden(anfrage(), { token: "atok1", antworten: { gesamt: 4 } }, ENV, AUTH, {});
+  if (camp0().feedback.findIndex((x) => x.antworten.gesamt === 4) !== 2) vorneMal++;
+}
+zusage("Die Antwort landet an zufaelliger Stelle, nicht immer hinten",
+  vorneMal > 5, `${vorneMal} von 40 Durchgaengen nicht am Ende`);
+
+// =========================================================================
+abschnitt("7. Feedbackbogen: Auswertung und Aufraeumen");
+// =========================================================================
+
+bogenCamp();
+camp0().feedback = [
+  { antworten: { gesamt: 1, wieder: "ja", gut: "Toll" } },
+  { antworten: { gesamt: 2, wieder: "ja" } },
+  { antworten: { gesamt: 3, wieder: "nein", besser: "Mehr Pausen" } }
+];
+camp0().anmeldungen.forEach((a) => { a.feedbackGebetenAm = new Date().toISOString(); });
+const aus = bau.fcFeedbackAuswertung(camp0());
+zusage("Auswertung zaehlt die Antworten", aus.anzahl === 3, String(aus.anzahl));
+zusage("Auswertung zaehlt die verschickten Boegen", aus.gebeten === 3, String(aus.gebeten));
+zusage("Der Schnitt stimmt (1+2+3)/3 = 2", aus.schnitte.gesamt === 2, String(aus.schnitte.gesamt));
+zusage("Die Verteilung stimmt",
+  JSON.stringify(aus.verteilung.gesamt.verteilung) === "[1,1,1,0,0]", JSON.stringify(aus.verteilung.gesamt.verteilung));
+zusage("Ja/Nein wird gezaehlt", aus.janein.wieder.ja === 2 && aus.janein.wieder.nein === 1, JSON.stringify(aus.janein));
+zusage("Freitexte kommen paarweise heraus", aus.texte.length === 2, JSON.stringify(aus.texte));
+// ⚠️ Ein Schnitt wie 1.6666666666666667 wuerde so in der Anzeige stehen.
+camp0().feedback = [{ antworten: { gesamt: 1 } }, { antworten: { gesamt: 2 } }, { antworten: { gesamt: 2 } }];
+zusage("Der Schnitt wird auf eine Nachkommastelle gerundet",
+  bau.fcFeedbackAuswertung(camp0()).schnitte.gesamt === 1.7,
+  String(bau.fcFeedbackAuswertung(camp0()).schnitte.gesamt));
+camp0().feedback = [];
+zusage("Ohne Antwort ist der Schnitt null, nicht NaN",
+  bau.fcFeedbackAuswertung(camp0()).schnitte.gesamt === null);
+
+// ⚠️ Die Auswertung geht ab BEARBEITEN heraus (sie enthaelt nichts
+// Personenbezogenes) -- ohne Bearbeiten-Recht aber gar nicht.
+bogenCamp();
+camp0().feedback = [{ antworten: { gesamt: 1 } }];
+r = await bau.handleFcLoad(anfrage(), ENV, AUTH, {});
+zusage("Bearbeiter bekommt die Auswertung", r.__json.camps[0].feedback && r.__json.camps[0].feedback.anzahl === 1);
+RECHT = { canEdit: false, canAdmin: false };
+r = await bau.handleFcLoad(anfrage(), ENV, AUTH, {});
+zusage("Ohne Bearbeiten-Recht kommt gar keine Auswertung mit",
+  r.__json.camps[0].feedback === undefined, JSON.stringify(r.__json.camps[0].feedback));
+RECHT = { canEdit: true, canAdmin: true };
+
+// ⚠️ In einem Freitext kann ein Name stehen -- der eines Trainers, eines
+// anderen Kindes oder des eigenen. Das Aufraeumen verspricht, dass danach
+// niemand mehr aus dieser Datei zu erkennen ist; anonym eingegangen zu sein
+// reicht dafuer nicht.
+frisch({ status: "abgeschlossen", vonDatum: inTagen(-400), bisDatum: inTagen(-396) }, [{}]);
+camp0().feedback = [{ antworten: { gesamt: 2, wieder: "ja", gut: "Trainer Meier war super mit unserem Ben", besser: "nichts" } }];
+r = await bau.handleFcAufraeumen(anfrage(), { campId: "c1" }, ENV, AUTH, {});
+zusage("Aufraeumen laeuft durch", r.status === 200, JSON.stringify(r.__json));
+zusage("Die Noten bleiben stehen",
+  camp0().feedback[0].antworten.gesamt === 2 && camp0().feedback[0].antworten.wieder === "ja",
+  JSON.stringify(camp0().feedback));
+zusage("Die Freitexte sind weg",
+  camp0().feedback[0].antworten.gut === undefined && camp0().feedback[0].antworten.besser === undefined,
+  JSON.stringify(camp0().feedback));
+zusage("Und in der ganzen Datei steht der Name nicht mehr",
+  !JSON.stringify(DOC).includes("Ben"), "");
+
+// =========================================================================
+abschnitt("8. Client und Worker muessen sich decken");
+// =========================================================================
+
+// ⚠️ Die Fragen stehen doppelt (Worker wirksam, config.js als Rueckfall fuer die
+// Auswertung). Laufen sie auseinander, traegt die Auswertung Ueberschriften, die
+// niemand gefragt wurde.
+const cFragenIds = [...CONFIGJS.matchAll(/\{ id: "(\w+)",\s+typ: "(note|janein|text)"/g)].map((m) => m[1] + ":" + m[2]);
+const wFragenIds = bau.FC_FEEDBACK_FRAGEN.map((f) => f.id + ":" + f.typ);
+zusage("Fragenliste in config.js deckt sich mit der im Worker",
+  JSON.stringify(cFragenIds) === JSON.stringify(wFragenIds),
+  "config: " + JSON.stringify(cFragenIds) + "\n        worker: " + JSON.stringify(wFragenIds));
+
+const cNoten = [...CONFIGJS.matchAll(/\{ wert: (\d), label: "/g)].map((m) => Number(m[1]));
+zusage("Notenskala deckt sich", JSON.stringify(cNoten) === JSON.stringify(bau.FC_FEEDBACK_NOTEN),
+  "config: " + JSON.stringify(cNoten) + "\n        worker: " + JSON.stringify(bau.FC_FEEDBACK_NOTEN));
+
+const cRollen = [...CONFIGJS.matchAll(/\{ id: "(feldspieler|torwart)",\s+label:/g)].map((m) => m[1]);
+zusage("Rollenliste deckt sich", JSON.stringify(cRollen) === JSON.stringify(bau.FC_ROLLEN),
+  "config: " + JSON.stringify(cRollen));
+
+// ⚠️ Ohne `:checked` laege bei den Radio-Knoepfen immer der ERSTE vor -- also bei
+// jeder Frage eine 1 und bei jeder Anmeldung "Feldspieler", auch wenn niemand
+// etwas angeklickt hat. Genau diese Falle steckte schon einmal in den
+// Ja/Nein-Feldern.
+zusage("feedback.js liest die Knoepfe mit :checked", FEEDBACKJS.includes('[data-frage="${CSS.escape(f.id)}"]:checked'));
+zusage("oeffentlich.js liest die Rollen-Knoepfe mit :checked", OEFFJS.includes('querySelector("[data-rolle]:checked")'));
+// ⚠️ Keine Vorauswahl: eine vorgewaehlte 3 kaeme bei jedem durch, der eine Frage
+// ueberspringt, und waere dann keine Antwort, sondern eine erfundene.
+zusage("Der Feedbackbogen waehlt keine Note vor", !/name="\$\{oEsc\(id\)\}"[^>]*checked/.test(FEEDBACKJS));
+
+zusage("baueFormular nimmt die Rollen entgegen", OEFFJS.includes("function baueFormular(ziel, konf, werte, rollen)"));
+zusage("...und stellt die Frage nur bei ZWEI Ausrichtungen",
+  OEFFJS.includes("if (liste.length < 2) return \"\";"));
+zusage("anmeldung.js reicht camp.rollen durch", readFileSync(APP + "anmeldung.js", "utf8").includes("camp.felder, letzteEltern || {}, camp.rollen"));
+zusage("meine-anmeldung.js reicht camp.rollen durch", readFileSync(APP + "meine-anmeldung.js", "utf8").includes("camp.felder, a, camp.rollen"));
+
+// Verdrahtung in der Oberflaeche.
+for (const [id, wo] of [
+  ["c-fuer-feldspieler", "Camp-Dialog: Haken Feldspieler"],
+  ["c-fuer-torwart", "Camp-Dialog: Haken Torwart"],
+  ["c-ablauf", "Camp-Dialog: Ablauf"],
+  ["e-feedback", "Verwaltung: Haken Feedbackbogen"],
+  ["e-feedbacktage", "Verwaltung: Tage"],
+  ["btn-test-feedback", "Verwaltung: Jetzt ausloesen"],
+  ["fb-camp", "Feedback-Reiter: Camp-Auswahl"],
+  ["fb-inhalt", "Feedback-Reiter: Inhalt"]
+]) {
+  zusage(`${wo} steht in index.html (#${id})`, INDEXHTML.includes(`id="${id}"`));
+  zusage(`...und app.js fasst ihn an (#${id})`, APPJS.includes(`"${id}"`));
+}
+zusage("Der Feedback-Reiter ist an das BEARBEITEN-Recht gebunden",
+  /data-tab="feedback" class="editor-only hidden"/.test(INDEXHTML));
+// ⚠️ Verstecken ist nicht Raeumen: was einmal gezeichnet ist, bleibt sonst im
+// DOM stehen, wenn ein Recht wegfaellt.
+zusage("Bei Rechteverlust wird der Feedback-Inhalt geraeumt",
+  /raeumeWasNichtMehrErlaubtIst[\s\S]{0,3000}leere\("fb-inhalt"\)/.test(APPJS));
+
+zusage("feedback.html laedt config.js, oeffentlich.js und feedback.js",
+  FEEDBACKHTML.includes("config.js?v=") && FEEDBACKHTML.includes("oeffentlich.js?v=") && FEEDBACKHTML.includes("feedback.js?v="));
+zusage("feedback.html sagt den Eltern, dass es anonym ist",
+  /anonym/i.test(FEEDBACKHTML));
+// ⚠️ noindex: die Seite haengt an einem Token und gehoert in keine Suchmaschine.
+zusage("feedback.html traegt noindex", FEEDBACKHTML.includes('name="robots" content="noindex'));
+
+// =========================================================================
+const gesamt = gruen + funde.length;
+console.log(`\n${gruen}/${gesamt} Zusagen erfuellt.`);
+if (funde.length) {
+  console.log("\nFUNDE:");
+  funde.forEach((f) => console.log("  - " + f.text + (f.detail ? "\n      " + f.detail : "")));
+  process.exit(1);
+}

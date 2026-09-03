@@ -1547,6 +1547,12 @@ export default {
         return handleFcMeineSpeichern(request, body, env, authHeader, corsHeaders);
       case "fussballcamp-meine-absagen":
         return handleFcMeineAbsagen(request, body, env, authHeader, corsHeaders);
+      // Der Feedbackbogen -- ebenfalls ohne Sitzung, Ausweis ist der
+      // Eltern-Token aus der Mail.
+      case "fussballcamp-feedback-info":
+        return handleFcFeedbackInfo(request, body, env, authHeader, corsHeaders);
+      case "fussballcamp-feedback-senden":
+        return handleFcFeedbackSenden(request, body, env, authHeader, corsHeaders);
 
       // Ab hier mit Sitzung.
       case "fussballcamp-load":
@@ -19137,6 +19143,18 @@ const FC_MAX_PREIS = 100000;         // 1.000,00 EUR in Cent
 const FC_MAX_VERLAUF = 400;          // je Camp
 const FC_STATUS = ["entwurf", "offen", "geschlossen", "abgeschlossen"];
 
+// ---------- Ausrichtung: Feldspieler, Torwart oder beides (seit 2026-09-03) ----------
+//
+// Am Camp steht, WAS angeboten wird; an der Anmeldung, WOFUER dieses Kind kommt.
+// Der Zweck ist die Personalplanung: ohne die Zahl der Torhueter weiss niemand,
+// wie viele Torwarttrainer gebraucht werden.
+const FC_ROLLEN = ["feldspieler", "torwart"];
+const FC_ROLLEN_LABEL = { feldspieler: "Feldspieler", torwart: "Torwart" };
+
+// Der Tagesablauf des Camps. Steht am Camp (nicht in den Einstellungen), weil
+// jedes Camp seinen eigenen hat, und geht in die Mail "Beitrag eingegangen".
+const FC_ABLAUF_MAX = 4000;
+
 // ---------- Camp-Bild (Werbeplakat) ----------
 //
 // ⚠️ Der Ordner wird aus FUSSBALLCAMP_URL abgeleitet, NICHT ueber davFileDir().
@@ -19190,7 +19208,56 @@ const FC_FELDER = {
 // KEINE Anschrift, KEINE E-Mail, KEINEN Beitragsstand und KEINE Bemerkung --
 // alles Dinge, die am Sportplatz niemand braucht. Wer hier etwas ergaenzt, gibt
 // es an einen deutlich groesseren Kreis heraus.
-const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "allergien", "medikamente", "krankheiten", "essenHinweis", "elternTelefon", "alleinNachHause"];
+//
+// ⚠️ `trikotgroesse` steht seit 2026-09-03 dabei (Michel-Vorgabe): das hier ist
+// die Liste, die die Trainer am letzten Camptag in der Hand halten, wenn das
+// Material ausgegeben wird. Sie ist keine Gesundheitsangabe und kein
+// Kontaktdatum -- der Kreis, der sie zu sehen bekommt, waechst dadurch um genau
+// die Leute, die die Trikots verteilen.
+const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "trikotgroesse", "allergien", "medikamente", "krankheiten", "essenHinweis", "elternTelefon", "alleinNachHause"];
+
+// ---------- Feedbackbogen (seit 2026-09-03) ----------
+//
+// Ein paar Tage nach dem letzten Camptag bekommen die Eltern einen Link und
+// koennen ANONYM antworten. Der Link ist derselbe Eltern-Token wie beim Aendern
+// der Anmeldung -- nur so laesst sich verhindern, dass jemand hundertmal
+// abstimmt, ohne dass die Familie sich anmelden muss.
+//
+// ⚠️ DER KERN: der Token wird benutzt, um zu pruefen "hat diese Familie schon
+// geantwortet" -- und danach WEGGEWORFEN. Die Antwort selbst wird an
+// `camp.feedback` gehaengt, ohne jeden Verweis auf die Anmeldung. Wer die Datei
+// liest, sieht die Antworten und getrennt davon, WER geantwortet hat; welche
+// Antwort zu wem gehoert, steht nirgends.
+//
+// ⚠️ Diese Liste ist die WIRKSAME. fussballcamp/config.js fuehrt dieselbe fuer
+// die Anzeige; eine Frage nur dort anzulegen bleibt wirkungslos, weil
+// fcFeedbackPruefen alles verwirft, was hier nicht steht.
+const FC_FEEDBACK_FRAGEN = [
+  { id: "gesamt",       typ: "note",   frage: "Wie hat es deinem Kind insgesamt gefallen?" },
+  { id: "training",     typ: "note",   frage: "Training und Betreuung durch die Trainer" },
+  { id: "essen",        typ: "note",   frage: "Verpflegung und Essen" },
+  { id: "organisation", typ: "note",   frage: "Organisation und Information vorab" },
+  { id: "anlage",       typ: "note",   frage: "Plätze, Räume und Ausstattung" },
+  { id: "wieder",       typ: "janein", frage: "Würdest du dein Kind wieder zu einem unserer Camps anmelden?" },
+  { id: "gut",          typ: "text",   frage: "Was hat besonders gut gefallen?" },
+  { id: "besser",       typ: "text",   frage: "Was sollen wir beim nächsten Mal besser machen?" }
+];
+
+// Schulnoten-Richtung: 1 ist die beste. Die Beschriftung steht im Client an
+// JEDEM Knopf, damit niemand raten muss, ob 1 oder 5 gut ist.
+const FC_FEEDBACK_NOTEN = [1, 2, 3, 4, 5];
+const FC_FEEDBACK_TEXT_MAX = 1000;
+const FC_FEEDBACK_MAX_JE_CAMP = 500;   // so viele Anmeldungen kann ein Camp hoechstens haben
+
+// Wie viele Tage NACH dem letzten Camptag gefragt wird (Vorgabe, in den
+// Einstellungen aenderbar).
+const FC_FEEDBACK_TAGE_VORGABE = 2;
+
+// ⚠️ Die OBERE Grenze des Versandfensters, und sie ist der wichtigste Wert in
+// diesem Block: ohne sie ginge in der Nacht, in der jemand den Haken das erste
+// Mal setzt, an die Eltern JEDES je gelaufenen Camps eine Feedback-Mail. Nach
+// diesen Tagen ist der Zug fuer ein Camp abgefahren und bleibt es.
+const FC_FEEDBACK_FENSTER_TAGE = 21;
 
 // ---------- Teilnahmebedingungen ----------
 //
@@ -19547,6 +19614,11 @@ function fcEinstellungenLeer() {
     agbText: "", agbStand: "",
     startErinnerung: true, startErinnerungTage: 3,
     zahlErinnerung: true, zahlErinnerungTage: 14,
+    // ⚠️ Der Feedbackbogen ist per Vorgabe AUS -- anders als die beiden
+    // Erinnerungen darueber. Er verschickt Post an Familien, deren Camp schon
+    // gelaufen ist; das soll jemand bewusst einschalten und nicht durch ein
+    // Programm-Update geschenkt bekommen.
+    feedbackAktiv: false, feedbackTage: FC_FEEDBACK_TAGE_VORGABE,
     aufraeumenNachMonaten: 6
   };
 }
@@ -19566,7 +19638,15 @@ function fcNormalisiere(doc) {
     if (!Array.isArray(c.anmeldungen)) c.anmeldungen = [];
     if (!Array.isArray(c.verlauf)) c.verlauf = [];
     if (!c.felder || typeof c.felder !== "object") c.felder = {};
+    if (!Array.isArray(c.feedback)) c.feedback = [];
     if (!FC_STATUS.includes(c.status)) c.status = "entwurf";
+    // Ausrichtung. ⚠️ Ein Camp aus der Zeit VOR diesem Feld traegt keines von
+    // beiden -- es gilt als Feldspieler-Camp, nicht als "beides". Sonst bekaemen
+    // alle bestehenden Camps ueber Nacht eine Pflichtfrage im Formular, die ihre
+    // schon vorliegenden Anmeldungen nie beantwortet haben.
+    c.fuerFeldspieler = c.fuerFeldspieler === undefined ? !c.fuerTorwart : !!c.fuerFeldspieler;
+    c.fuerTorwart = !!c.fuerTorwart;
+    if (!c.fuerFeldspieler && !c.fuerTorwart) c.fuerFeldspieler = true;
     // Bild: entweder ein vollstaendiges { id, contentType } oder gar keins. Ein
     // halbes Objekt wuerde spaeter eine Bild-Adresse erzeugen, hinter der nichts
     // liegt -- im Fenster der Vereinsseite ein kaputtes Bild ohne Erklaerung.
@@ -19709,6 +19789,43 @@ function fcIstBetreuer(camp, username) {
   if (!username) return false;
   return (camp.tage || []).some((t) => (t.jobs || []).some((j) =>
     (j.besetzung || []).some((b) => b && b.username === username)));
+}
+
+// Welche Ausrichtungen bietet dieses Camp an? Die Antwort hat IMMER mindestens
+// einen Eintrag.
+//
+// ⚠️ Ein Camp mit BEIDEN Ausrichtungen muss die Frage im Anmeldeformular
+// stellen; eines mit nur einer stellt sie NICHT. Eine Frage mit genau einer
+// moeglichen Antwort ist keine Frage, sondern eine Stolperstelle -- und der
+// Wert steht ohnehin fest.
+function fcRollenAmCamp(camp) {
+  const c = camp || {};
+  const rollen = [];
+  if (c.fuerFeldspieler) rollen.push("feldspieler");
+  if (c.fuerTorwart) rollen.push("torwart");
+  if (!rollen.length) rollen.push("feldspieler");
+  return rollen;
+}
+
+// Was als Rolle an einer Anmeldung landet.
+//
+// ⚠️ Der Client entscheidet NICHT mit (gleiche Regel wie bei den Formularfeldern):
+// bietet das Camp nur eine Ausrichtung an, gilt sie -- egal, was mitgeschickt
+// wurde. Nur wenn wirklich zwei zur Wahl stehen, ist die Angabe Pflicht.
+function fcRollePruefen(camp, roh) {
+  const erlaubt = fcRollenAmCamp(camp);
+  if (erlaubt.length === 1) return erlaubt[0];
+  const wert = String((roh && roh.rolle) || "");
+  if (!erlaubt.includes(wert)) {
+    throw new FcFehler("Bitte gib an, ob dein Kind als Feldspieler oder als Torwart teilnimmt.", 400);
+  }
+  return wert;
+}
+
+// Wie viele Torhueter sind angemeldet? Gerechnet, nie gespeichert -- gleiche
+// Ueberlegung wie bei fcBelegt.
+function fcTorwartZahl(camp) {
+  return (camp.anmeldungen || []).filter((a) => a.status === "angemeldet" && a.rolle === "torwart").length;
 }
 
 // Nimmt dieses Camp gerade Anmeldungen an? Status UND Datumsfenster.
@@ -19895,6 +20012,8 @@ function fcOeffentlicheSicht(camp) {
     voll: fcFrei(camp) <= 0,
     warteliste: fcWartende(camp).length,
     anmeldungBis: camp.anmeldungBis || "",
+    // Fuer wen das Camp ist. Zwei Eintraege heissen: das Formular muss fragen.
+    rollen: fcRollenAmCamp(camp),
     // Nur die Kennung, nicht die Bytes: das Bild holt sich der Browser selbst
     // ueber GET /camp-bild/<campToken>/<bildId> und legt es in seinen Cache.
     // Die Kennung wechselt bei jedem neuen Bild -- deshalb darf die Antwort
@@ -20268,6 +20387,7 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
       }
 
       const felder = fcFelderPruefen(camp, body.daten);
+      const rolle = fcRollePruefen(camp, body.daten);
 
       // Dieselbe Familie meldet dasselbe Kind zweimal an -- meistens, weil der
       // erste Versuch im Netz haengen blieb. Dann entsteht KEINE zweite
@@ -20321,9 +20441,14 @@ async function handleFcAnmelden(request, body, env, authHeader, corsHeaders, exe
         // laesst sich der damalige Wortlaut aus dem Archiv zurueckholen.
         agbAm: new Date().toISOString(),
         agbStand: agbStandJetzt,
+        // Feldspieler oder Torwart. Bei einem Camp mit nur einer Ausrichtung
+        // steht hier trotzdem der ausgeschriebene Wert -- so muss keine
+        // Auswertung spaeter aus dem Camp zurueckrechnen, was gemeint war.
+        rolle,
         erstelltAm: new Date().toISOString(),
         geaendertAm: "", elternAenderung: "", absageGrund: "",
-        startErinnertAm: "", zahlErinnertAm: ""
+        startErinnertAm: "", zahlErinnertAm: "",
+        feedbackGebetenAm: "", feedbackAm: ""
       }, felder);
 
       camp.anmeldungen.push(neu);
@@ -20422,7 +20547,12 @@ async function handleFcMeineInfo(request, body, env, authHeader, corsHeaders) {
     // nur FC_FELDER, und auf der Warteliste gibt es keinen Zahlungsblock, aus dem
     // sich der festgeschriebene Beitrag sonst ablesen liesse.
     const sicht = { status: anmeldung.status, bezahlt: !!anmeldung.bezahlt, wartePlatz,
-                    betrag: fcBetrag(camp, anmeldung), zusatzantwort: anmeldung.zusatzantwort || "" };
+                    betrag: fcBetrag(camp, anmeldung), zusatzantwort: anmeldung.zusatzantwort || "",
+                    // ⚠️ Ohne Rueckfall auf fcRollenAmCamp stuende bei jeder
+                    // Anmeldung aus der Zeit vor diesem Feld gar nichts da, und
+                    // die Eltern saehen im Aendern-Formular eine leere
+                    // Pflichtfrage, die sie nie gestellt bekommen haben.
+                    rolle: anmeldung.rolle || fcRollenAmCamp(camp)[0] };
     Object.keys(FC_FELDER).forEach((id) => { if (anmeldung[id] !== undefined) sicht[id] = anmeldung[id]; });
 
     return json({
@@ -20432,7 +20562,8 @@ async function handleFcMeineInfo(request, body, env, authHeader, corsHeaders) {
         ort: camp.ort || "", preis: fcPreisAmTag(camp),
         preisRegulaer: camp.preis || 0,
         preisFruehBis: (Number(camp.preisFrueh || 0) > 0 && camp.preisFruehBis) ? camp.preisFruehBis : "",
-        zusatzfrage: camp.zusatzfrage || "", felder: camp.felder || {}
+        zusatzfrage: camp.zusatzfrage || "", felder: camp.felder || {},
+        rollen: fcRollenAmCamp(camp)
       },
       anmeldung: sicht,
       agb: fcAgbFuerAnmeldung(doc, anmeldung),
@@ -20482,6 +20613,15 @@ async function handleFcMeineSpeichern(request, body, env, authHeader, corsHeader
       // Loeschung mehr erwischt (siehe die Durchsicht vom 2026-08-21).
       const geaendert = Object.keys(felder).filter((id) => fcWertSchluessel(anmeldung[id]) !== fcWertSchluessel(felder[id]));
       Object.assign(anmeldung, felder);
+
+      // Feldspieler/Torwart. ⚠️ Bei einem Camp mit nur EINER Ausrichtung liefert
+      // fcRollePruefen sie unbesehen zurueck -- eine Aenderung ist dort also
+      // nicht moeglich, auch wenn jemand etwas anderes mitschickt.
+      const rolleNeu = fcRollePruefen(camp, body.daten);
+      if (String(anmeldung.rolle || "") !== rolleNeu) {
+        if (anmeldung.rolle) geaendert.push("rolle");
+        anmeldung.rolle = rolleNeu;
+      }
       if (camp.zusatzfrage) {
         const antwortNeu = capStr(body.daten && body.daten.zusatzantwort, 200);
         if (String(anmeldung.zusatzantwort || "") !== String(antwortNeu || "")) geaendert.push("zusatzantwort");
@@ -20603,6 +20743,10 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       preisFrueh: c.preisFrueh || 0, preisFruehBis: c.preisFruehBis || "",
       preisJetzt: fcPreisAmTag(c),
       kurzbeschreibung: c.kurzbeschreibung || "", beschreibung: c.beschreibung || "",
+      // Der Tagesablauf. Steht in der Mail "Beitrag eingegangen"; die Verwaltung
+      // pflegt ihn im Camp-Dialog.
+      ablauf: c.ablauf || "",
+      fuerFeldspieler: !!c.fuerFeldspieler, fuerTorwart: !!c.fuerTorwart,
       zusatzfrage: c.zusatzfrage || "", felder: c.felder || {},
       status: c.status, anmeldungVon: c.anmeldungVon || "", anmeldungBis: c.anmeldungBis || "",
       token: c.token || "", tage: c.tage || [],
@@ -20622,6 +20766,9 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       kalenderSoll: fcGehoertInKalender(c),
       // Gerechnet, damit auch ohne Bearbeiten-Recht die Auslastung sichtbar ist.
       belegt: fcBelegt(c), warteliste: fcWartende(c).length, jobsFrei: fcJobsFrei(c),
+      // Wie viele Torhueter -- die Zahl, wegen der es die Ausrichtung ueberhaupt
+      // gibt. Gerechnet wie alles Gezaehlte, nicht gespeichert.
+      torwarte: fcTorwartZahl(c),
       // Damit der Client "Anmeldung öffnen" mit einer Warnung versehen kann,
       // ohne die IBAN selbst zu kennen.
       hatKonto: !!einst.iban,
@@ -20630,6 +20777,10 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
       // fcAbschlussFaellig.
       abschlussFaellig: ctx.canAdmin ? fcAbschlussFaellig(c, einst) : false
     };
+    // Die Auswertung des Feedbackbogens. ⚠️ Ab BEARBEITEN, nicht erst ab
+    // Administrieren: sie enthaelt nichts Personenbezogenes, und gebraucht wird
+    // sie von denen, die das naechste Camp planen.
+    if (ctx.canEdit) sicht.feedback = fcFeedbackAuswertung(c);
     if (ctx.canEdit) {
       const wartend = fcWartende(c);
       sicht.anmeldungen = (c.anmeldungen || []).map((a) => Object.assign({}, a, {
@@ -20699,6 +20850,11 @@ async function handleFcTeilnehmer(request, body, env, authHeader, corsHeaders) {
     .map((a) => {
       const kurz = {};
       FC_BETREUER_FELDER.forEach((id) => { if (a[id] !== undefined && a[id] !== "") kurz[id] = a[id]; });
+      // ⚠️ `rolle` steht NICHT in FC_FELDER (sie ist keine Formularfrage im
+      // ueblichen Sinn, sondern haengt an der Ausrichtung des Camps) und muss
+      // deshalb eigens mit. Ohne sie stuenden die Torhueter am Platz in
+      // derselben Reihe wie alle anderen -- und genau dafuer gibt es das Feld.
+      kurz.rolle = a.rolle || "feldspieler";
       return kurz;
     });
 
@@ -20854,8 +21010,32 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
         camp.preisFruehBis = "";
       }
       camp.preisHinweis = capStr(roh.preisHinweis, 200).trim();
+
+      // Ausrichtung. ⚠️ Mindestens eine muss angekreuzt sein -- ein Camp ohne
+      // jede Ausrichtung koennte gar keine Anmeldung annehmen (fcRollePruefen
+      // faende keinen gueltigen Wert), und in der Maske saehe es aus wie ein
+      // ganz normales Camp. Lieber hier ablehnen.
+      //
+      // ⚠️ Wie beim Bild sind "Feld fehlt" und "Feld ist false" ZWEI Faelle: ein
+      // aelterer Client schickt die beiden Haken gar nicht mit und darf die
+      // Ausrichtung eines bestehenden Camps nicht stillschweigend zuruecksetzen.
+      if (roh.fuerFeldspieler !== undefined || roh.fuerTorwart !== undefined) {
+        const feld = roh.fuerFeldspieler === true;
+        const tw = roh.fuerTorwart === true;
+        if (!feld && !tw) throw new FcFehler("Bitte kreuze an, für wen das Camp ist — Feldspieler, Torwart oder beides.", 400);
+        camp.fuerFeldspieler = feld;
+        camp.fuerTorwart = tw;
+      } else if (neu) {
+        camp.fuerFeldspieler = true;
+        camp.fuerTorwart = false;
+      }
+
       camp.kurzbeschreibung = capStr(roh.kurzbeschreibung, 200).trim();
       camp.beschreibung = capStr(roh.beschreibung, 2000).trim();
+      // Der Tagesablauf. Geht NICHT auf die oeffentliche Anmeldeseite, sondern
+      // in die Mail "Beitrag eingegangen" -- er richtet sich an Familien, deren
+      // Platz feststeht, nicht an Interessenten.
+      camp.ablauf = capStr(roh.ablauf, FC_ABLAUF_MAX).trim();
       camp.zusatzfrage = capStr(roh.zusatzfrage, 200).trim();
       camp.anmeldungVon = anmVon;
       camp.anmeldungBis = anmBis;
@@ -21190,7 +21370,14 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
     fcVerlangeEdit(ctx);
     const roh = body.anmeldung || {};
 
+    // ⚠️ Im Closure gesetzt und VOR jedem Durchgang zurueckgesetzt: fcMutiere
+    // laeuft bei einem Konflikt bis zu dreimal, und ein Stand aus dem
+    // verworfenen Durchgang wuerde eine Mail ueber eine Zahlung ausloesen, die
+    // gar nicht gespeichert wurde.
+    let bezahltMail = null;
+
     const antwort = await fcMutiere(authHeader, (doc) => {
+      bezahltMail = null;
       const camp = doc.camps.find((c) => c.id === capStr(body.campId, 80));
       if (!camp) throw new FcFehler("Dieses Camp gibt es nicht.", 404);
       const a = (camp.anmeldungen || []).find((x) => x.id === capStr(roh.id, 80));
@@ -21203,7 +21390,32 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
           a.bezahltAm = neu ? fcHeuteBerlin() : "";
           a.bezahltVon = neu ? ctx.session.username : "";
           fcVerlaufNotiz(camp, { was: neu ? "bezahlt" : "bezahlt-zurueck", von: ctx.session.username, nr: a.nummer || 0 });
+
+          // Mail "Beitrag eingegangen" -- mit dem Tagesablauf des Camps.
+          //
+          // ⚠️ HOECHSTENS EINMAL je Anmeldung, festgehalten in bezahltMailAm.
+          // Der Haken laesst sich beliebig oft hin und her stellen (Korrektur
+          // einer Fehlbuchung), und jedes Mal eine Mail zu schicken hiesse, der
+          // Familie dreimal dieselbe Zahlung zu bestaetigen.
+          //
+          // ⚠️ Nur bei Status "angemeldet": wer auf der Warteliste steht, soll
+          // gar nicht ueberwiesen haben, und wer abgesagt hat, bekommt keine
+          // Vorfreude-Mail mehr.
+          if (neu && !a.bezahltMailAm && a.status === "angemeldet" && a.elternEmail) {
+            a.bezahltMailAm = new Date().toISOString();
+            bezahltMail = {
+              camp: JSON.parse(JSON.stringify(camp)),
+              anmeldung: JSON.parse(JSON.stringify(a)),
+              einstellungen: doc.einstellungen
+            };
+          }
         }
+      }
+
+      // Ausrichtung korrigieren. Nur bei einem Camp, das beides anbietet --
+      // sonst gaebe es nichts zu waehlen.
+      if (roh.rolle !== undefined && fcRollenAmCamp(camp).length > 1 && FC_ROLLEN.includes(String(roh.rolle))) {
+        a.rolle = String(roh.rolle);
       }
       if (roh.notiz !== undefined) a.notiz = capStr(roh.notiz, 600);
 
@@ -21228,6 +21440,19 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
       a.elternAenderungFelder = [];
       return {};
     });
+
+    // ⚠️ NACH dem Schreiben und in einem eigenen try: der Haken "bezahlt" steht,
+    // auch wenn Brevo nicht antwortet. Andersherum stuende der Beitrag wieder
+    // auf offen, nur weil eine Mail klemmte -- und beim naechsten Anlauf ginge
+    // sie ohnehin nicht mehr raus, weil bezahltMailAm schon gesetzt ist.
+    let sent = false;
+    if (bezahltMail) {
+      try {
+        sent = await fcBezahltMail(env, bezahltMail.camp, bezahltMail.anmeldung, bezahltMail.einstellungen);
+      } catch (_) { sent = false; }
+    }
+    antwort.bezahltMailVersucht = !!bezahltMail;
+    antwort.sent = sent;
     return json(antwort, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
@@ -21418,8 +21643,18 @@ async function handleFcEinstellungenSpeichern(request, body, env, authHeader, co
         startErinnerungTage: fcZahl(roh.startErinnerungTage, 1, 60) || 3,
         zahlErinnerung: roh.zahlErinnerung !== false,
         zahlErinnerungTage: fcZahl(roh.zahlErinnerungTage, 1, 120) || 14,
+        // ⚠️ Hier `=== true` statt `!== false` wie bei den beiden darueber: die
+        // sind an, solange niemand widerspricht, der Feedbackbogen ist aus,
+        // solange niemand ihn einschaltet. Ein aelterer Client, der das Feld gar
+        // nicht kennt, darf ihn nicht aus Versehen anschalten.
+        feedbackAktiv: roh.feedbackAktiv === true,
+        feedbackTage: fcZahl(roh.feedbackTage, 0, 60),
         aufraeumenNachMonaten: fcZahl(roh.aufraeumenNachMonaten, 1, 60) || 6
       };
+      // ⚠️ 0 ist ein gueltiger Wert ("am letzten Camptag selbst") -- deshalb
+      // gegen null pruefen, nicht auf Wahrheitswert. `|| 2` haette die 0 still
+      // zur 2 gemacht.
+      if (doc.einstellungen.feedbackTage === null) doc.einstellungen.feedbackTage = FC_FEEDBACK_TAGE_VORGABE;
 
       // ⚠️ Die bisherige Fassung wird archiviert, aber NUR wenn eine Anmeldung
       // sich darauf beruft. Sonst wuechse die Datei mit jedem Tippfehler um 5 KB.
@@ -21491,6 +21726,21 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
       // stuenden die Namen nach dem Aufraeumen weiter in der Datei -- eine
       // Loeschung, die nur die Haelfte erwischt.
       fcVerlaufNamenRaeumen(camp);
+      // ⚠️ Und die DRITTE Kopie sind die Freitexte des Feedbackbogens. Die Noten
+      // bleiben (reine Zahlen ohne Personenbezug), die Freitexte gehen: dort
+      // kann ein Name stehen -- der eines Trainers, eines anderen Kindes oder
+      // des eigenen ("unser Ben war begeistert"). Das Aufraeumen verspricht,
+      // dass danach niemand mehr aus dieser Datei zu erkennen ist; anonym
+      // eingegangen zu sein reicht dafuer nicht.
+      camp.feedback = (camp.feedback || []).map((e) => {
+        const ant = {};
+        FC_FEEDBACK_FRAGEN.forEach((f) => {
+          if (f.typ !== "text" && e && e.antworten && e.antworten[f.id] !== undefined) {
+            ant[f.id] = e.antworten[f.id];
+          }
+        });
+        return { antworten: ant };
+      });
       camp.aufgeraeumtAm = new Date().toISOString();
       fcVerlaufNotiz(camp, { was: "aufgeraeumt", von: ctx.session.username, anzahl: vorher });
       // Beruft sich keine Anmeldung mehr auf eine archivierte Fassung der
@@ -21504,6 +21754,180 @@ async function handleFcAufraeumen(request, body, env, authHeader, corsHeaders) {
     // wenn ein Bearbeiter den Kalender oeffnet.
     antwort.kalender = await fcKalenderNachziehen(authHeader, antwort.schnappschuss);
     delete antwort.schnappschuss;
+    return json(antwort, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ============================================================
+//  Feedbackbogen (seit 2026-09-03)
+// ============================================================
+
+// Nimmt entgegen, was das Formular geschickt hat, und gibt zurueck, was
+// gespeichert werden darf. Unbekannte Fragen, unbekannte Noten und zu lange
+// Texte fallen weg -- gleiche Regel wie bei fcFelderPruefen.
+//
+// ⚠️ Eine Antwort MUSS mindestens eine Note oder einen Text tragen. Ein leerer
+// Bogen wuerde sonst als Antwort gezaehlt und den Schnitt verwaessern, ohne dass
+// jemand etwas gesagt hat.
+function fcFeedbackPruefen(roh) {
+  const ant = {};
+  let inhalt = 0;
+  FC_FEEDBACK_FRAGEN.forEach((f) => {
+    const wert = roh ? roh[f.id] : undefined;
+    if (f.typ === "note") {
+      const n = Number(wert);
+      if (FC_FEEDBACK_NOTEN.includes(n)) { ant[f.id] = n; inhalt++; }
+      return;
+    }
+    if (f.typ === "janein") {
+      if (wert === "ja" || wert === "nein") { ant[f.id] = wert; inhalt++; }
+      return;
+    }
+    const t = capStr(wert === null || wert === undefined ? "" : String(wert), FC_FEEDBACK_TEXT_MAX).trim();
+    if (t) { ant[f.id] = t; inhalt++; }
+  });
+  if (!inhalt) throw new FcFehler("Bitte beantworte mindestens eine Frage.", 400);
+  return ant;
+}
+
+// Was die Verwaltung von den Antworten zu sehen bekommt: Schnitte, Verteilung
+// und die Freitexte.
+//
+// ⚠️ Die Freitexte gehen PAARWEISE heraus, so wie sie eingegangen sind ("was war
+// gut" und "was besser machen" derselben Familie gehoeren zusammen). Das ist
+// unbedenklich, weil die Eintraege in `camp.feedback` schon in zufaelliger
+// Reihenfolge liegen -- siehe handleFcFeedbackSenden.
+function fcFeedbackAuswertung(camp) {
+  const liste = Array.isArray(camp.feedback) ? camp.feedback : [];
+  const gebeten = (camp.anmeldungen || []).filter((a) => a && a.feedbackGebetenAm).length;
+
+  const noten = {};
+  const janein = {};
+  FC_FEEDBACK_FRAGEN.forEach((f) => {
+    if (f.typ === "note") noten[f.id] = { anzahl: 0, summe: 0, verteilung: [0, 0, 0, 0, 0] };
+    if (f.typ === "janein") janein[f.id] = { ja: 0, nein: 0 };
+  });
+
+  const texte = [];
+  liste.forEach((e) => {
+    const ant = (e && e.antworten) || {};
+    const paar = {};
+    FC_FEEDBACK_FRAGEN.forEach((f) => {
+      const v = ant[f.id];
+      if (f.typ === "note" && FC_FEEDBACK_NOTEN.includes(Number(v))) {
+        const n = Number(v);
+        noten[f.id].anzahl++;
+        noten[f.id].summe += n;
+        noten[f.id].verteilung[n - 1]++;
+      } else if (f.typ === "janein" && (v === "ja" || v === "nein")) {
+        janein[f.id][v]++;
+      } else if (f.typ === "text" && v) {
+        paar[f.id] = String(v);
+      }
+    });
+    if (Object.keys(paar).length) texte.push(paar);
+  });
+
+  const schnitte = {};
+  Object.keys(noten).forEach((id) => {
+    // ⚠️ Auf eine Nachkommastelle GERUNDET herausgeben, nicht als roher Bruch:
+    // sonst steht in der Anzeige "1.6666666666666667".
+    schnitte[id] = noten[id].anzahl
+      ? Math.round((noten[id].summe / noten[id].anzahl) * 10) / 10
+      : null;
+  });
+
+  return { anzahl: liste.length, gebeten, schnitte, verteilung: noten, janein, texte };
+}
+
+// ---------- fussballcamp-feedback-info (OHNE Login, Eltern-Token) ----------
+async function handleFcFeedbackInfo(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(FC_LESE_ZAEHLER, FC_LESE_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+    const treffer = fcAnmeldungZuToken(doc, body.token);
+    if (!treffer) return json({ error: "Diesen Bogen gibt es nicht." }, 404, corsHeaders);
+    const { camp, anmeldung } = treffer;
+
+    if (camp.aufgeraeumtAm) {
+      return json({ error: "Dieses Camp ist abgeschlossen, der Bogen ist geschlossen." }, 410, corsHeaders);
+    }
+    // ⚠️ Vor dem letzten Camptag gibt es nichts zu bewerten. Der Link aus der
+    // Mail kommt danach -- wer ihn frueher aufruft, hat ihn geraten.
+    if (!camp.bisDatum || camp.bisDatum >= fcHeuteBerlin()) {
+      return json({ error: "Dieses Camp läuft noch. Der Bogen öffnet nach dem letzten Camptag." }, 410, corsHeaders);
+    }
+    if (anmeldung.status !== "angemeldet") {
+      return json({ error: "Diese Anmeldung war beim Camp nicht dabei." }, 410, corsHeaders);
+    }
+
+    return json({
+      campName: camp.name,
+      vonDatum: camp.vonDatum, bisDatum: camp.bisDatum,
+      // ⚠️ KEIN Kindername und keine Elterndaten. Der Bogen ist anonym; ihn mit
+      // "Hallo Familie Meier" zu eroeffnen waere das Gegenteil der Zusage in der
+      // Mail, auch wenn die Antwort danach getrennt abgelegt wird.
+      fragen: FC_FEEDBACK_FRAGEN,
+      noten: FC_FEEDBACK_NOTEN,
+      textMax: FC_FEEDBACK_TEXT_MAX,
+      schonBeantwortet: !!anmeldung.feedbackAm
+    }, 200, corsHeaders);
+  } catch (e) {
+    return fcAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- fussballcamp-feedback-senden (OHNE Login, Eltern-Token) ----------
+//
+// ⚠️ HIER steht die Anonymitaet oder faellt. Der Token wird gebraucht, um
+// "schon beantwortet" zu pruefen und den Merker zu setzen -- die Antwort selbst
+// wird an camp.feedback gehaengt, OHNE Anmeldungs-Id, OHNE Nummer, OHNE
+// Zeitstempel und an einer ZUFAELLIGEN Stelle der Liste.
+//
+// Warum das alles zusammen noetig ist: an der Anmeldung steht `feedbackAm` (das
+// Datum, mehr nicht) -- ohne den Merker koennte jeder beliebig oft abstimmen.
+// Laege die Antwort dann in Eingangsreihenfolge oder mit Uhrzeit da, liesse sie
+// sich ueber genau diesen Merker wieder einer Familie zuordnen. Bei zwoelf
+// Antworten reicht dafuer ein Blick in die Datei.
+async function handleFcFeedbackSenden(request, body, env, authHeader, corsHeaders) {
+  if (!kboBremse(FC_SCHREIB_ZAEHLER, FC_SCHREIB_MAX_PRO_STUNDE, request)) {
+    return json({ error: "Zu viele Anfragen. Bitte später erneut versuchen." }, 429, corsHeaders);
+  }
+  try {
+    // ⚠️ VOR der Mutation pruefen: wirft fcFeedbackPruefen erst im Closure, hat
+    // fcMutiere die Datei schon gelesen und versucht es bis zu dreimal.
+    const antworten = fcFeedbackPruefen(body.antworten);
+
+    const antwort = await fcMutiere(authHeader, (doc) => {
+      const treffer = fcAnmeldungZuToken(doc, body.token);
+      if (!treffer) throw new FcFehler("Diesen Bogen gibt es nicht.", 404);
+      const { camp, anmeldung } = treffer;
+      if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist abgeschlossen.", 410);
+      if (!camp.bisDatum || camp.bisDatum >= fcHeuteBerlin()) {
+        throw new FcFehler("Dieses Camp läuft noch.", 410);
+      }
+      if (anmeldung.status !== "angemeldet") throw new FcFehler("Diese Anmeldung war beim Camp nicht dabei.", 410);
+      if (anmeldung.feedbackAm) throw new FcFehler("Für diese Anmeldung liegt schon eine Antwort vor. Vielen Dank!", 409);
+      if ((camp.feedback || []).length >= FC_FEEDBACK_MAX_JE_CAMP) {
+        throw new FcFehler("Für dieses Camp liegen bereits sehr viele Antworten vor.", 409);
+      }
+
+      // ⚠️ Nur das DATUM, keine Uhrzeit. Ein Zeitstempel auf die Sekunde waere
+      // neben einem Antworteintrag mit Zeitstempel die Zuordnung selbst -- und
+      // auch ohne Gegenstueck ist er eine Angabe, die niemand braucht.
+      anmeldung.feedbackAm = fcHeuteBerlin();
+
+      const pos = Math.floor(Math.random() * ((camp.feedback || []).length + 1));
+      camp.feedback.splice(pos, 0, { antworten });
+      // ⚠️ KEIN fcVerlaufNotiz. Der Verlauf traegt Zeitstempel und liefe damit
+      // parallel zur Antwortliste -- die Reihenfolge waere ueber ihn wieder
+      // herstellbar, und das Wuerfeln oben umsonst.
+      return {};
+    });
     return json(antwort, 200, corsHeaders);
   } catch (e) {
     return fcAntwortFehler(e, corsHeaders);
@@ -21688,6 +22112,77 @@ Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
 uns noch offen steht.`;
 
   return fcMailSenden(env, a.elternEmail, `Beitrag noch offen: ${camp.name}`, text);
+}
+
+// Der Tagesablauf des Camps, wie ihn die Verwaltung im Camp-Dialog gepflegt hat.
+// Leer heisst: der Block entfaellt ersatzlos. Eine Ueberschrift "So laeuft das
+// Camp ab" ueber nichts waere schlimmer als gar keine.
+function fcAblaufBlock(camp) {
+  const t = String((camp && camp.ablauf) || "").trim();
+  if (!t) return "";
+  return `
+
+So läuft das Camp ab:
+
+${t}`;
+}
+
+// "Beitrag eingegangen" -- die Mail, die den Haken in der Anmeldeliste
+// begleitet (Michel-Vorgabe 2026-09-03).
+//
+// ⚠️ Sie geht HOECHSTENS EINMAL je Anmeldung; der Merker sitzt in
+// handleFcAnmeldungSpeichern (bezahltMailAm), nicht hier. Diese Funktion selbst
+// weiss nichts davon und wuerde beliebig oft verschicken.
+async function fcBezahltMail(env, camp, a, einst) {
+  const text = `Hallo ${a.elternName || ""},
+
+der Beitrag für ${fcKindName(a)} ist bei uns eingegangen — vielen Dank. Damit
+ist alles erledigt, der Platz beim Fußballcamp steht fest.
+
+${fcCampBlock(camp)}
+  Beitrag  ${fcEuro(fcBetrag(camp, a))} — bezahlt${fcAblaufBlock(camp)}
+
+Bitte denkt an Sportsachen, Fußballschuhe, Schienbeinschoner, eine Trinkflasche
+und wettergemäße Kleidung.
+
+${fcAendernBlock(a)}${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
+uns eingegangen ist.`;
+
+  return fcMailSenden(env, a.elternEmail, `Beitrag eingegangen: ${camp.name}`, text);
+}
+
+// Die Bitte um Feedback, ein paar Tage nach dem letzten Camptag.
+//
+// ⚠️ Der Link traegt den Eltern-Token -- denselben wie der Aendern-Link. Anders
+// ginge es nicht, ohne die Familien anzumelden. Was der Server damit macht,
+// steht bei FC_FEEDBACK_FRAGEN: pruefen, ob schon geantwortet wurde, und danach
+// wegwerfen. Der Satz "Deine Antworten sind anonym" in dieser Mail ist deshalb
+// eine Zusage, die im Code steht -- wer handleFcFeedbackSenden umbaut, bricht
+// sie.
+async function fcFeedbackMail(env, camp, a, einst) {
+  const text = `Hallo ${a.elternName || ""},
+
+das ${camp.name} ist vorbei. Wir hoffen, ${fcKindName(a)} hatte Spaß!
+
+Damit das nächste Camp noch besser wird, würden wir gern wissen, wie es
+gelaufen ist. Das dauert zwei Minuten:
+
+  ${FC_APP_URL}feedback.html?a=${encodeURIComponent(a.token)}
+
+Deine Antworten sind anonym. Wir speichern sie ohne Namen und ohne Verbindung
+zur Anmeldung — wir sehen also, WAS geantwortet wurde, aber nicht von wem.
+Antworten lässt sich einmal.${fcKontaktBlock(einst)}
+${FC_MAIL_FUSS}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil dein Kind an diesem Camp
+teilgenommen hat.`;
+
+  return fcMailSenden(env, a.elternEmail, `Wie war das ${camp.name}?`, text);
 }
 
 // Was mit dem Geld passiert, wenn die Eltern absagen.
@@ -21902,14 +22397,120 @@ async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
   return { gesendet, gefunden: faellig.length };
 }
 
+// Wer bekommt einen Feedbackbogen? Laeuft nachts mit und laesst sich von Hand
+// ausloesen.
+async function fcFeedbackLauf(env, authHeader, nurCampId) {
+  const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+  const einst = doc.einstellungen || fcEinstellungenLeer();
+  if (!einst.feedbackAktiv) return { gesendet: 0, gefunden: 0, aus: true };
+
+  const heute = fcHeuteBerlin();
+  const tage = einst.feedbackTage === undefined || einst.feedbackTage === null
+    ? FC_FEEDBACK_TAGE_VORGABE : Number(einst.feedbackTage);
+
+  const faellig = [];
+  doc.camps.forEach((camp) => {
+    if (nurCampId && camp.id !== nurCampId) return;
+    if (camp.aufgeraeumtAm) return;
+    if (camp.status === "entwurf") return;
+    if (!camp.bisDatum) return;
+
+    // ⚠️ Ein FENSTER mit oberer Grenze, kein Stichtag. Die untere Grenze ist der
+    // uebliche Grund (laeuft der Cron eine Nacht nicht, faellt der Bogen sonst
+    // lautlos aus). Die OBERE ist der wichtige Teil: ohne sie ginge in der
+    // Nacht, in der jemand den Haken das erste Mal setzt, an die Eltern JEDES je
+    // gelaufenen Camps eine Feedback-Mail -- an Familien, deren Camp zwei Jahre
+    // her ist.
+    const ab = fcTagPlusUtc(camp.bisDatum, tage);
+    const bis = fcTagPlusUtc(camp.bisDatum, tage + FC_FEEDBACK_FENSTER_TAGE);
+    if (!ab || !bis || heute < ab || heute > bis) return;
+
+    (camp.anmeldungen || []).forEach((a) => {
+      if (a.status !== "angemeldet" || !a.elternEmail) return;
+      if (a.feedbackGebetenAm) return;
+      faellig.push({ camp, a });
+    });
+  });
+
+  if (!faellig.length) return { gesendet: 0, gefunden: 0 };
+
+  // Erst den Vermerk setzen (ein Schreibvorgang fuer alle), dann verschicken --
+  // gleiche Reihenfolge wie bei den Erinnerungen: lieber eine Mail zu wenig als
+  // ein Postfach voll.
+  const jetzt = new Date().toISOString();
+  await fcMutiere(authHeader, (d) => {
+    faellig.forEach((f) => {
+      const camp = d.camps.find((c) => c.id === f.camp.id);
+      if (!camp) return;
+      const a = (camp.anmeldungen || []).find((x) => x.id === f.a.id);
+      if (a) a.feedbackGebetenAm = jetzt;
+    });
+    d.lauf = { zuletztAm: jetzt, ergebnis: `feedback: ${faellig.length} Bögen` };
+    return {};
+  });
+
+  let gesendet = 0;
+  for (const f of faellig) {
+    const ok = await fcFeedbackMail(env, f.camp, f.a, einst);
+    if (ok) gesendet++;
+  }
+  return { gesendet, gefunden: faellig.length };
+}
+
+// Ein Camp, dessen Anmeldeschluss vorbei ist, schliesst sich selbst
+// (Michel-Vorgabe 2026-09-03).
+//
+// ⚠️ Aendert an der SICHERHEIT nichts: fcNimmtAn lehnt nach dem Anmeldeschluss
+// ohnehin jede Anmeldung ab, und handleFcOeffentlich zeigt das Camp im Fenster
+// der Vereinsseite schon vorher nicht mehr. Was sich aendert, ist der STATUS --
+// bis hierher stand ein laengst abgelaufenes Camp in der Verwaltung weiter auf
+// "Anmeldung offen", und wer die Liste ansah, musste selbst nachrechnen.
+//
+// ⚠️ Verschickt nichts. Ein Statuswechsel ist keine Nachricht an die Eltern.
+async function fcAutoSchliessenLauf(authHeader) {
+  const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
+  const heute = fcHeuteBerlin();
+  const faellig = doc.camps.filter((c) =>
+    c.status === "offen" && !c.aufgeraeumtAm && c.anmeldungBis && heute > c.anmeldungBis);
+  if (!faellig.length) return { geschlossen: 0 };
+
+  const schnappschuesse = [];
+  await fcMutiere(authHeader, (d) => {
+    schnappschuesse.length = 0;
+    faellig.forEach((f) => {
+      const camp = d.camps.find((c) => c.id === f.id);
+      // ⚠️ Im Closure noch einmal pruefen: zwischen dem Lesen oben und dem
+      // Schreiben hier kann jemand das Camp von Hand auf einen anderen Status
+      // gestellt oder den Anmeldeschluss verlaengert haben. fcMutiere laeuft bei
+      // einem Konflikt ausserdem bis zu dreimal.
+      if (!camp || camp.status !== "offen") return;
+      if (!camp.anmeldungBis || fcHeuteBerlin() <= camp.anmeldungBis) return;
+      camp.status = "geschlossen";
+      fcVerlaufNotiz(camp, { was: "status", von: "automatisch", vorher: "offen", nachher: "geschlossen", grund: "anmeldeschluss" });
+      schnappschuesse.push(fcKalenderSchnappschuss(camp));
+    });
+    return {};
+  });
+
+  // ⚠️ Muss sein, und zwar hinterher: fcKalenderNotiz nimmt den Anmeldelink nur
+  // bei Status "offen" mit. Ohne diesen Abgleich stuende im Abo-Feed der Trainer
+  // weiter ein Link, der auf eine Seite fuehrt, die die Anmeldung ablehnt.
+  for (const s of schnappschuesse) {
+    try { await fcKalenderNachziehen(authHeader, s); } catch (_) { /* still */ }
+  }
+  return { geschlossen: schnappschuesse.length };
+}
+
 async function handleFcErinnern(request, body, env, authHeader, corsHeaders, execCtx) {
   const ctx = await fcSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
   try {
     fcVerlangeAdmin(ctx);
     const art = String(body.art || "");
-    if (!["start", "zahlung"].includes(art)) throw new FcFehler("Unbekannte Art der Erinnerung.", 400);
-    const ergebnis = await fcErinnerungslauf(env, authHeader, art, capStr(body.campId, 80) || "");
+    if (!["start", "zahlung", "feedback"].includes(art)) throw new FcFehler("Unbekannte Art der Erinnerung.", 400);
+    const ergebnis = art === "feedback"
+      ? await fcFeedbackLauf(env, authHeader, capStr(body.campId, 80) || "")
+      : await fcErinnerungslauf(env, authHeader, art, capStr(body.campId, 80) || "");
     void execCtx;
     return json(Object.assign({ ok: true }, ergebnis), 200, corsHeaders);
   } catch (e) {
@@ -21922,11 +22523,23 @@ async function handleFcErinnern(request, body, env, authHeader, corsHeaders, exe
 // Cloudflare-Dashboard angelegt werden und waere genau die Art Schritt, die beim
 // naechsten Deploy vergessen wird (gleiche Ueberlegung wie beim Busplan).
 async function fcNaechtlicherLauf(env, authHeader) {
+  // ⚠️ ZUERST schliessen, dann erinnern: fcErinnerungslauf ueberspringt Camps im
+  // Status "entwurf" und "abgeschlossen", "geschlossen" laeuft weiter mit. Die
+  // Reihenfolge aendert also nichts am Ergebnis -- sie sorgt nur dafuer, dass
+  // der Status stimmt, bevor irgendetwas daraus abgeleitet wird.
+  try {
+    await fcAutoSchliessenLauf(authHeader);
+  } catch (_) { /* der Rest der Nacht soll trotzdem laufen */ }
   try {
     await fcErinnerungslauf(env, authHeader, "start", "");
   } catch (_) { /* die Zahlungserinnerung soll trotzdem laufen */ }
   try {
     await fcErinnerungslauf(env, authHeader, "zahlung", "");
+  } catch (_) { /* still */ }
+  // ⚠️ Eigener catch wie bei den anderen: ein Fehler im Feedbackbogen darf die
+  // Erinnerungen an die Eltern nicht mitreissen.
+  try {
+    await fcFeedbackLauf(env, authHeader, "");
   } catch (_) { /* still */ }
   // ⚠️ Eigener catch: ein klemmender Vereinskalender darf die Erinnerungen an
   // die Eltern nicht mitreissen -- und umgekehrt.
