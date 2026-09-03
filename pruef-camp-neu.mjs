@@ -1055,7 +1055,7 @@ zusage("app.js verdrahtet ihn", APPJS.includes("anmBearbeitenUmschalten"));
 zusage("Beim Oeffnen faellt der Modus zurueck",
   /function oeffneAnmDialog[\s\S]{0,600}?anmBearbeiten = false;/.test(APPJS));
 zusage("...und die Beschriftung des Knopfes mit",
-  /function oeffneAnmDialog[\s\S]{0,1400}?bearbKnopf\.textContent = "Angaben bearbeiten";/.test(APPJS));
+  /function oeffneAnmDialog[\s\S]{0,1400}?bearbKnopf\.textContent = "Bearbeiten";/.test(APPJS));
 // ⚠️ Im Bearbeiten-Modus gibt es `ad-notiz` gar nicht -- ein wert() darauf waere
 // ein leerer String und LOESCHTE die Notiz.
 // \u26a0\ufe0f `nutzlast` MUSS nur mit der Id anfangen. Steht dort schon ein

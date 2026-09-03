@@ -420,7 +420,7 @@ const MUTATIONEN = [
    "  // Zweck verloren."],
 
   ["Die Knopf-Beschriftung faellt nicht zurueck", "app.js",
-   '  if (bearbKnopf) bearbKnopf.textContent = "Angaben bearbeiten";',
+   '  if (bearbKnopf) bearbKnopf.textContent = "Bearbeiten";',
    "  void bearbKnopf;"],
 
   ["Im Bearbeiten-Modus wird die Notiz mit geleert", "app.js",
