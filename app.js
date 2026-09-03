@@ -103,7 +103,7 @@ let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte,
 // Persoenliche Ansicht der Startseite (seit 2026-08-07): Kacheln oder Liste + eigene
 // Reihenfolge je Kategorie. Liegt am Konto (Aktion "meine-ansicht"), gilt also auf
 // jedem Geraet gleich.
-let ansichtState = { modus: "kacheln", reihenfolge: {}, unterlagenNeu: 0, nachrichtenNeu: 0 };
+let ansichtState = { modus: "kacheln", reihenfolge: {}, versteckt: [], unterlagenNeu: 0, nachrichtenNeu: 0 };
 let ansichtBearbeiten = false;   // Anordnen-Modus an? Nur dann laesst sich etwas verschieben.
 // Suchtext ueber den Kacheln (seit 2026-08-13). Bewusst NICHT Teil von ansichtState und
 // damit nicht am Konto gespeichert: es ist ein fluechtiger Filter fuer diesen einen
@@ -1180,7 +1180,7 @@ function isVisibleToUser(toolId, user) {
 // localStorage bleibt ausschliesslich als Zwischenspeicher fuer den Seitenaufbau.
 
 function ansichtStandard() {
-  return { modus: "kacheln", reihenfolge: {}, unterlagenNeu: 0, nachrichtenNeu: 0 };
+  return { modus: "kacheln", reihenfolge: {}, versteckt: [], unterlagenNeu: 0, nachrichtenNeu: 0 };
 }
 
 // Nimmt an, was vom Server oder aus dem Zwischenspeicher kommt, und baut daraus einen
@@ -1194,6 +1194,11 @@ function ansichtUebernehmen(roh) {
     const ids = rohReihenfolge[kategorie];
     if (Array.isArray(ids)) reihenfolge[kategorie] = ids.map((id) => String(id || "")).filter(Boolean);
   });
+  // Selbst ausgeblendete Werkzeuge (seit 2026-09-03). Flache Id-Liste, gesetzt im
+  // Anordnen-Modus ueber das Auge auf der Karte.
+  const versteckt = Array.isArray(roh && roh.versteckt)
+    ? [...new Set(roh.versteckt.map((id) => String(id || "")).filter(Boolean))]
+    : [];
   // Zähler fürs rote Abzeichen am Konto-Tab. Stehen hier, weil ansicht.json beim
   // Seitenaufbau ohnehin gelesen wird -- das Abzeichen kostet damit keinen
   // zusätzlichen Roundtrip (siehe unterlagenNeuAnzahl und pnNeuAnzahl).
@@ -1210,7 +1215,7 @@ function ansichtUebernehmen(roh) {
   // und in `downloadsBadgeZeichnen()` eintragen.** Alle drei, sonst wirkt er nicht.
   const unterlagenNeu = Number.isFinite(roh && roh.unterlagenNeu) ? Math.max(0, roh.unterlagenNeu) : 0;
   const nachrichtenNeu = Number.isFinite(roh && roh.nachrichtenNeu) ? Math.max(0, roh.nachrichtenNeu) : 0;
-  ansichtState = { modus, reihenfolge, unterlagenNeu, nachrichtenNeu };
+  ansichtState = { modus, reihenfolge, versteckt, unterlagenNeu, nachrichtenNeu };
 }
 
 function ansichtCacheLesen(username) {
@@ -1302,7 +1307,7 @@ async function ansichtJetztSpeichern() {
   _ansichtSaveLaeuft = true;
   const statusEl = document.getElementById("ansicht-status");
   try {
-    await callWorker("meine-ansicht-speichern", { modus: ansichtState.modus, reihenfolge: ansichtState.reihenfolge });
+    await callWorker("meine-ansicht-speichern", { modus: ansichtState.modus, reihenfolge: ansichtState.reihenfolge, versteckt: ansichtState.versteckt });
     ansichtCacheSchreiben(currentUser.username, ansichtState);
     if (statusEl) { statusEl.classList.remove("fehler"); statusEl.textContent = "Gespeichert"; setTimeout(() => { if (statusEl.textContent === "Gespeichert") statusEl.textContent = ""; }, 2000); }
   } catch (e) {
@@ -1327,7 +1332,7 @@ function ansichtFlushBeiVerlassen() {
     fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + currentToken },
-      body: JSON.stringify({ action: "meine-ansicht-speichern", modus: ansichtState.modus, reihenfolge: ansichtState.reihenfolge }),
+      body: JSON.stringify({ action: "meine-ansicht-speichern", modus: ansichtState.modus, reihenfolge: ansichtState.reihenfolge, versteckt: ansichtState.versteckt }),
       keepalive: true
     });
   } catch (_) { /* mehr geht beim Schliessen nicht */ }
@@ -1350,6 +1355,44 @@ function applyCustomOrder(category, tools) {
   });
   tools.forEach((t) => { if (remaining.has(t.id)) ordered.push(t); });
   return ordered;
+}
+
+// ---- Werkzeuge selbst ausblenden (seit 2026-09-03) ----
+//
+// Michel-Wunsch: wer ein Werkzeug nie braucht, soll es von SEINER Startseite nehmen
+// koennen. Die Liste haengt wie Modus und Reihenfolge am Konto und gilt damit auf
+// jedem Geraet gleich.
+//
+// ⚠️ Das ist eine ANZEIGE-Vorliebe, KEIN Rechte-Gate. Das Werkzeug bleibt ueber seine
+// URL erreichbar, jede Worker-Aktion antwortet unveraendert, und andere Nutzer sind
+// davon nicht betroffen. Wer wirklich etwas zurueckhalten will, nimmt das
+// Sichtbarkeits-Panel (isVisibleToUser) -- siehe [[feedback-ausblenden]].
+//
+// ⚠️ Im Anordnen-Modus werden ausgeblendete Werkzeuge WEITER GERENDERT (blass, mit
+// 🙈 statt 👁). Das ist nicht bloss Bedienkomfort: saveToolOrder() liest die Tool-Ids
+// aus dem DOM, und eine dort fehlende Karte fiele aus der gespeicherten Reihenfolge
+// heraus -- genau die Falle, wegen der sich Suche und Filter mit dem Anordnen
+// ausschliessen. Weil ausgeblendete Karten im Anordnen-Modus dastehen, bleibt die
+// Reihenfolge vollstaendig, und der Rueckweg ist ueberhaupt erst auffindbar.
+function toolIstVersteckt(id) {
+  return Array.isArray(ansichtState.versteckt) && ansichtState.versteckt.includes(id);
+}
+
+// Zaehlt nur, was der Nutzer ueberhaupt sehen duerfte -- eine Id aus der Liste, deren
+// Werkzeug ihm gar nicht freigegeben ist, waere sonst ein Grund fuer einen Hinweis,
+// den er nicht aufloesen kann.
+function versteckteAnzahl() {
+  if (!Array.isArray(ansichtState.versteckt) || !ansichtState.versteckt.length) return 0;
+  return TOOLS.filter((t) => isVisibleToUser(t.id, currentUser) && toolIstVersteckt(t.id)).length;
+}
+
+function ansichtVersteckenUmschalten(id) {
+  if (!Array.isArray(ansichtState.versteckt)) ansichtState.versteckt = [];
+  const stelle = ansichtState.versteckt.indexOf(id);
+  if (stelle >= 0) ansichtState.versteckt.splice(stelle, 1);
+  else ansichtState.versteckt.push(id);
+  ansichtSpeichernGeplant();
+  renderToolGrid();
 }
 
 // Startet einen Verschiebe-Vorgang per Pointer Events (vereint Maus/Touch/Stift).
@@ -1520,7 +1563,12 @@ function ansichtLeerGrund() {
   if (text) teile.push("„" + text + "“");
   if (ansichtFilterMail) teile.push("✉️ Mail");
   if (ansichtFilterPush) teile.push("🔔 Push");
-  if (!teile.length) return "Kein Werkzeug gefunden.";
+  if (!teile.length) {
+    // ⚠️ Wer wirklich ALLES ausblendet, bekaeme sonst „Kein Werkzeug gefunden." —
+    // ein Satz, der nach einem Fehler aussieht und den Rueckweg verschweigt.
+    if (versteckteAnzahl()) return "Du hast alle Werkzeuge ausgeblendet. Mit „✏️ Anordnen“ und dem Auge 🙈 holst du sie zurück.";
+    return "Kein Werkzeug gefunden.";
+  }
   return "Kein Werkzeug passt zu " + teile.join(" + ") + ".";
 }
 
@@ -1563,7 +1611,7 @@ function renderAnsichtLeiste(hatKacheln) {
   if (anordnenBtn) {
     anordnenBtn.textContent = ansichtBearbeiten ? "✓ Fertig" : "✏️ Anordnen";
     anordnenBtn.classList.toggle("aktiv", ansichtBearbeiten);
-    anordnenBtn.title = ansichtBearbeiten ? "Anordnen beenden" : "Reihenfolge der Werkzeuge ändern";
+    anordnenBtn.title = ansichtBearbeiten ? "Anordnen beenden" : "Reihenfolge der Werkzeuge ändern und einzelne ausblenden";
   }
   const hinweis = document.getElementById("ansicht-hinweis");
   if (hinweis) hinweis.style.display = ansichtBearbeiten ? "inline" : "none";
@@ -1664,7 +1712,14 @@ function renderToolGrid() {
     const toolsUnordered = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, currentUser));
     if (toolsUnordered.length === 0) return;
     anyVisible = true;
-    const toolsGefunden = toolsUnordered.filter((t) => toolPasstZumFilter(t) && toolPasstZurSuche(t, suchWoerter));
+    // ⚠️ Ausgeblendete Werkzeuge fallen NUR ausserhalb des Anordnen-Modus weg — im
+    // Anordnen-Modus stehen sie blass da, sonst gaebe es keinen Rueckweg und
+    // saveToolOrder() verloere sie aus der Reihenfolge (Begruendung bei
+    // toolIstVersteckt()). anyVisible haengt bewusst an toolsUnordered, also am Stand
+    // VOR dieser Zeile: wer alles ausblendet, muss die Bedienleiste behalten.
+    const toolsGefunden = toolsUnordered.filter((t) =>
+      (ansichtBearbeiten || !toolIstVersteckt(t.id))
+      && toolPasstZumFilter(t) && toolPasstZurSuche(t, suchWoerter));
     // Eine Kategorie ohne Treffer faellt samt Ueberschrift weg -- eine leere
     // Ueberschrift sieht aus, als fehlte etwas.
     if (toolsGefunden.length === 0) return;
@@ -1680,8 +1735,9 @@ function renderToolGrid() {
     // das Aussehen macht das CSS (siehe .tool-grid.als-liste in style.css).
     grid.className = "tool-grid" + (ansichtState.modus === "liste" ? " als-liste" : "");
     toolsInCategory.forEach((t) => {
+      const istVersteckt = toolIstVersteckt(t.id);
       const card = document.createElement("a");
-      card.className = "tool-card" + (t.wip ? " wip" : "");
+      card.className = "tool-card" + (t.wip ? " wip" : "") + (istVersteckt ? " ist-versteckt" : "");
       card.href = t.url;
       // Optionales newTab-Flag (config.js): Tool in neuem Tab öffnen, Dashboard
       // bleibt offen — z.B. für die Besprechung (Sprach-/Videoraum).
@@ -1689,6 +1745,10 @@ function renderToolGrid() {
       card.dataset.toolId = t.id;
       card.innerHTML = `
         <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
+        <button type="button" class="tool-verstecken-btn"
+          title="${istVersteckt ? "Wieder auf meiner Startseite zeigen" : "Von meiner Startseite nehmen"}"
+          aria-label="${escapeHtml(t.name)} ${istVersteckt ? "wieder einblenden" : "ausblenden"}"
+          aria-pressed="${istVersteckt ? "true" : "false"}">${istVersteckt ? "🙈" : "👁"}</button>
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         ${t.id === "trainerdaten" && trainerdatenStatus ? (
@@ -1707,6 +1767,16 @@ function renderToolGrid() {
           + '</div>' : ""}
       `;
       card.querySelector(".tool-drag-handle").addEventListener("pointerdown", (ev) => startCardDrag(ev, card, grid, category));
+      // ⚠️ preventDefault UND stopPropagation, wie beim Aktualisieren-Knopf der Ampel
+      // daneben: der Knopf sitzt IN der Karte, und die Karte ist ein <a>. Ohne beides
+      // folgte der Klick dem Link ins Werkzeug. Sich auf den Karten-Handler weiter
+      // unten zu verlassen reicht nicht -- er greift nur im Anordnen-Modus, und die
+      // Reihenfolge zweier Handler am selben Klick ist nichts, worauf man baut.
+      card.querySelector(".tool-verstecken-btn").addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ansichtVersteckenUmschalten(t.id);
+      });
       // Im Anordnen-Modus fuehrt kein Klick mehr ins Werkzeug: wer gerade sortiert,
       // trifft sonst beim Danebengreifen eine Kachel und ist aus der Uebersicht raus.
       card.addEventListener("click", (ev) => {

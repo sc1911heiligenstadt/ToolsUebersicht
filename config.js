@@ -519,6 +519,22 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.3",
+    groups: [
+      {
+        title: "Werkzeuge von der eigenen Startseite nehmen",
+        items: [
+          "Im Anordnen-Modus steht auf jeder Kachel jetzt ein Auge 👁. Ein Druck darauf nimmt das Werkzeug von deiner Startseite — nach „✓ Fertig“ ist die Kachel weg.",
+          "Zurückholen geht jederzeit: „✏️ Anordnen“ drücken, dann stehen die ausgeblendeten Werkzeuge blass und durchgestrichen wieder da, mit einem 🙈 statt des Auges. Ein Druck darauf holt sie zurück.",
+          "Die Auswahl hängt am Konto, nicht am Browser — am Laptop und am Handy siehst du dieselbe Startseite. Genau wie Kachel-/Listenansicht und die eigene Reihenfolge.",
+          "Es betrifft nur DEINE Ansicht: andere sehen ihre eigene Auswahl, und an den Rechten ändert sich nichts. Wer den Link zu einem ausgeblendeten Werkzeug hat, kommt weiter hinein — es ist ein Aufräumen der Startseite, keine Sperre.",
+          "Ausgeblendete Werkzeuge tauchen auch in der Suche und in den Filtern ✉️/🔔 nicht mehr auf.",
+          "Auch wenn du alles ausblendest, bleibt die Bedienleiste stehen und sagt dir, wie du deine Werkzeuge zurückholst."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.2",
     groups: [
       {
@@ -626,7 +642,8 @@ const APP_CHANGELOG = [
           "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel trägt ihr eigenes Symbol, damit sie sich beim Überfliegen der Startseite wiederfinden lässt.",
           "Über den Werkzeugen steht ein Umschalter: Kacheln oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
           "Der Knopf „Anordnen“ schaltet das Verschieben ein. Erst dann erscheinen die Greifpunkte ⠿ — in der Kachelansicht oben links, in der Listenansicht am Anfang der Zeile —, und erst dann lassen sich die Werkzeuge innerhalb ihrer Kategorie umsortieren, mit Maus wie mit dem Finger. Solange angeordnet wird, führt kein Klick versehentlich in ein Werkzeug.",
-          "Ansicht und Reihenfolge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich.",
+          "Im selben Modus steht auf jeder Kachel ein Auge 👁: damit nimmst du ein Werkzeug von deiner Startseite. Nach „✓ Fertig“ ist es weg — auch aus der Suche und den Filtern. Zurückholen geht jederzeit über „✏️ Anordnen“: dort stehen die ausgeblendeten Werkzeuge blass und durchgestrichen mit einem 🙈, ein Druck darauf holt sie zurück. Das betrifft nur deine eigene Ansicht und ändert keine Rechte — wer den Link kennt, kommt weiterhin hinein.",
+          "Ansicht, Reihenfolge und die ausgeblendeten Werkzeuge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich.",
           "Neben dem Umschalter steht ein Suchfeld. Es ist gleich da — nichts aufklappen, einfach hineintippen. Gesucht wird ausschließlich im Namen des Werkzeugs; mehrere Wörter grenzen weiter ein, die Reihenfolge ist egal. Groß- und Kleinschreibung sowie Umlaute sind dabei egal: „platze“ und „plaetze“ finden beide die Platzbelegung.",
           "Zurücknehmen lässt sich die Suche mit dem ✕ im Feld oder mit der Escape-Taste. Gespeichert wird sie nicht: beim nächsten Aufruf steht die vollständige Übersicht da.",
           "Zwei Knöpfe daneben filtern die Übersicht: „✉️ Mail“ zeigt nur die Werkzeuge, die E-Mails nach außen verschicken, „🔔 Push“ nur die, die sich auf dem Handy melden. Beide zusammen gedrückt zeigt die Werkzeuge, die beides tun; ein zweiter Druck nimmt einen Filter zurück. Der Filter lässt sich mit der Suche kombinieren und wird beim Abmelden zurückgenommen.",

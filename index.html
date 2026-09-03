@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.0" />
+<link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body>
 
@@ -111,7 +111,7 @@
         <button type="button" class="ansicht-btn" id="btn-ansicht-kacheln" aria-pressed="true" title="Werkzeuge als Kacheln anzeigen">▦ Kacheln</button>
         <button type="button" class="ansicht-btn" id="btn-ansicht-liste" aria-pressed="false" title="Werkzeuge als Liste anzeigen">☰ Liste</button>
       </div>
-      <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern">✏️ Anordnen</button>
+      <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern und einzelne ausblenden">✏️ Anordnen</button>
       <!-- Das Suchfeld steht offen da, es gibt keinen Knopf zum Aufklappen mehr
            (Michel-Vorgabe 2026-08-13): ein Knopf, der nur ein Feld einblendet,
            kostet einen Klick und verrät nicht, dass man suchen kann.
@@ -157,7 +157,7 @@
         <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-mail" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die E-Mails verschicken" title="Nur Werkzeuge zeigen, die E-Mails nach außen verschicken">✉️<span class="filter-wort"> Mail</span></button>
         <button type="button" class="ansicht-filter-btn" id="btn-ansicht-filter-push" aria-pressed="false" aria-label="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken" title="Nur Werkzeuge zeigen, die Nachrichten aufs Handy schicken">🔔<span class="filter-wort"> Push</span></button>
       </div>
-      <span class="ansicht-hinweis" id="ansicht-hinweis" style="display:none;">Am Greifpunkt ⠿ verschieben — innerhalb der eigenen Kategorie.</span>
+      <span class="ansicht-hinweis" id="ansicht-hinweis" style="display:none;">Am Greifpunkt ⠿ verschieben — innerhalb der eigenen Kategorie. Mit 👁 nimmst du ein Werkzeug von deiner Startseite, mit 🙈 holst du es zurück.</span>
       <span class="ansicht-status" id="ansicht-status" aria-live="polite"></span>
     </div>
     <div id="tool-groups"></div>
@@ -1877,7 +1877,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.2"></script>
-<script src="app.js?v=1.0"></script>
+<script src="config.js?v=1.3"></script>
+<script src="app.js?v=1.1"></script>
 </body>
 </html>

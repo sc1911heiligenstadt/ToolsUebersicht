@@ -777,6 +777,7 @@ const ANSICHT_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/a
 // weit darüber und werden im Normalbetrieb nie erreicht.
 const ANSICHT_MAX_KATEGORIEN = 40;
 const ANSICHT_MAX_IDS_PRO_KATEGORIE = 200;
+const ANSICHT_MAX_VERSTECKT = 200;
 const ANSICHT_MODI = ["kacheln", "liste"];
 
 // Persönliche Aufgabenlisten (seit 1.5) — eigene Datei aus demselben Grund wie die
@@ -4332,6 +4333,38 @@ function ansichtReihenfolgeSaeubern(roh) {
   return sauber;
 }
 
+// Die Werkzeuge, die sich der Nutzer selbst von der Startseite genommen hat (seit
+// 2026-09-03). Flache Liste von Tool-Ids, bewusst NICHT nach Kategorie gegliedert
+// wie die Reihenfolge: eine Id gehört immer zu genau einer Kategorie, eine zweite
+// Ebene wäre nur eine weitere Stelle, an der beides auseinanderlaufen kann.
+//
+// ⚠️ Das ist eine reine ANZEIGE-Vorliebe, KEIN Rechte-Gate. Ein verstecktes Werkzeug
+// bleibt über seine URL und über jede Worker-Aktion erreichbar — die Schranke ist und
+// bleibt `userMayAccessTool`. Wer hier je etwas zurückhalten will, tut das dort.
+//
+// Unbekannte Ids bleiben erhalten (gleiche Überlegung wie bei der Reihenfolge): ein
+// Werkzeug kann vorübergehend unsichtbar sein, ohne dass der Nutzer seine Auswahl
+// verliert.
+function ansichtVerstecktSaeubern(roh) {
+  const liste = [];
+  if (!Array.isArray(roh)) return liste;
+  const gesehen = new Set();
+  for (const roheId of roh) {
+    const id = String(roheId || "");
+    // ⚠️ `__proto__` ausdruecklich ausschliessen, obwohl die Regex es DURCHLIESSE
+    // (Unterstriche sind erlaubt) und es hier heute harmlos waere -- die Liste ist ein
+    // Array, kein Objekt, die Id wird nie zum Schluessel. Der Prüfstand hat die Lücke
+    // gefunden. Sie steht hier, damit sie es auch dann noch nicht ist, wenn aus der
+    // Liste je eine Map oder ein Objekt wird. Gleiche Linie wie bei
+    // ansichtReihenfolgeSaeubern daneben, wo es schon heute ein Schluessel ist.
+    if (id === "__proto__" || !/^[a-z0-9_-]{1,40}$/i.test(id) || gesehen.has(id)) continue;
+    gesehen.add(id);
+    liste.push(id);
+    if (liste.length >= ANSICHT_MAX_VERSTECKT) break;
+  }
+  return liste;
+}
+
 function leeresAnsichtDoc() {
   return { version: 1, byUser: {} };
 }
@@ -4349,6 +4382,7 @@ async function handleMeineAnsicht(request, env, authHeader, corsHeaders) {
   const eigen = Object.prototype.hasOwnProperty.call(byUser, session.username) ? byUser[session.username] : null;
   const modus = (eigen && ANSICHT_MODI.includes(eigen.modus)) ? eigen.modus : "kacheln";
   const reihenfolge = ansichtReihenfolgeSaeubern(eigen && eigen.reihenfolge);
+  const versteckt = ansichtVerstecktSaeubern(eigen && eigen.versteckt);
   // ⚠️ Der Zaehler fuers rote Abzeichen liegt HIER und nicht bei den Unterlagen
   // selbst. Grund: `ansicht.json` wird beim Seitenaufbau ohnehin gelesen
   // (`ladeAnsicht` im selben Promise.all wie die Sitzungspruefung), waehrend
@@ -4363,7 +4397,7 @@ async function handleMeineAnsicht(request, env, authHeader, corsHeaders) {
   // ⚠️ Das Abzeichen am Konto-Tab addiert beide -- wer hier einen dritten
   // ergaenzt, muss ihn dort mitzaehlen, sonst zeigt die Pille zu wenig an.
   const nachrichtenNeu = Number.isFinite(eigen && eigen.nachrichtenNeu) ? Math.max(0, eigen.nachrichtenNeu) : 0;
-  return json({ ansicht: { modus, reihenfolge, unterlagenNeu, nachrichtenNeu } }, 200, corsHeaders);
+  return json({ ansicht: { modus, reihenfolge, versteckt, unterlagenNeu, nachrichtenNeu } }, 200, corsHeaders);
 }
 
 // Merkt sich, dass der Downloadbereich im Konto-Tab gerade offen war -- danach ist
@@ -4439,6 +4473,13 @@ async function handleMeineAnsichtSpeichern(request, body, env, authHeader, corsH
   const modus = String((body && body.modus) || "");
   if (!ANSICHT_MODI.includes(modus)) return json({ error: "Unbekannte Ansicht" }, 400, corsHeaders);
   const reihenfolge = ansichtReihenfolgeSaeubern(body && body.reihenfolge);
+  // ⚠️ Ein FEHLENDES `versteckt` heißt "unverändert", nicht "leeren" — genau wie bei
+  // `set-aufgaben-gruppen`. Ein Browser-Tab mit der alten `app.js` überlebt den Deploy
+  // und schickt nur Modus und Reihenfolge; würde das die Liste räumen, holte ein
+  // Umschalten von Kacheln auf Liste dort alle ausgeblendeten Werkzeuge zurück.
+  // Nur ein ausdrücklich mitgeschicktes (auch leeres) Array schreibt.
+  const verstecktGesetzt = Array.isArray(body && body.versteckt);
+  const versteckt = verstecktGesetzt ? ansichtVerstecktSaeubern(body.versteckt) : null;
 
   const username = session.username;
   // "__proto__" als Nutzername ist über USERNAME_RE ohnehin ausgeschlossen; die Prüfung
@@ -4455,9 +4496,10 @@ async function handleMeineAnsichtSpeichern(request, body, env, authHeader, corsH
     const bisher = (Object.prototype.hasOwnProperty.call(doc.byUser, username) && typeof doc.byUser[username] === "object")
       ? doc.byUser[username] : {};
     doc.byUser[username] = { ...bisher, modus, reihenfolge, gespeichertAm: new Date().toISOString() };
+    if (verstecktGesetzt) doc.byUser[username].versteckt = versteckt;
     try {
       await writeJson(ANSICHT_URL, authHeader, doc, rev || undefined);
-      return json({ ok: true, ansicht: { modus, reihenfolge } }, 200, corsHeaders);
+      return json({ ok: true, ansicht: { modus, reihenfolge, versteckt: doc.byUser[username].versteckt || [] } }, 200, corsHeaders);
     } catch (e) {
       if (e instanceof ConflictError && versuch < 2) continue;
       return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
