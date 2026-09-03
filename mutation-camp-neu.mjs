@@ -23,7 +23,8 @@ const TMP = fs.mkdtempSync(join(os.tmpdir(), "fc-mut-neu-"));
 
 // Alles, was der Pruefstand liest.
 const CLIENT_DATEIEN = ["config.js", "app.js", "oeffentlich.js", "feedback.js",
-                        "anmeldung.js", "meine-anmeldung.js", "index.html", "feedback.html"];
+                        "anmeldung.js", "meine-anmeldung.js", "index.html", "feedback.html",
+                        "anmeldung.html", "meine-anmeldung.html"];
 const ORIG = { "admin-worker.js": fs.readFileSync(join(HIER, "admin-worker.js"), "utf8") };
 CLIENT_DATEIEN.forEach((d) => { ORIG[d] = fs.readFileSync(join(APP, d), "utf8"); });
 
@@ -434,6 +435,77 @@ const MUTATIONEN = [
   ["Ja/Nein verliert den Zustand \"nicht beantwortet\"", "app.js",
    '<option value=""${g === "" ? " selected" : ""}>— nicht beantwortet —</option>',
    ""],
+
+  // ---------- 15. Datenschutz der Elternseiten ----------
+  // \u26a0\ufe0f Die Zusagen dazu lesen HTML, nicht Code. Genau solche Zusagen
+  // rutschen weg, ohne dass ein Test rot wird -- deshalb hier mutiert.
+
+  ["feedback.html verliert den Art.-13-Block", "feedback.html",
+   "<summary>Was mit den Antworten passiert (Information nach Art. 13 DSGVO)</summary>",
+   "<summary>Hinweise</summary>"],
+
+  // \u26a0\ufe0f Art. 13 verlangt die Information ZUR ERHEBUNG. Unter dem Knopf ist
+  // sie da, aber zu spaet -- die Zusage misst deshalb die Position, nicht bloss
+  // die Anwesenheit.
+  // ⚠️ Die erste Fassung haengte nur einen Kommentar an -- das verschlechtert
+  // nichts, und sie rutschte zu Recht durch. Jetzt steht ein Absenden-Knopf VOR
+  // dem Block: genau der Fall, den Art. 13 verbietet.
+  ["Der Absenden-Knopf steht vor dem Art.-13-Block", "feedback.html",
+   "      <h3>Datenschutz</h3>",
+   '      <button type="submit" class="fc-btn gruen breit" id="btn-senden">Absenden</button> <h3>Datenschutz</h3>'],
+
+  ["feedback.html verschweigt die Aufsichtsbehoerde", "feedback.html",
+   "Landesbeauftragten für den Datenschutz und die Informationsfreiheit.</p>",
+   "zust\u00e4ndigen Stelle.</p>"],
+
+  ["feedback.html verschweigt die Grenze aus Art. 11", "feedback.html",
+   "(Art. 11 DSGVO)", "(siehe oben)"],
+
+  ["feedback.html bittet nicht mehr um Namensfreiheit", "feedback.html",
+   "<strong>Bitte schreib keine Namen in die Textfelder</strong>",
+   "<strong>Danke f\u00fcrs Mitmachen</strong>"],
+
+  // \u26a0\ufe0f Der Rueckfall in den Zustand von heute Vormittag: der Text erklaert
+  // ein Formular, das es nicht mehr gibt.
+  ["Der alte \"trag keine ein\"-Satz kommt zurueck", "anmeldung.html",
+   "Beantwortet wird sie mit Ja oder Nein \u2014 nur bei \u201eJa\u201c fragen wir nach, worum es geht.",
+   "\u2014 liegt nichts vor, trag bitte \u201ekeine\u201c ein."],
+
+  ["anmeldung.html verschweigt die Konfektionsgroesse am Empfaengerkreis", "anmeldung.html",
+   "Name, Alter, Konfektionsgr\u00f6\u00dfe, ob dein Kind als Feldspieler oder Torwart mitmacht, die Gesundheitshinweise samt Hinweis zum Essen, die Notfallnummer und ob dein Kind allein nach Hause darf.",
+   "Name, Alter, Gesundheitshinweise und die Notfallnummer."],
+
+  ["meine-anmeldung.html verschweigt die Ausrichtung", "meine-anmeldung.html",
+   "ob dein Kind als Feldspieler oder Torwart mitmacht, ", ""],
+
+  ["anmeldung.html verschweigt den Feedbackbogen", "anmeldung.html",
+   "<p><strong>Nach dem Camp:</strong> ein bis zwei Tage nach dem letzten Camptag schicken wir dir einmalig einen kurzen Feedbackbogen.",
+   "<p><strong>Nach dem Camp:</strong> nichts weiter."],
+
+  ["meine-anmeldung.html nennt den Bogen nicht mehr freiwillig", "meine-anmeldung.html",
+   "Das Ausf\u00fcllen ist freiwillig, die Antworten sind anonym", "Bitte f\u00fcll ihn aus"],
+
+  // ---------- 16. Anonymitaet bei wenigen Antworten ----------
+
+  // \u26a0\u26a0 Die schwerste: bei einer einzigen Antwort steht der Freitext offen,
+  // und der Merker daneben sagt, von wem er ist.
+  ["Die Freitexte gehen wieder ab der ERSTEN Antwort heraus", "admin-worker.js",
+   "    texte: genug ? texte : [],", "    texte,"],
+
+  ["Die Schwelle sinkt auf 1", "admin-worker.js",
+   "const FC_FEEDBACK_TEXTE_AB = 3;", "const FC_FEEDBACK_TEXTE_AB = 1;"],
+
+  ["Der Grund wird nicht mitgeliefert", "admin-worker.js",
+   "    texteZurueckgehalten: genug ? 0 : texte.length,", "    texteZurueckgehalten: 0,"],
+
+  ["feedbackAm geht wieder an den Bearbeiter", "admin-worker.js",
+   "        feedbackAm: undefined,", "        feedbackAm: a.feedbackAm,"],
+
+  ["feedbackGebetenAm geht wieder an den Bearbeiter", "admin-worker.js",
+   "        feedbackGebetenAm: undefined", "        feedbackGebetenAm: a.feedbackGebetenAm"],
+
+  ["Die App zeigt eine leere Stelle statt des Grundes", "app.js",
+   "    if (!texte.length && fb.texteZurueckgehalten) {", "    if (false) {"],
 
   // ---------- 13. Ja/Nein mit Nachfrage ----------
   ["Allergien wird wieder ein nacktes Textfeld", "admin-worker.js",

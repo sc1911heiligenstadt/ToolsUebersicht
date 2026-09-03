@@ -26,6 +26,8 @@ const OEFFJS = readFileSync(APP + "oeffentlich.js", "utf8");
 const FEEDBACKJS = readFileSync(APP + "feedback.js", "utf8");
 const INDEXHTML = readFileSync(APP + "index.html", "utf8");
 const FEEDBACKHTML = readFileSync(APP + "feedback.html", "utf8");
+const ANMHTML = readFileSync(APP + "anmeldung.html", "utf8");
+const MEINHTML = readFileSync(APP + "meine-anmeldung.html", "utf8");
 
 function schneide(vonMarke, bisMarke, name) {
   const a = QUELLE.indexOf(vonMarke);
@@ -49,6 +51,7 @@ for (const marke of [
   "async function fcFeedbackLauf(env, authHeader, nurCampId) {",
   "async function fcBezahltMail(env, camp, a, einst) {",
   "const FC_FEEDBACK_FENSTER_TAGE",
+  "const FC_FEEDBACK_TEXTE_AB",
   "case \"fussballcamp-feedback-info\":",
   "case \"fussballcamp-feedback-senden\":",
   // Mailvorlagen: die Verdrahtung, nicht der Wortlaut.
@@ -102,6 +105,7 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
          fcMailBauen, fcMailVorlage, fcMailVorlagenPruefen, fcMailVorlagenFuerAdmin,
          FC_BETREUER_FELDER, FC_FEEDBACK_FRAGEN, FC_FEEDBACK_NOTEN,
          FC_FEEDBACK_FENSTER_TAGE, FC_FEEDBACK_TAGE_VORGABE, FC_ROLLEN,
+         FC_FEEDBACK_TEXTE_AB,
          FC_MAIL_VORLAGEN, FC_MAIL_PLATZHALTER, FC_MAIL_BETREFF_FELDER };
 `;
 
@@ -1209,6 +1213,162 @@ zusage("Die Detailansicht zeigt auch ein \"nein\"",
   APPJS.includes('if (hat === "nein") return zeile(f.label, "nein");'));
 zusage("Der Export traegt \"nein\" statt einer leeren Zelle",
   /if \(f\.typ === "janein_text"\)[\s\S]{0,200}?return "nein";/.test(APPJS));
+
+// =========================================================================
+abschnitt("13. Datenschutz der Elternseiten (Art. 13 DSGVO)");
+// =========================================================================
+//
+// ⚠️ Dieser Abschnitt liest die AUSGELIEFERTEN HTML-Dateien, nicht den Worker.
+// Genau hier ist am 2026-09-03 etwas durchgerutscht: die Zusagen von damals
+// lagen in einem Pruefstand im Scratchpad, den niemand mehr findet — und der
+// Satz „trag bitte keine ein“ stand danach monatelang gegen ein Formular, das
+// es so nicht mehr gab. Ein Datenschutztext, den niemand festnagelt, faellt
+// beim naechsten Umbau still wieder heraus.
+
+// ⚠️ Zuerst flachklopfen. Ein Satz, der zwischen zwei Woertern umbricht, macht
+// eine Zusage sonst rot, obwohl der Text stimmt. Genau hier aufgeschlagen: im
+// Art.-13-Block steht das Wort Thueringer am Zeilenende und Landesbeauftragten
+// am Anfang der naechsten. Das sieht aus wie ein Fund und ist keiner.
+// ⚠️ Erst die HTML-Kommentare herausschneiden. Ohne das war die Zusage
+// "hat einen Art.-13-Block" BLIND: der Ausdruck traf den Kommentar, den ich
+// selbst ueber den Block geschrieben hatte -- die Mutationsprobe hat es
+// gefunden, das Auge nicht. Ein Kommentar ist kein Text fuer die Eltern.
+const flachHtml = (t) => t.replace(/<!--[\s\S]*?-->/g, " ").replace(/\s+/g, " ");
+const SEITEN = [["anmeldung.html", flachHtml(ANMHTML)], ["meine-anmeldung.html", flachHtml(MEINHTML)],
+                ["feedback.html", flachHtml(FEEDBACKHTML)]];
+
+// ---- Jede login-lose Seite traegt den Block -------------------------------
+SEITEN.forEach(([name, html]) => {
+  zusage(`${name} hat einen Art.-13-Block`, /Art\. 13 DSGVO/.test(html));
+  zusage(`...${name} nennt den Verantwortlichen MIT Anschrift`,
+    html.includes("1. SC 1911 Heiligenstadt e.V.") && html.includes("Leineberg 2, 37308 Heilbad Heiligenstadt"));
+  zusage(`...${name} nennt die Aufsichtsbehoerde`,
+    html.includes("Th\u00fcringer Landesbeauftragten"));
+  zusage(`...${name} nennt eine Rechtsgrundlage`, /Art\. 6 Abs\. 1 lit\. [abf]/.test(html));
+  zusage(`...${name} nennt eine Speicherdauer`, /Wie lange:/.test(html));
+  zusage(`...${name} bleibt aus dem Suchindex`, /noindex/.test(html));
+});
+
+// ⚠️ Art. 13 verlangt die Information ZUM ZEITPUNKT DER ERHEBUNG. Ein Block
+// unter dem Absenden-Knopf kommt zu spaet. Gemessen wird die Position im DOM.
+[["anmeldung.html", flachHtml(ANMHTML), "btn-absenden"], ["feedback.html", flachHtml(FEEDBACKHTML), "btn-senden"]]
+  .forEach(([name, html, knopf]) => {
+    const ds = html.indexOf("Information nach Art. 13 DSGVO)</summary>");
+    const btn = html.indexOf(knopf);
+    zusage(`${name}: der Block steht VOR dem Absenden-Knopf`, ds > 0 && btn > 0 && ds < btn,
+      `Block bei ${ds}, Knopf bei ${btn}`);
+  });
+
+// ---- A2: der Text darf dem Formular nicht widersprechen -------------------
+// ⚠️ Seit `janein_text` klickt man „Nein“. Stuende hier weiter „trag keine
+// ein“, erklaerte die Datenschutz-Information ein Formular, das es nicht gibt.
+SEITEN.forEach(([name, html]) => {
+  zusage(`${name} fordert nicht mehr zum Eintragen von \"keine\" auf`,
+    !/trag bitte \u201ekeine\u201c ein/.test(html));
+});
+zusage("anmeldung.html erklaert stattdessen die Ja/Nein-Frage",
+  /Beantwortet wird sie mit Ja oder Nein/.test(flachHtml(ANMHTML)));
+
+// ---- A3: der Empfaengerkreis steht vollstaendig da ------------------------
+// ⚠️ Die Liste im Text muss zu FC_BETREUER_FELDER passen. Wer dort ein Feld
+// ergaenzt, gibt es an einen groesseren Kreis heraus — und muss es sagen.
+zusage("FC_BETREUER_FELDER enthaelt die Konfektionsgroesse",
+  bau.FC_BETREUER_FELDER.includes("trikotgroesse"));
+[["anmeldung.html", flachHtml(ANMHTML)], ["meine-anmeldung.html", flachHtml(MEINHTML)]].forEach(([name, html]) => {
+  zusage(`${name} nennt die Konfektionsgroesse im Empfaengerkreis`,
+    /verk\u00fcrzte Liste[\s\S]{0,400}?Konfektionsgr\u00f6\u00dfe/.test(html));
+  zusage(`...${name} nennt auch die Ausrichtung`,
+    /verk\u00fcrzte Liste[\s\S]{0,400}?Feldspieler oder Torwart/.test(html));
+  // Gegenprobe: was NICHT herausgeht, soll auch so dastehen.
+  zusage(`...${name} sagt, was NICHT dabei ist`,
+    /<strong>Nicht<\/strong> dabei sind Anschrift/.test(html));
+});
+// ⚠️ Gegenprobe zur Gegenprobe: die vier genannten Felder duerfen wirklich
+// nicht in der Betreuer-Liste stehen. Sonst behauptet der Text etwas Falsches.
+["anschrift", "elternEmail", "elternName", "bemerkung"].forEach((id) => {
+  zusage(`FC_BETREUER_FELDER enthaelt ${id} NICHT`, !bau.FC_BETREUER_FELDER.includes(id));
+});
+
+// ---- A4: der Feedbackbogen ist ein eigener Zweck --------------------------
+// ⚠️ Neue Mail, neuer gespeicherter Wert, neue Seite — das gehoert in den
+// Text, den die Eltern VOR der Anmeldung lesen, nicht nur auf den Bogen.
+[["anmeldung.html", flachHtml(ANMHTML)], ["meine-anmeldung.html", flachHtml(MEINHTML)]].forEach(([name, html]) => {
+  zusage(`${name} erklaert den Feedbackbogen`, /Feedbackbogen/.test(html));
+  zusage(`...${name} nennt ihn freiwillig und anonym`,
+    /Ausf\u00fcllen ist[\s\S]{0,60}?freiwillig/.test(html) && /anonym/.test(html));
+});
+
+// ---- Der Bogen selbst -----------------------------------------------------
+zusage("feedback.html bittet, keine Namen einzutragen",
+  /Bitte schreib keine Namen in die Textfelder/.test(flachHtml(FEEDBACKHTML)));
+// ⚠️ Art. 11 DSGVO: eine abgeschickte Antwort ist NICHT mehr zuzuordnen und
+// deshalb auch nicht mehr einzeln loeschbar. Das darf der Text nicht verschweigen
+// — sonst verspricht er ein Recht, das niemand einloesen kann.
+zusage("...und nennt die Grenze der Betroffenenrechte (Art. 11)",
+  /Art\. 11 DSGVO/.test(flachHtml(FEEDBACKHTML)));
+
+// =========================================================================
+abschnitt("14. Die Anonymitaets-Zusage traegt auch bei WENIGEN Antworten");
+// =========================================================================
+
+zusage("Die Schwelle steht als Konstante da", bau.FC_FEEDBACK_TEXTE_AB >= 3,
+  String(bau.FC_FEEDBACK_TEXTE_AB));
+
+function auswert(n) {
+  const camp = { anmeldungen: [], feedback: [] };
+  for (let i = 0; i < n; i++) {
+    camp.feedback.push({ antworten: { gesamt: 1, gut: "Text Nummer " + i } });
+  }
+  return bau.fcFeedbackAuswertung(camp);
+}
+
+// ⚠️⚠️ Der Kern: bei einer einzigen Antwort ist der Freitext faktisch
+// namentlich — wer weiss, dass genau eine Familie geantwortet hat, liest ihren
+// Text. Die ZAHLEN duerfen bleiben, sie sagen ueber die Einzelne nichts.
+let a1 = auswert(1);
+zusage("Bei 1 Antwort gehen die Freitexte NICHT heraus", a1.texte.length === 0,
+  JSON.stringify(a1.texte));
+zusage("...die Zahlen bleiben aber sichtbar", a1.anzahl === 1 && a1.schnitte.gesamt === 1);
+zusage("...und der Grund wird mitgeliefert", a1.texteZurueckgehalten === 1 && a1.texteAb >= 3,
+  JSON.stringify({ z: a1.texteZurueckgehalten, ab: a1.texteAb }));
+
+let a2 = auswert(bau.FC_FEEDBACK_TEXTE_AB - 1);
+zusage("Eine unter der Schwelle: immer noch nichts", a2.texte.length === 0, JSON.stringify(a2.texte));
+
+let a3 = auswert(bau.FC_FEEDBACK_TEXTE_AB);
+zusage("Genau auf der Schwelle gehen sie heraus", a3.texte.length === bau.FC_FEEDBACK_TEXTE_AB,
+  JSON.stringify(a3.texte.length));
+zusage("...und dann steht nichts mehr aus", a3.texteZurueckgehalten === 0);
+
+// ⚠️⚠️ Die zweite Haelfte: der Merker „hat geantwortet“ darf nicht
+// zusammen mit den Antworten beim Bearbeiter ankommen. Beides in einer Ladung
+// ergibt bei wenigen Antworten einen Namen.
+frisch({ status: "offen" }, [{ elternEmail: "e@example.org" }]);
+anm0().feedbackAm = "2026-09-01";
+anm0().feedbackGebetenAm = "2026-08-30T04:00:00.000Z";
+RECHT = { canEdit: true, canAdmin: true };
+r = await bau.handleFcLoad(anfrage(), {}, ENV, AUTH, {});
+const geladen = JSON.stringify(r.__json);
+zusage("handleFcLoad gibt feedbackAm NICHT heraus", !geladen.includes("2026-09-01"), geladen.slice(0, 300));
+zusage("...und feedbackGebetenAm auch nicht", !geladen.includes("2026-08-30T04:00"));
+// Gegenprobe: die Anmeldung kommt sehr wohl an -- sonst waere die Zusage oben
+// auch dann gruen, wenn die ganze Liste fehlt.
+zusage("...die Anmeldungsliste kommt aber weiterhin an",
+  Array.isArray(r.__json.camps[0].anmeldungen) && r.__json.camps[0].anmeldungen.length === 1);
+// Und die gerechnete Zahl bleibt -- der Client braucht sie fuer die Quote.
+zusage("...die Zahl der verschickten Boegen bleibt gerechnet erhalten",
+  r.__json.camps[0].feedback.gebeten === 1, JSON.stringify(r.__json.camps[0].feedback));
+
+// ---- Der Client nennt den Grund ------------------------------------------
+// ⚠️ Eine leere Stelle saehe aus wie „niemand hat etwas geschrieben“. Wer das
+// glaubt, wartet auf Texte, die nie kommen.
+// ⚠️ Die WACHE pruefen, nicht den Rumpf. Die erste Fassung suchte nur
+// "fb.texteZurueckgehalten" -- das steht auch dann noch da, wenn die Bedingung
+// auf `false` steht und der Zweig nie laeuft. Die Mutationsprobe hat es
+// gefunden, das Auge nicht.
+zusage("app.js zeigt den Grund statt einer leeren Stelle",
+  APPJS.includes("if (!texte.length && fb.texteZurueckgehalten) {"));
+zusage("...und braucht die Merker selbst nicht", !APPJS.includes("feedbackGebetenAm"));
 
 // =========================================================================
 const gesamt = gruen + funde.length;

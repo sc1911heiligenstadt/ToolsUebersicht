@@ -19284,6 +19284,12 @@ const FC_FEEDBACK_TAGE_VORGABE = 2;
 // diesem Block: ohne sie ginge in der Nacht, in der jemand den Haken das erste
 // Mal setzt, an die Eltern JEDES je gelaufenen Camps eine Feedback-Mail. Nach
 // diesen Tagen ist der Zug fuer ein Camp abgefahren und bleibt es.
+// ⚠️⚠️ Unter dieser Zahl von Antworten werden die FREITEXTE nicht
+// herausgegeben. Bei einer einzigen Antwort ist der Bogen sonst faktisch nicht
+// mehr anonym: wer weiss, dass genau eine Familie geantwortet hat, liest ihren
+// Text — und ein Freitext nennt gern beilaeufig einen Namen ("unser Max fand
+// …"). Die Zahlen bleiben, sie sagen ueber die einzelne Familie nichts.
+const FC_FEEDBACK_TEXTE_AB = 3;
 const FC_FEEDBACK_FENSTER_TAGE = 21;
 
 // ---------- Teilnahmebedingungen ----------
@@ -20847,7 +20853,15 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
         wartePlatz: a.status === "warteliste" ? wartend.findIndex((x) => x.id === a.id) + 1 : 0,
         // ⚠️ Der Aendern-Token der Eltern verlaesst den Server NIE, auch nicht an
         // Bearbeiter: er ist der Ausweis der Familie, kein Verwaltungsdatum.
-        token: undefined
+        token: undefined,
+        // ⚠️⚠️ Und genauso wenig die beiden Feedback-Merker. Zusammen mit der
+        // Antwortliste im selben Ladevorgang waeren sie die Zuordnung, die der
+        // Bogen ausdruecklich ausschliesst: "hat geantwortet" an der Anmeldung
+        // plus eine einzige Antwort daneben ergibt einen Namen. Der Client
+        // braucht sie nicht — die Zahlen `anzahl` und `gebeten` rechnet
+        // `fcFeedbackAuswertung` serverseitig aus.
+        feedbackAm: undefined,
+        feedbackGebetenAm: undefined
       }));
     }
     return sicht;
@@ -21998,7 +22012,18 @@ function fcFeedbackAuswertung(camp) {
       : null;
   });
 
-  return { anzahl: liste.length, gebeten, schnitte, verteilung: noten, janein, texte };
+  // ⚠️ Die Freitexte werden ZURUeCKGEHALTEN, solange zu wenige Antworten da
+  // sind — nicht bloss ausgeblendet. Die Verwaltung sieht sonst im Browser, was
+  // die Seite den Eltern gerade nicht zu sehen verspricht ([[f-ausblenden]]).
+  // `texteAb` geht mit, damit die App den Grund nennen kann statt einer leeren
+  // Liste, die wie "hat niemand etwas geschrieben" aussieht.
+  const genug = liste.length >= FC_FEEDBACK_TEXTE_AB;
+  return {
+    anzahl: liste.length, gebeten, schnitte, verteilung: noten, janein,
+    texte: genug ? texte : [],
+    texteZurueckgehalten: genug ? 0 : texte.length,
+    texteAb: FC_FEEDBACK_TEXTE_AB
+  };
 }
 
 // ---------- fussballcamp-feedback-info (OHNE Login, Eltern-Token) ----------
