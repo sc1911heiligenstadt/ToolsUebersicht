@@ -109,6 +109,17 @@ $REGISTRY = [ordered]@{
       @{ name = '405 bei GET'; methode = 'GET'; body = $null; erwartet = 405 }
     )
   }
+  'agelan' = @{
+    datei = 'E:\agelan\worker.js'
+    url   = 'https://agelan.michel-brunner.workers.dev'
+    hinweis = 'Privates Tool (Repo unter Tecko1985), bewusst von der Landingpage entkoppelt. Passwort-Pruefung + Benutzerkonten. 2 Secrets: PW_AGELAN, PW_AGELAN_VERANSTALTER. Binding: KONTEN (KV).'
+    proben = @(
+      @{ name = '405 bei GET';           methode = 'GET';  body = $null; erwartet = 405 }
+      @{ name = '400 unbekannte Aktion'; methode = 'POST'; body = '{"action":"zzz-deploy-kontrolle"}'; erwartet = 400 }
+      # 403 statt 500 ist der Beleg, dass das Secret wirklich sitzt.
+      @{ name = '403 Passwort-Scope';    methode = 'POST'; body = '{"action":"verify-action-password","scope":"agelan-zugang","password":"absichtlich-falsch"}'; erwartet = 403 }
+    )
+  }
   'sc-heiligenstadt-beleg-upload' = @{
     datei = 'E:\sc-heiligenstadt-budget\worker.js'
     url   = 'https://sc-heiligenstadt-beleg-upload.michel-brunner.workers.dev'
