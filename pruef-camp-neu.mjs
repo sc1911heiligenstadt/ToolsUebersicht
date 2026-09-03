@@ -112,6 +112,24 @@ const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
   globalThis.crypto
 );
 
+// ---- Client-Code laden und AUSFUEHREN --------------------------------------
+//
+// ⚠️ config.js und app.js werden GANZ geladen, wie im Browser, nur mit einer
+// Attrappe fuer `document` -- app.js hat auf oberster Ebene nur den
+// DOMContentLoaded-Horcher. So laeuft die echte Funktion, nicht ein Nachbau.
+const docStub = {
+  addEventListener() {}, getElementById() { return null; },
+  querySelector() { return null; }, querySelectorAll() { return []; },
+  createElement() { return { style: {}, classList: { add() {}, remove() {}, toggle() {} }, appendChild() {} }; },
+  body: { appendChild() {}, removeChild() {} }
+};
+const CLIENT = new Function("document", "window", "localStorage", "navigator", "fetch",
+  CONFIGJS + "\n" + APPJS + "\nreturn { istLeereAngabe, teilnehmerHinweise, LEERE_ANGABEN };"
+)(docStub,
+  { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }), innerWidth: 1280, location: { href: "", search: "" } },
+  { getItem: () => null, setItem() {}, removeItem() {} }, { userAgent: "node" },
+  async () => { throw new Error("kein Netz im Pruefstand"); });
+
 // ---- Zusagen -------------------------------------------------------------
 let gruen = 0;
 const funde = [];
@@ -886,6 +904,68 @@ zusage("leseMailVorlagen liefert undefined ohne Karte",
 // "leere alle Vorlagen". Im Browser gefunden, nicht ausgedacht.
 zusage("...UND auch dann, wenn der Kasten da, aber leer ist",
   /function leseMailVorlagen\(\)[\s\S]{0,1400}?if \(!gefunden\) return undefined;/.test(APPJS));
+
+// =========================================================================
+abschnitt("10. \"Keine\" ist eine Nicht-Angabe (Teilnehmerliste)");
+// =========================================================================
+
+zusage("config.js und app.js laufen zusammen", typeof CLIENT.istLeereAngabe === "function");
+
+// Was verschwinden SOLL.
+[["keine", "Keine", "KEINE", "keine.", "keine!", " keine ", "kein", "keiner", "keins"],
+ ["nein", "Nein", "nichts", "nix", "ohne", "entfällt", "n/a", "0"],
+ ["-", "–", "/", ".", "", "   ", "keine bekannt", "Keine bekannten", "keine Allergien", "keine Medikamente"]]
+  .flat().forEach((v) => {
+    zusage(`gilt als nichts: ${JSON.stringify(v)}`, CLIENT.istLeereAngabe(v));
+  });
+zusage("gilt als nichts: undefined", CLIENT.istLeereAngabe(undefined));
+zusage("gilt als nichts: null", CLIENT.istLeereAngabe(null));
+
+// ⚠️⚠️ DER wichtige Teil. Jede dieser Angaben ist echt und darf NIE verschluckt
+// werden -- ein Anfangs- oder Teilstueck-Vergleich ("startsWith(\"kein\")")
+// wuerde genau sie treffen, also die Angaben, wegen derer es die Liste gibt.
+[
+  "keine Nüsse", "keine Nuesse", "kein Schweinefleisch", "keine Laktose",
+  "keine Medikamente, aber Asthmaspray", "keine bekannten Allergien, Kind hat aber Asthma",
+  "Asthma", "Heuschnupfen", "Nussallergie", "0,5 mg Insulin", "Ohne Zwiebeln",
+  "nichts Scharfes", "Geschwisterkind Sebastian C. Blase",
+  "Konfektionsgröße eigentlich 134 (stand nicht zur Auswahl)"
+].forEach((v) => {
+  zusage(`bleibt stehen: ${JSON.stringify(v)}`, !CLIENT.istLeereAngabe(v), "wurde verschluckt!");
+});
+
+// Zusammensetzung der Hinweiszeile -- die Faelle aus Michels Bildschirmfoto.
+const hin = (t) => CLIENT.teilnehmerHinweise(t);
+zusage("Allergien und Medikamente beide \"Keine\" -> gar keine Zeile",
+  hin({ allergien: "Keine", medikamente: "Keine" }).length === 0,
+  JSON.stringify(hin({ allergien: "Keine", medikamente: "Keine" })));
+zusage("Eine echte Allergie steht da",
+  JSON.stringify(hin({ allergien: "Asthma" })) === '["Allergien: Asthma"]');
+zusage("\"Keine\" faellt weg, der Geschwister-Hinweis bleibt",
+  JSON.stringify(hin({ allergien: "Keine", krankheiten: "Geschwisterkind Sebastian C. Blase" }))
+    === '["Geschwisterkind Sebastian C. Blase"]');
+zusage("Zwei Nicht-Angaben plus ein echter Hinweis -> nur der Hinweis",
+  JSON.stringify(hin({ allergien: "keine", medikamente: "keine", krankheiten: "Größe eigentlich 134" }))
+    === '["Größe eigentlich 134"]');
+zusage("Alles echt -> alles da",
+  hin({ allergien: "Nüsse", medikamente: "Insulin", krankheiten: "Asthma", essenHinweis: "vegetarisch" }).length === 4);
+
+// ⚠️ Der Marker haengt an DIESER Liste. Ist sie leer, gibt es keinen "beachten".
+zusage("Der Beachten-Marker haengt an der Hinweisliste",
+  /\$\{hinweise\.length \? `<span class="marker gesundheit">beachten<\/span>` : ""\}/.test(APPJS));
+zusage("...und die Hinweisliste kommt aus teilnehmerHinweise",
+  /const hinweise = teilnehmerHinweise\(t\);/.test(APPJS));
+// ⚠️ Dieselbe Regel in der Anmeldeliste -- ein "Gesundheit"-Marker, der auch bei
+// "keine" leuchtet, leuchtet bei jedem und ist damit wertlos.
+zusage("Die Anmeldeliste benutzt dieselbe Regel",
+  /const gesund = \[a\.allergien, a\.medikamente, a\.krankheiten, a\.essenHinweis\]\.some\(\(w\) => !istLeereAngabe\(w\)\);/.test(APPJS));
+
+// ⚠️ Gespeichert wird weiter alles. "keine" ist eine BEANTWORTETE Frage und
+// damit etwas anderes als ein leeres Feld -- die Anzeige darf das nicht
+// einebnen, und der Worker fasst die Werte gar nicht erst an.
+zusage("Der Worker wirft \"keine\" NICHT weg",
+  !QUELLE.includes("LEERE_ANGABEN") && !QUELLE.includes("istLeereAngabe"),
+  "im Worker gefunden -- dort gehoert die Anzeige-Regel nicht hin");
 
 // =========================================================================
 const gesamt = gruen + funde.length;

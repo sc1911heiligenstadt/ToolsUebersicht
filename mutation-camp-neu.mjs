@@ -360,7 +360,31 @@ const MUTATIONEN = [
 
   ["Leerer Kasten liefert {} und raeumt damit alle Vorlagen weg", "app.js",
    "  if (!gefunden) return undefined;",
-   "  void gefunden;"]
+   "  void gefunden;"],
+
+  // ---------- 11. "Keine" ist eine Nicht-Angabe ----------
+  // ⚠️ Die gefaehrlichste Verschlechterung ueberhaupt: ein Teilstueck-
+  // Vergleich verschluckt "keine Nuesse" -- also genau die Allergie, wegen der es
+  // die Liste am Sportplatz gibt.
+  ["Aus dem Volltreffer wird ein Anfangsvergleich (verschluckt 'keine Nuesse')", "app.js",
+   "  return LEERE_ANGABEN.includes(w);",
+   "  return LEERE_ANGABEN.some((x) => w.startsWith(x));"],
+
+  ["Aus dem Volltreffer wird ein Teilstueck-Vergleich", "app.js",
+   "  return LEERE_ANGABEN.includes(w);",
+   "  return LEERE_ANGABEN.some((x) => w.includes(x));"],
+
+  ["Die Nicht-Angaben werden wieder angezeigt", "app.js",
+   'istLeereAngabe(t.allergien) ? "" : "Allergien: " + t.allergien,',
+   't.allergien ? "Allergien: " + t.allergien : "",'],
+
+  ["Gross- und Kleinschreibung zaehlt wieder ('Keine' rutscht durch)", "app.js",
+   "  const w = String(wert).trim().toLowerCase()",
+   "  const w = String(wert).trim()"],
+
+  ["Die Anmeldeliste faellt auf den alten Marker zurueck", "app.js",
+   "const gesund = [a.allergien, a.medikamente, a.krankheiten, a.essenHinweis].some((w) => !istLeereAngabe(w));",
+   "const gesund = [a.allergien, a.medikamente, a.krankheiten, a.essenHinweis].some(Boolean);"]
 ];
 
 let gefangen = 0;
