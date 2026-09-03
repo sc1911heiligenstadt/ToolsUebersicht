@@ -519,6 +519,21 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.4",
+    groups: [
+      {
+        title: "Zusammenhängende Tage stehen nur noch einmal in „Nächste Termine“",
+        items: [
+          "Ein Termin, bei dem mehrere Tage direkt hintereinander zur Abstimmung stehen — ein Camp über eine ganze Woche zum Beispiel —, füllte die Startseite bisher mit einer Zeile je Tag und verdrängte alles andere.",
+          "Jetzt steht dort eine Zeile mit dem Zeitraum, also „12.–16.10.“ statt fünfmal derselbe Name.",
+          "Die Zu-/Absage-Knöpfe fallen bei so einem Block weg, weil eine Stimme immer für genau einen Tag gilt. Ein Druck auf den Termin führt in den Vereinskalender — dort steht weiterhin jeder Tag einzeln zum Abstimmen.",
+          "Stehen die Tage nicht hintereinander, ändert sich nichts: jeder Vorschlag behält seine eigene Zeile samt Knöpfen.",
+          "Ist der erste Tag schon vorbei, beginnt der Zeitraum bei heute — Vergangenes taucht auf der Startseite nicht mehr auf."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.3",
     groups: [
       {

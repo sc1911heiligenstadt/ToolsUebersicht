@@ -2651,12 +2651,53 @@ function calendarTerminVisibleFor(t, user) {
   return false;
 }
 
+// Naechster Kalendertag als ISO-String. Rechnet in UTC ueber den reinen
+// Datumsteil -- hier laeuft nie eine Uhrzeit mit, also kann auch keine
+// Sommerzeit-Umstellung einen Tag verschlucken.
+function nextIsoDay(iso) {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// Fasst lueckenlos aufeinander folgende Vorschlagstage zu EINER Zeile mit
+// Zeitraum zusammen (row.bis gesetzt). Anlass: ein mehrtaegiges Camp wird als
+// Umfrage mit einem Vorschlag je Tag gepflegt -- im Dashboard standen dadurch
+// fuenf Zeilen mit demselben Titel und verdraengten alles andere.
+// WARNUNG: Ein Block verliert mit Absicht seine candId und damit die
+// Abstimm-Knoepfe. Eine Stimme gilt immer fuer genau EINEN Vorschlag; ein Klick
+// auf dem Block waere entweder mehrdeutig oder eine stille Zusage fuer alle
+// Tage. Abgestimmt wird stattdessen im Vereinskalender selbst, dort steht
+// weiterhin jeder Tag einzeln (Michel-Entscheidung 2026-09-03).
+function calendarWidgetBloecke(rows, t) {
+  const proTag = {};
+  rows.forEach((r) => { proTag[r.datum] = (proTag[r.datum] || 0) + 1; });
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    let j = i;
+    // Ein Tag mit mehreren Vorschlaegen (verschiedene Uhrzeiten) ist eine echte
+    // Auswahl und darf nie in einem Block verschwinden -- er bricht den Lauf,
+    // auf beiden Seiten.
+    if (proTag[rows[i].datum] === 1) {
+      while (j + 1 < rows.length && proTag[rows[j + 1].datum] === 1 &&
+             rows[j + 1].datum === nextIsoDay(rows[j].datum)) j++;
+    }
+    if (j > i) out.push({ termin: t, datum: rows[i].datum, bis: rows[j].datum, zeit: "", candId: "" });
+    else out.push(rows[i]);
+    i = j + 1;
+  }
+  return out;
+}
+
 // Ein Termin ergibt normalerweise genau eine Widget-Zeile. Bei einer aktiven
 // Umfrage (Vereinskalender 1.6: t.umfrage.termine = mehrere Terminvorschläge)
 // bekommt JEDER noch nicht vergangene Vorschlag eine eigene Zeile -- vorher
 // stand hier nur t.datum, das beim Speichern automatisch auf den FRÜHESTEN
 // Vorschlag gesetzt wird, sodass alle weiteren Möglichkeiten im Dashboard
-// komplett fehlten. Bleibt kein gültiger künftiger Vorschlag übrig (leere oder
+// komplett fehlten. Aufeinander folgende Tage fasst calendarWidgetBloecke danach
+// wieder zu EINER Zeile zusammen -- ein Camp ueber fuenf Tage soll die Startseite
+// nicht fuellen. Bleibt kein gültiger künftiger Vorschlag übrig (leere oder
 // fehlerhafte Liste), fällt die Funktion auf die eine t.datum-Zeile zurück --
 // damit ist sie nie schlechter als der Stand vor der Erweiterung.
 function calendarWidgetRows(t, today) {
@@ -2674,7 +2715,11 @@ function calendarWidgetRows(t, today) {
       rows.push({ termin: t, datum: d, zeit: zeit, candId: u.termine[i].id || "" });
     }
   }
-  return rows.length ? rows : [{ termin: t, datum: t.datum, zeit: "", candId: "" }];
+  if (!rows.length) return [{ termin: t, datum: t.datum, zeit: "", candId: "" }];
+  // Die Vorschlagsliste kommt in Eingabereihenfolge, nicht chronologisch -- ohne
+  // dieses Sortieren faende die Block-Erkennung einen Lauf nur zufaellig.
+  rows.sort((a, b) => (a.datum + "|" + a.zeit).localeCompare(b.datum + "|" + b.zeit));
+  return calendarWidgetBloecke(rows, t);
 }
 
 // Zählt Zu-/Absagen für einen Terminvorschlag und findet die eigene Stimme --
@@ -2896,7 +2941,8 @@ async function loadSidebarWidget() {
           kategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
           const today = new Date().toISOString().slice(0, 10);
           // Ab hier wird in ZEILEN gerechnet, nicht mehr in Terminen: ein Termin
-          // mit aktiver Umfrage liefert eine Zeile je künftigem Terminvorschlag
+          // mit aktiver Umfrage liefert eine Zeile je künftigem Terminvorschlag,
+          // lückenlos aufeinander folgende Tage aber nur EINE Zeile mit Zeitraum
           // (siehe calendarWidgetRows). CALENDAR_WIDGET_COUNT begrenzt daher die
           // Zeilen, nicht die Termine.
           const upcoming = [];
@@ -2987,8 +3033,12 @@ function renderSidebarWidget(widget, opts) {
   // kommt aus der Zeile, nicht aus dem Termin, damit jeder Umfrage-Vorschlag sein
   // eigenes Datum zeigt statt dreimal dem frühesten.
   const rowHtml = (row) => {
+    // Ein zusammengefasster Block (row.bis) zeigt den Zeitraum statt nur seinen
+    // ersten Tag -- formatAbsenceRange liefert schon "12.–16.10." bzw.
+    // "28.02.–02.03.".
+    const datumLabel = row.bis ? formatAbsenceRange(row.datum, row.bis) : formatCalendarDate(row.datum);
     const inner =
-      `<span class="cw-date">${escapeHtml(formatCalendarDate(row.datum))}</span>` +
+      `<span class="cw-date">${escapeHtml(datumLabel)}</span>` +
       `<span class="cw-dot" style="background:${escapeHtml(katFarbe(row.termin.kategorie))}"></span>` +
       `<span class="cw-title">${escapeHtml(row.termin.titel || "")}</span>`;
     if (!row.candId || !row.termin.id) {
