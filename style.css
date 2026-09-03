@@ -1074,6 +1074,10 @@ main { flex: 1; min-width: 0; }
    der Spalte drückt; ohne Text nimmt sie gar keinen Platz ein. */
 .cw-vote-msg { flex: 0 0 100%; font-size: 11px; color: #dc2626; margin-top: 4px; }
 .cw-vote-msg:empty { display: none; }
+/* Die Ueberschrift fuehrt in den Vereinskalender. Sie soll weiter wie eine
+   Ueberschrift aussehen -- nur eben anklickbar. */
+.cw-heading-link { color: inherit; text-decoration: none; }
+.cw-heading-link:hover, .cw-heading-link:focus-visible { text-decoration: underline; }
 .calendar-widget-sub-heading {
   font-size: 13px;
   font-weight: 700;

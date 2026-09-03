@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.5",
+    groups: [
+      {
+        title: "„Nächste Termine“ führt jetzt genau zum Termin",
+        items: [
+          "Ein Druck auf einen Termin in der Liste öffnet den Vereinskalender direkt bei diesem Termin — die Karte wird dort kurz hervorgehoben. Vorher landete man nur oben in der Liste.",
+          "Die Überschrift „Nächste Termine“ ist selbst ein Link: ein Druck darauf öffnet den Vereinskalender ganz normal, ohne einen bestimmten Termin.",
+          "Ist der Termin dort nicht mehr zu sehen — vorbei, gelöscht oder nicht für dich freigegeben —, sagt der Kalender das mit einer Zeile über der Liste."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.4",
     groups: [
       {

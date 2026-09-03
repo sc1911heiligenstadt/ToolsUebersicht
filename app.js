@@ -3037,12 +3037,18 @@ function renderSidebarWidget(widget, opts) {
     // ersten Tag -- formatAbsenceRange liefert schon "12.–16.10." bzw.
     // "28.02.–02.03.".
     const datumLabel = row.bis ? formatAbsenceRange(row.datum, row.bis) : formatCalendarDate(row.datum);
+    // Der Link fuehrt in den Vereinskalender auf GENAU DIESEN Termin -- dort
+    // springt springeZuTermin() hin und hebt die Karte kurz hervor. Fehlt die
+    // Id (alter Datensatz), bleibt es beim Link auf die App.
+    const ziel = row.termin.id
+      ? url + (url.indexOf("?") === -1 ? "?" : "&") + "termin=" + encodeURIComponent(row.termin.id)
+      : url;
     const inner =
       `<span class="cw-date">${escapeHtml(datumLabel)}</span>` +
       `<span class="cw-dot" style="background:${escapeHtml(katFarbe(row.termin.kategorie))}"></span>` +
       `<span class="cw-title">${escapeHtml(row.termin.titel || "")}</span>`;
     if (!row.candId || !row.termin.id) {
-      return `<a class="calendar-widget-item" href="${escapeHtml(url)}">${inner}</a>`;
+      return `<a class="calendar-widget-item" href="${escapeHtml(ziel)}">${inner}</a>`;
     }
     // Umfrage-Vorschlag: Zeile führt weiter in die App, bekommt darunter aber die
     // Zu-/Absage-Knöpfe. Die Buttons dürfen NICHT im <a> stecken -- verschachtelte
@@ -3058,7 +3064,7 @@ function renderSidebarWidget(widget, opts) {
     // Knöpfe nicht aus der schmalen Spalte. Leer ist sie per :empty ausgeblendet.
     return `
         <div class="calendar-widget-item calendar-widget-poll">
-          <a class="cw-main" href="${escapeHtml(url)}" title="${escapeHtml(row.termin.titel || "")}">${inner}</a>
+          <a class="cw-main" href="${escapeHtml(ziel)}" title="${escapeHtml(row.termin.titel || "")}">${inner}</a>
           <div class="cw-votes">
             ${knopf("ja", "✓", c.ja, "Zusagen (nochmal klicken = zurückziehen)")}
             ${knopf("nein", "✗", c.nein, "Absagen (nochmal klicken = zurückziehen)")}
@@ -3114,7 +3120,7 @@ function renderSidebarWidget(widget, opts) {
     // Steht der Ablaufplan darueber, braucht diese Ueberschrift den Abstand der
     // Unterueberschrift -- sonst klebt sie an der Ablauf-Zeile.
     calendarHtml = `
-      <h2${ablaufHtml ? ' class="calendar-widget-sub-heading"' : ""}>📅 Nächste Termine</h2>
+      <h2${ablaufHtml ? ' class="calendar-widget-sub-heading"' : ""}><a class="cw-heading-link" href="${escapeHtml(url)}">📅 Nächste Termine</a></h2>
       <div class="calendar-widget-list">${rows}</div>
       ${privateSection}
     `;
