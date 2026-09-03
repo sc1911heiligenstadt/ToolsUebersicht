@@ -45,7 +45,10 @@ for (const marke of [
   // pruef-camp-zahlerinnerung.mjs -- er sieht in der Bilanz gut aus und ist
   // genau deshalb gefaehrlich.
   "fcAbsageMail(env, mailDaten.camp",
-  "const vonVerwaltung",
+  // Seit dem Umbau auf Mailvorlagen (2026-09-03) heisst die Weiche nicht mehr
+  // `const vonVerwaltung`, sondern waehlt die Vorlage aus. Bewusst weiter LOCKER:
+  // nur der Vergleich, nicht die ganze Zeile.
+  'quelle === "verwaltung"',
   "const willMail ="
 ]) {
   if (!fcQ.includes(marke)) throw new Error("ABBRUCH: " + marke + " fehlt im gezogenen Code.");

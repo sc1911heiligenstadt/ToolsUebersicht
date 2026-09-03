@@ -50,7 +50,12 @@ for (const marke of [
   "async function fcBezahltMail(env, camp, a, einst) {",
   "const FC_FEEDBACK_FENSTER_TAGE",
   "case \"fussballcamp-feedback-info\":",
-  "case \"fussballcamp-feedback-senden\":"
+  "case \"fussballcamp-feedback-senden\":",
+  // Mailvorlagen: die Verdrahtung, nicht der Wortlaut.
+  "const FC_MAIL_VORLAGEN",
+  "function fcMailBauen(einst, id, werte)",
+  "fcMailVorlagenPruefen(roh.mailVorlagen)",
+  "mailVorlagen: ctx.canAdmin ? fcMailVorlagenFuerAdmin(einst) : null"
 ]) {
   if (!QUELLE.includes(marke)) throw new Error("ABBRUCH: Marke fehlt im Worker: " + marke);
 }
@@ -91,9 +96,12 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
          fcAutoSchliessenLauf, fcFeedbackLauf, fcNaechtlicherLauf,
          handleFcAnmelden, handleFcAnmeldungSpeichern, handleFcTeilnehmer,
          handleFcCampSpeichern, handleFcLoad, handleFcAufraeumen,
-         handleFcFeedbackInfo, handleFcFeedbackSenden,
+         handleFcFeedbackInfo, handleFcFeedbackSenden, handleFcAbsagen,
+         handleFcEinstellungenSpeichern,
+         fcMailBauen, fcMailVorlage, fcMailVorlagenPruefen, fcMailVorlagenFuerAdmin,
          FC_BETREUER_FELDER, FC_FEEDBACK_FRAGEN, FC_FEEDBACK_NOTEN,
-         FC_FEEDBACK_FENSTER_TAGE, FC_FEEDBACK_TAGE_VORGABE, FC_ROLLEN };
+         FC_FEEDBACK_FENSTER_TAGE, FC_FEEDBACK_TAGE_VORGABE, FC_ROLLEN,
+         FC_MAIL_VORLAGEN, FC_MAIL_PLATZHALTER, FC_MAIL_BETREFF_FELDER };
 `;
 
 const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
@@ -571,11 +579,18 @@ abschnitt("8. Client und Worker muessen sich decken");
 // ⚠️ Die Fragen stehen doppelt (Worker wirksam, config.js als Rueckfall fuer die
 // Auswertung). Laufen sie auseinander, traegt die Auswertung Ueberschriften, die
 // niemand gefragt wurde.
-const cFragenIds = [...CONFIGJS.matchAll(/\{ id: "(\w+)",\s+typ: "(note|janein|text)"/g)].map((m) => m[1] + ":" + m[2]);
-const wFragenIds = bau.FC_FEEDBACK_FRAGEN.map((f) => f.id + ":" + f.typ);
-zusage("Fragenliste in config.js deckt sich mit der im Worker",
-  JSON.stringify(cFragenIds) === JSON.stringify(wFragenIds),
-  "config: " + JSON.stringify(cFragenIds) + "\n        worker: " + JSON.stringify(wFragenIds));
+// ⚠️ Verglichen wird Id, Typ UND WORTLAUT. Bis 2026-09-03 nur Id und Typ -- damit
+// hätte der Fragetext auseinanderlaufen können, und sowohl die Auswertung im
+// Reiter Feedback als auch die neue Vorschau nehmen ihn aus config.js. Dann
+// stünden dort Überschriften über Antworten auf eine andere Frage.
+const cFragen = [...CONFIGJS.matchAll(/\{ id: "(\w+)",\s+typ: "(note|janein|text)",\s+frage: "([^"]*)"/g)]
+  .map((m) => m[1] + ":" + m[2] + ":" + m[3]);
+const wFragen = bau.FC_FEEDBACK_FRAGEN.map((f) => f.id + ":" + f.typ + ":" + f.frage);
+zusage("Fragenliste in config.js deckt sich mit der im Worker (Id, Typ UND Wortlaut)",
+  cFragen.length === wFragen.length && JSON.stringify(cFragen) === JSON.stringify(wFragen),
+  "config: " + JSON.stringify(cFragen) + "\n        worker: " + JSON.stringify(wFragen));
+zusage("...und es sind wirklich alle acht gefunden worden",
+  cFragen.length === 8, "gefunden: " + cFragen.length);
 
 const cNoten = [...CONFIGJS.matchAll(/\{ wert: (\d), label: "/g)].map((m) => Number(m[1]));
 zusage("Notenskala deckt sich", JSON.stringify(cNoten) === JSON.stringify(bau.FC_FEEDBACK_NOTEN),
@@ -628,6 +643,236 @@ zusage("feedback.html sagt den Eltern, dass es anonym ist",
   /anonym/i.test(FEEDBACKHTML));
 // ⚠️ noindex: die Seite haengt an einem Token und gehoert in keine Suchmaschine.
 zusage("feedback.html traegt noindex", FEEDBACKHTML.includes('name="robots" content="noindex'));
+
+// =========================================================================
+abschnitt("9. Mailvorlagen: sichtbar und aenderbar");
+// =========================================================================
+
+zusage("Es gibt neun Vorlagen", bau.FC_MAIL_VORLAGEN.length === 9, String(bau.FC_MAIL_VORLAGEN.length));
+const ids = bau.FC_MAIL_VORLAGEN.map((v) => v.id);
+zusage("...und zwar genau diese",
+  JSON.stringify(ids) === JSON.stringify(["bestaetigung", "warteliste", "zusage", "start",
+    "zahlung", "bezahlt", "absage-eltern", "absage-verwaltung", "feedback"]), JSON.stringify(ids));
+
+// ⚠️ Jede Vorlage MUSS ihre eigenen Pflicht-Platzhalter selbst enthalten -- sonst
+// waere die mitgelieferte Fassung schon unbrauchbar und liesse sich nicht einmal
+// speichern.
+bau.FC_MAIL_VORLAGEN.forEach((v) => {
+  const fehlend = (v.pflicht || []).filter((p) => !v.text.includes("{" + p + "}"));
+  zusage(`Vorgabe "${v.id}" traegt ihre eigenen Pflicht-Bausteine`, fehlend.length === 0, JSON.stringify(fehlend));
+  const unbekannt = [...v.text.matchAll(/\{(\w+)\}/g)].map((m) => m[1])
+    .filter((n) => !v.felder.includes(n));
+  zusage(`Vorgabe "${v.id}" benutzt nur Platzhalter, die sie kennt`, unbekannt.length === 0, JSON.stringify(unbekannt));
+  const unbekanntB = [...v.betreff.matchAll(/\{(\w+)\}/g)].map((m) => m[1])
+    .filter((n) => !bau.FC_MAIL_BETREFF_FELDER.includes(n));
+  zusage(`Betreff "${v.id}" benutzt nur erlaubte Platzhalter`, unbekanntB.length === 0, JSON.stringify(unbekanntB));
+});
+
+// ⚠️ Der Betreff darf den KINDERNAMEN nicht tragen: er steht in der Handy-Vorschau
+// auf dem Sperrbildschirm und im Versandprotokoll von Brevo.
+zusage("`kind` ist im Betreff NICHT erlaubt", !bau.FC_MAIL_BETREFF_FELDER.includes("kind"),
+  JSON.stringify(bau.FC_MAIL_BETREFF_FELDER));
+zusage("Keine Vorgabe traegt {kind} im Betreff",
+  bau.FC_MAIL_VORLAGEN.every((v) => !v.betreff.includes("{kind}")));
+
+// Jeder Platzhalter, den eine Vorlage anbietet, muss auch erklaert sein --
+// sonst steht in der Maske ein Baustein ohne Bedeutung.
+const alleFelder = new Set();
+bau.FC_MAIL_VORLAGEN.forEach((v) => v.felder.forEach((f) => alleFelder.add(f)));
+const ohneErklaerung = [...alleFelder].filter((f) => !bau.FC_MAIL_PLATZHALTER[f]);
+zusage("Jeder angebotene Platzhalter ist erklaert", ohneErklaerung.length === 0, JSON.stringify(ohneErklaerung));
+
+// ---- Ersetzen ------------------------------------------------------------
+let m = bau.fcMailBauen({}, "bestaetigung", { eltern: "Eltern", kind: "Max Muster", camp: "Herbstcamp 2026",
+  campblock: "BLOCK", zahlungsblock: "ZAHLUNG", aendernblock: "AENDERN", kontakt: "", fuss: "GRUSS" });
+zusage("Platzhalter werden ersetzt",
+  m.text.includes("Max Muster") && m.text.includes("ZAHLUNG") && m.text.includes("AENDERN"), m.text.slice(0, 200));
+zusage("Kein `{...}` bleibt stehen", !/\{\w+\}/.test(m.text), (m.text.match(/\{\w+\}/g) || []).join(","));
+zusage("Betreff nimmt {camp}", m.betreff === "Anmeldung bestätigt: Herbstcamp 2026", m.betreff);
+
+// ⚠️ Ein Platzhalter, den DIESE Mail nicht kennt, darf nicht ersetzt werden --
+// sonst schleuste eine Vorlage etwas aus einer anderen Mail ein.
+const eigen = { mailVorlagen: { feedback: { betreff: "", text: "Hallo {eltern}, hier {zahlungsblock} und {feedbacklink}." } } };
+m = bau.fcMailBauen(eigen, "feedback", { eltern: "E", zahlungsblock: "GEHEIME-IBAN", feedbacklink: "LINK" });
+zusage("Ein fremder Platzhalter wird NICHT ersetzt",
+  m.text.includes("{zahlungsblock}") && !m.text.includes("GEHEIME-IBAN"), m.text);
+zusage("...der eigene aber schon", m.text.includes("LINK"));
+
+// ---- Rueckfall -----------------------------------------------------------
+const nurBetreff = { mailVorlagen: { zusage: { betreff: "Eigener Betreff: {camp}", text: "" } } };
+const v = bau.fcMailVorlage(nurBetreff, "zusage");
+zusage("Eigener Betreff wirkt", v.betreff === "Eigener Betreff: {camp}", v.betreff);
+// ⚠️ Betreff und Text fallen EINZELN zurueck.
+zusage("...und der Text faellt trotzdem auf die Vorgabe",
+  v.text === bau.FC_MAIL_VORLAGEN.find((x) => x.id === "zusage").text && !v.eigenerText);
+zusage("Ohne Eintrag gilt ueberall die Vorgabe",
+  bau.fcMailVorlage({}, "start").text === bau.FC_MAIL_VORLAGEN.find((x) => x.id === "start").text);
+
+// ---- Pflicht-Platzhalter -------------------------------------------------
+let fehler = null;
+try { bau.fcMailVorlagenPruefen({ bestaetigung: { betreff: "", text: "Hallo {eltern}, ohne alles." } }); }
+catch (e) { fehler = e; }
+zusage("Vorlage ohne Pflicht-Baustein wird abgelehnt", !!fehler && fehler.status === 400, fehler && fehler.message);
+zusage("...und die Meldung nennt die fehlenden Bausteine",
+  !!fehler && fehler.message.includes("{zahlungsblock}") && fehler.message.includes("{aendernblock}"),
+  fehler && fehler.message);
+
+fehler = null;
+try { bau.fcMailVorlagenPruefen({ feedback: { betreff: "", text: "Hallo {eltern}, danke." } }); }
+catch (e) { fehler = e; }
+zusage("Feedback-Mail ohne {feedbacklink} wird abgelehnt", !!fehler && fehler.status === 400, fehler && fehler.message);
+
+fehler = null;
+try { bau.fcMailVorlagenPruefen({ "absage-eltern": { betreff: "", text: "Hallo {eltern}, schade." } }); }
+catch (e) { fehler = e; }
+zusage("Absage-Mail ohne {geldblock} wird abgelehnt", !!fehler && fehler.status === 400, fehler && fehler.message);
+
+// ---- Saeubern ------------------------------------------------------------
+let sauber = bau.fcMailVorlagenPruefen({ gibtsnicht: { betreff: "x", text: "y" } });
+zusage("Eine erfundene Vorlagen-Id faellt weg", Object.keys(sauber).length === 0, JSON.stringify(sauber));
+sauber = bau.fcMailVorlagenPruefen({ __proto__: { betreff: "x", text: "y" } });
+zusage("`__proto__` als Id trifft nicht den Prototyp",
+  Object.keys(sauber).length === 0 && Object.getPrototypeOf(sauber) === null, JSON.stringify(sauber));
+
+// ⚠️ Wer die Vorgabe unveraendert speichert, bekommt KEINE eingefrorene Kopie --
+// sonst kaeme eine spaetere Verbesserung des Textes bei ihm nie an.
+const def = bau.FC_MAIL_VORLAGEN.find((x) => x.id === "bezahlt");
+sauber = bau.fcMailVorlagenPruefen({ bezahlt: { betreff: def.betreff, text: def.text } });
+zusage("Unveraenderte Vorgabe wird als LEER gespeichert", Object.keys(sauber).length === 0, JSON.stringify(sauber));
+sauber = bau.fcMailVorlagenPruefen({ bezahlt: { betreff: def.betreff, text: def.text + "\n\nBis bald!" } });
+zusage("Ein wirklich geaenderter Text wird gespeichert",
+  !!sauber.bezahlt && sauber.bezahlt.text.includes("Bis bald!") && sauber.bezahlt.betreff === "",
+  JSON.stringify(sauber));
+
+// ---- Speichern und wirken ------------------------------------------------
+frisch({}, [{}]);
+RECHT = { canEdit: true, canAdmin: true };
+const einstBasis = { iban: "DE02120300000000202051", kontoinhaber: "SC", bic: "", bank: "",
+  kontaktName: "", kontaktEmail: "", agbText: "Bedingungen",
+  startErinnerung: true, startErinnerungTage: 3, zahlErinnerung: true, zahlErinnerungTage: 14,
+  feedbackAktiv: false, feedbackTage: 2, aufraeumenNachMonaten: 6 };
+
+r = await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+const vorher = MAILS[0] && MAILS[0].textContent;
+zusage("Ohne eigene Vorlage geht die Vorgabe raus",
+  !!vorher && vorher.includes("der Beitrag für Kind1 Test ist bei uns eingegangen"), vorher && vorher.slice(0, 120));
+
+// Jetzt eine eigene Fassung speichern und dieselbe Mail noch einmal ausloesen.
+r = await bau.handleFcEinstellungenSpeichern(anfrage(), { einstellungen: Object.assign({}, einstBasis, {
+  mailVorlagen: { bezahlt: { betreff: "Danke für {camp}!", text: "Servus {eltern}!\n\n{kind} ist dabei.\n\n{aendernblock}" } }
+}) }, ENV, AUTH, {});
+zusage("Eigene Vorlage laesst sich speichern", r.status === 200, JSON.stringify(r.__json));
+zusage("...und liegt in der Datei",
+  !!(DOC.einstellungen.mailVorlagen && DOC.einstellungen.mailVorlagen.bezahlt), JSON.stringify(DOC.einstellungen.mailVorlagen));
+
+frisch({}, [{}]);
+DOC.einstellungen.mailVorlagen = { bezahlt: { betreff: "Danke für {camp}!", text: "Servus {eltern}!\n\n{kind} ist dabei.\n\n{aendernblock}" } };
+await bau.handleFcAnmeldungSpeichern(anfrage(), { campId: "c1", anmeldung: { id: "a1", bezahlt: true } }, ENV, AUTH, {});
+zusage("Die eigene Fassung geht wirklich raus",
+  MAILS[0] && MAILS[0].textContent.startsWith("Servus Eltern!"), MAILS[0] && MAILS[0].textContent.slice(0, 80));
+zusage("...mit dem eigenen Betreff", MAILS[0] && MAILS[0].subject === "Danke für Herbstcamp 2026!", MAILS[0] && MAILS[0].subject);
+zusage("...und der Aendern-Link ist eingesetzt",
+  MAILS[0] && MAILS[0].textContent.includes("meine-anmeldung.html?a="), MAILS[0] && MAILS[0].textContent);
+
+// ---- Jede Vorlage muss auch WIRKLICH ihre eigene sein ---------------------
+//
+// ⚠️ Ohne diese zwei Zusagen war die Trennung in vier Vorlagen (Bestaetigung /
+// Warteliste, Absage-Eltern / Absage-Verwaltung) nur behauptet: die Mutation
+// "nimm ueberall dieselbe Vorlage" lief glatt durch. Beide Paare unterscheiden
+// sich in dem, was den Eltern gesagt wird -- das ist keine Formsache.
+
+// Volles Camp -> die Anmeldung landet auf der Warteliste.
+frisch({ status: "offen", plaetze: 1 }, [{}]);
+DOC.einstellungen.agbText = "Bedingungen";
+DOC.einstellungen.agbStand = "stand-1";
+MAILS = [];
+r = await bau.handleFcAnmelden(anfrage(), { token: "tok1", datenschutz: true, agb: true, agbStand: "stand-1",
+  daten: { kindVorname: "Max", kindNachname: "Muster", elternName: "Eltern", elternEmail: "e@example.org" } },
+  ENV, AUTH, {}, null);
+zusage("Volles Camp: die Anmeldung geht auf die Warteliste", r.status === 200 && r.__json.status === "warteliste",
+  JSON.stringify(r.__json));
+const wMail = MAILS[MAILS.length - 1] || {};
+zusage("Die Wartelisten-Mail nimmt IHRE eigene Vorlage",
+  String(wMail.textContent || "").includes("Das Camp ist im Moment ausgebucht"), String(wMail.textContent || "").slice(0, 200));
+zusage("...mit dem Betreff 'Warteliste: <Camp>'", wMail.subject === "Warteliste: Herbstcamp 2026", wMail.subject);
+// ⚠️ Der Kern der Trennung: auf der Warteliste soll niemand ueberweisen.
+zusage("...und OHNE Zahlungsblock und ohne IBAN",
+  !String(wMail.textContent || "").includes("DE02120300000000202051") &&
+  String(wMail.textContent || "").includes("BITTE ÜBERWEISE JETZT NOCH NICHTS"),
+  String(wMail.textContent || "").slice(0, 400));
+
+// Absage durch die VERWALTUNG -> eigene Vorlage, anderer Wortlaut.
+frisch({}, [{}]);
+MAILS = [];
+r = await bau.handleFcAbsagen(anfrage(), { campId: "c1", anmeldungId: "a1", grund: "intern gemerkt", mail: true }, ENV, AUTH, {});
+const aMail = MAILS[MAILS.length - 1] || {};
+zusage("Die Verwaltungs-Absage nimmt IHRE eigene Vorlage",
+  String(aMail.textContent || "").includes("ist abgesagt") &&
+  !String(aMail.textContent || "").includes("wir haben deine Absage"),
+  String(aMail.textContent || "").slice(0, 250));
+// ⚠️ Der Absagegrund bleibt intern -- die Maske sagt das beim Eintragen zu.
+zusage("...und der interne Absagegrund steht NICHT darin",
+  !String(aMail.textContent || "").includes("intern gemerkt"), String(aMail.textContent || ""));
+
+// ---- Rechte + alter Client ------------------------------------------------
+frisch({}, []);
+DOC.einstellungen.mailVorlagen = { bezahlt: { betreff: "X", text: "{eltern} {aendernblock}" } };
+// ⚠️ Ein FEHLENDES Feld heisst "unveraendert" -- ein alter Client schickt es nicht.
+await bau.handleFcEinstellungenSpeichern(anfrage(), { einstellungen: einstBasis }, ENV, AUTH, {});
+zusage("Ein alter Client ohne das Feld raeumt die Vorlagen NICHT weg",
+  !!(DOC.einstellungen.mailVorlagen && DOC.einstellungen.mailVorlagen.bezahlt),
+  JSON.stringify(DOC.einstellungen.mailVorlagen));
+await bau.handleFcEinstellungenSpeichern(anfrage(), { einstellungen: Object.assign({}, einstBasis, { mailVorlagen: {} }) }, ENV, AUTH, {});
+zusage("Ein ausdrueckliches {} leert sie", Object.keys(DOC.einstellungen.mailVorlagen || {}).length === 0);
+
+frisch({}, []);
+r = await bau.handleFcLoad(anfrage(), ENV, AUTH, {});
+zusage("Der Admin bekommt alle neun Vorlagen mit", r.__json.mailVorlagen && r.__json.mailVorlagen.length === 9);
+zusage("...samt Vorgabe UND wirksamem Stand",
+  !!(r.__json.mailVorlagen[0].textVorgabe && r.__json.mailVorlagen[0].text));
+zusage("...und der Erklaerung der Platzhalter", !!(r.__json.mailPlatzhalter && r.__json.mailPlatzhalter.kind));
+RECHT = { canEdit: true, canAdmin: false };
+r = await bau.handleFcLoad(anfrage(), ENV, AUTH, {});
+zusage("Ohne Administrieren-Recht kommen KEINE Vorlagen mit",
+  r.__json.mailVorlagen === null && r.__json.mailPlatzhalter === null,
+  JSON.stringify(r.__json.mailVorlagen));
+RECHT = { canEdit: true, canAdmin: true };
+
+// ---- Client: Vorschau + Maske --------------------------------------------
+zusage("feedback.js kennt den Vorschau-Betrieb", FEEDBACKJS.includes('oQuery("vorschau") === "1"'));
+// ⚠️ Die Sperre muss VOR dem Einlesen stehen, sonst liefe ein Absenden in der
+// Vorschau doch noch gegen den Worker.
+zusage("Die Vorschau kann nichts absenden",
+  /if \(VORSCHAU\) \{[\s\S]{0,400}?return;\n  \}/.test(FEEDBACKJS.slice(FEEDBACKJS.indexOf("async function absenden"))),
+  "");
+zusage("Der Vorschau-Knopf steht in index.html", INDEXHTML.includes('id="btn-feedback-vorschau"'));
+zusage("...und app.js oeffnet damit feedback.html?vorschau=1",
+  APPJS.includes('feedback.html?vorschau=1'));
+zusage("Die Vorschau-Warnung steht in feedback.html", FEEDBACKHTML.includes('id="vorschau-hinweis"'));
+// ⚠️ Ausdrueckliche STATISCHE Zusage: dass der Kasten im Markup steht, belegt
+// nicht, dass er auch aufgedeckt wird -- er ist per Vorgabe `fc-hidden`. Im
+// Browser gegengeprueft; hier festgenagelt, damit die Zeile nicht still
+// herausfaellt.
+zusage("...und zeigeVorschau deckt sie auch auf",
+  /function zeigeVorschau\(\)[\s\S]{0,900}?getElementById\("vorschau-hinweis"\)\.classList\.remove\("fc-hidden"\)/.test(FEEDBACKJS));
+
+zusage("Die Mail-Karte steht in index.html", INDEXHTML.includes('id="mail-vorlagen"'));
+zusage("app.js zeichnet sie", APPJS.includes("function zeichneMailVorlagen"));
+zusage("...und liest sie beim Speichern zurueck", APPJS.includes("mailVorlagen: leseMailVorlagen()"));
+// ⚠️ Verstecken ist nicht Raeumen: die Kaesten nennen Betreff und Anlass jeder
+// Vereinsmail und bleiben sonst nach einem Rechteverlust im DOM stehen.
+zusage("Bei Rechteverlust wird die Mail-Karte geraeumt",
+  /raeumeWasNichtMehrErlaubtIst[\s\S]{0,4000}leere\("mail-vorlagen"\)/.test(APPJS));
+// ⚠️ leseMailVorlagen MUSS undefined liefern, wenn die Karte fehlt -- sonst
+// schickte ein Nicht-Admin ein leeres Objekt und raeumte alle Vorlagen weg.
+zusage("leseMailVorlagen liefert undefined ohne Karte",
+  /function leseMailVorlagen\(\)[\s\S]{0,400}?return undefined;/.test(APPJS));
+// ⚠️ Die ZWEITE Wache, und die wichtigere: der Kasten steht im Markup, ist
+// aber leer (Rechteverlust hat ihn ausgeraeumt, oder das Zeichnen lief nicht
+// durch). Ohne sie liefert die Funktion `{}` -- und `{}` heisst fuer den Worker
+// "leere alle Vorlagen". Im Browser gefunden, nicht ausgedacht.
+zusage("...UND auch dann, wenn der Kasten da, aber leer ist",
+  /function leseMailVorlagen\(\)[\s\S]{0,1400}?if \(!gefunden\) return undefined;/.test(APPJS));
 
 // =========================================================================
 const gesamt = gruen + funde.length;

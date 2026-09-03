@@ -88,9 +88,11 @@ const MUTATIONEN = [
    '          if (neu && !a.bezahltMailAm && a.status === "angemeldet" && a.elternEmail) {',
    "          if (neu && !a.bezahltMailAm && a.elternEmail) {"],
 
+  // Seit dem Umbau auf Mailvorlagen (2026-09-03) steht die Zeile in der Vorgabe,
+  // nicht mehr als Template-Literal in der Funktion.
   ["Der Ablauf faellt aus der Bezahlt-Mail", "admin-worker.js",
-   "  Beitrag  ${fcEuro(fcBetrag(camp, a))} — bezahlt${fcAblaufBlock(camp)}",
-   "  Beitrag  ${fcEuro(fcBetrag(camp, a))} — bezahlt"],
+   "  Beitrag  {betrag} — bezahlt{ablaufblock}",
+   "  Beitrag  {betrag} — bezahlt"],
 
   ["Ein leerer Ablauf erzeugt eine Ueberschrift ueber nichts", "admin-worker.js",
    '  const t = String((camp && camp.ablauf) || "").trim();\n  if (!t) return "";',
@@ -264,7 +266,89 @@ const MUTATIONEN = [
 
   ["feedback.html darf in Suchmaschinen", "feedback.html",
    '<meta name="robots" content="noindex, nofollow" />',
-   ""]
+   ""],
+
+  // ---------- 9. Mailvorlagen ----------
+  ["Der Pflicht-Baustein-Check faellt weg", "admin-worker.js",
+   "    const fehlend = (def.pflicht || []).filter((p) => !t.includes(\"{\" + p + \"}\"));",
+   "    const fehlend = [];"],
+
+  ["Der Zahlungsblock ist in der Bestaetigung nicht mehr Pflicht", "admin-worker.js",
+   'pflicht: ["zahlungsblock", "aendernblock"],\n    betreff: "Anmeldung bestätigt: {camp}",',
+   'pflicht: [],\n    betreff: "Anmeldung bestätigt: {camp}",'],
+
+  ["Der Geldblock ist in der Eltern-Absage nicht mehr Pflicht", "admin-worker.js",
+   'pflicht: ["geldblock"],\n    betreff: "Absage bestätigt: {camp}",\n    text: `Hallo {eltern},\n\nwir haben deine Absage',
+   'pflicht: [],\n    betreff: "Absage bestätigt: {camp}",\n    text: `Hallo {eltern},\n\nwir haben deine Absage'],
+
+  ["Der Feedback-Link ist nicht mehr Pflicht", "admin-worker.js",
+   'pflicht: ["feedbacklink"],',
+   "pflicht: [],"],
+
+  ["Der Kindername wird im Betreff erlaubt", "admin-worker.js",
+   'const FC_MAIL_BETREFF_FELDER = ["camp"];',
+   'const FC_MAIL_BETREFF_FELDER = ["camp", "kind"];'],
+
+  ["Ersetzt wird ueber ALLE Platzhalter statt nur die erlaubten", "admin-worker.js",
+   "function fcMailFuellen(text, felder, werte) {\n  let out = String(text || \"\");\n  (felder || []).forEach((name) => {",
+   "function fcMailFuellen(text, felder, werte) {\n  let out = String(text || \"\");\n  Object.keys(werte || {}).forEach((name) => {"],
+
+  ["Ein fehlendes mailVorlagen raeumt die gespeicherten weg", "admin-worker.js",
+   "        mailVorlagen: roh.mailVorlagen === undefined\n          ? ((doc.einstellungen && doc.einstellungen.mailVorlagen) || {})\n          : fcMailVorlagenPruefen(roh.mailVorlagen),",
+   "        mailVorlagen: fcMailVorlagenPruefen(roh.mailVorlagen),"],
+
+  ["Eine erfundene Vorlagen-Id wird mitgespeichert", "admin-worker.js",
+   "  FC_MAIL_VORLAGEN.forEach((def) => {\n    const eintrag = roh[def.id];",
+   "  Object.keys(roh).forEach((__id) => {\n    const def = fcMailVorlageDef(__id) || { id: __id, name: __id, pflicht: [], betreff: \"\", text: \"\" };\n    const eintrag = roh[def.id];"],
+
+  ["Die unveraenderte Vorgabe wird als Kopie eingefroren", "admin-worker.js",
+   "    const betreff = sauber.betreff === def.betreff.trim() ? \"\" : sauber.betreff;\n    const text = sauber.text === def.text.trim() ? \"\" : sauber.text;",
+   "    const betreff = sauber.betreff;\n    const text = sauber.text;"],
+
+  ["Der Text faellt nicht mehr einzeln auf die Vorgabe zurueck", "admin-worker.js",
+   "  return {\n    betreff: betreff || def.betreff,\n    text: text || def.text,",
+   "  return {\n    betreff: betreff || def.betreff,\n    text: betreff ? text : def.text,"],
+
+  ["Die Vorlagen gehen auch ohne Administrieren-Recht heraus", "admin-worker.js",
+   "    mailVorlagen: ctx.canAdmin ? fcMailVorlagenFuerAdmin(einst) : null,",
+   "    mailVorlagen: fcMailVorlagenFuerAdmin(einst),"],
+
+  ["Die Bezahlt-Mail geht an der Vorlage vorbei", "admin-worker.js",
+   'const m = fcMailBauen(einst, "bezahlt", fcMailWerte(camp, a, einst));\n  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);',
+   'return fcMailSenden(env, a.elternEmail, "Beitrag eingegangen: " + camp.name, "Hallo.");'],
+
+  ["Die Wartelisten-Mail nimmt die Bestaetigungs-Vorlage", "admin-worker.js",
+   'const id = a.status === "warteliste" ? "warteliste" : "bestaetigung";',
+   'const id = "bestaetigung";'],
+
+  ["Die Verwaltungs-Absage nimmt die Eltern-Vorlage", "admin-worker.js",
+   'const id = quelle === "verwaltung" ? "absage-verwaltung" : "absage-eltern";',
+   'const id = "absage-eltern";'],
+
+  // ---------- 10. Vorschau ----------
+  ["Die Vorschau kann doch absenden", "feedback.js",
+   "  if (VORSCHAU) {\n    fehlerBox.textContent = \"Das ist die Vorschau",
+   "  if (false) {\n    fehlerBox.textContent = \"Das ist die Vorschau"],
+
+  ["Der Vorschau-Hinweis bleibt versteckt", "feedback.js",
+   'document.getElementById("vorschau-hinweis").classList.remove("fc-hidden");',
+   "void 0;"],
+
+  ["Der Fragetext im Client laeuft weg", "config.js",
+   '{ id: "training",     typ: "note",   frage: "Training und Betreuung durch die Trainer" }',
+   '{ id: "training",     typ: "note",   frage: "Training und Betreuung" }'],
+
+  ["Bei Rechteverlust bleibt die Mail-Karte im DOM stehen", "app.js",
+   '    leere("mail-vorlagen");\n    leere("mail-platzhalter-liste");',
+   "    void 0;"],
+
+  ["leseMailVorlagen liefert ein leeres Objekt statt undefined", "app.js",
+   "  if (!ziel || !liste.length) return undefined;",
+   "  if (!ziel || !liste.length) return {};"],
+
+  ["Leerer Kasten liefert {} und raeumt damit alle Vorlagen weg", "app.js",
+   "  if (!gefunden) return undefined;",
+   "  void gefunden;"]
 ];
 
 let gefangen = 0;

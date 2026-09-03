@@ -19619,6 +19619,8 @@ function fcEinstellungenLeer() {
     // gelaufen ist; das soll jemand bewusst einschalten und nicht durch ein
     // Programm-Update geschenkt bekommen.
     feedbackAktiv: false, feedbackTage: FC_FEEDBACK_TAGE_VORGABE,
+    // Leer heisst "nimm ueberall die Vorgabe" -- siehe fcMailVorlage.
+    mailVorlagen: {},
     aufraeumenNachMonaten: 6
   };
 }
@@ -20812,6 +20814,13 @@ async function handleFcLoad(request, env, authHeader, corsHeaders) {
     jobKatalog: doc.jobKatalog,
     // Die Kontoverbindung geht nur an die Verwaltung.
     einstellungen: einstFuerAdmin,
+    // Alle neun Mailvorlagen: Vorgabe UND wirksamer Stand, dazu die erlaubten
+    // Platzhalter. ⚠️ Nur fuer Administrierende -- die Texte nennen zwar keine
+    // Personen, aber sie sind die Aussenwirkung des Vereins und gehoeren zur
+    // Verwaltung wie die Kontoverbindung daneben.
+    mailVorlagen: ctx.canAdmin ? fcMailVorlagenFuerAdmin(einst) : null,
+    mailPlatzhalter: ctx.canAdmin ? FC_MAIL_PLATZHALTER : null,
+    mailBetreffFelder: ctx.canAdmin ? FC_MAIL_BETREFF_FELDER : null,
     // Frühere Fassungen der Bedingungen -- der Nachweis, welchem Wortlaut eine
     // ältere Anmeldung zugestimmt hat. Enthält nur noch benutzte Fassungen.
     agbArchiv: ctx.canAdmin ? doc.agbArchiv : null,
@@ -21649,6 +21658,14 @@ async function handleFcEinstellungenSpeichern(request, body, env, authHeader, co
         // nicht kennt, darf ihn nicht aus Versehen anschalten.
         feedbackAktiv: roh.feedbackAktiv === true,
         feedbackTage: fcZahl(roh.feedbackTage, 0, 60),
+        // ⚠️ Ein FEHLENDES `mailVorlagen` heisst "unveraendert", nicht "leeren".
+        // Ein Browser-Tab mit der alten app.js ueberlebt den Deploy und schickt
+        // das Feld gar nicht mit -- wuerde das die Vorlagen raeumen, waere jede
+        // angepasste Mail beim naechsten Speichern der Kontodaten wieder weg.
+        // Gleiche Linie wie `versteckt` in der Tools-Uebersicht.
+        mailVorlagen: roh.mailVorlagen === undefined
+          ? ((doc.einstellungen && doc.einstellungen.mailVorlagen) || {})
+          : fcMailVorlagenPruefen(roh.mailVorlagen),
         aufraeumenNachMonaten: fcZahl(roh.aufraeumenNachMonaten, 1, 60) || 6
       };
       // ⚠️ 0 ist ein gueltiger Wert ("am letzten Camptag selbst") -- deshalb
@@ -21948,6 +21965,400 @@ Mit sportlichen Grüßen
 1. SC 1911 Heiligenstadt e.V.
 Nachwuchsbereich`;
 
+// ============================================================
+//  Mailvorlagen: sichtbar und aenderbar (seit 2026-09-03)
+// ============================================================
+//
+// Bis hierher standen die neun Mailtexte als Zeichenketten im Code -- niemand
+// ausser dem Entwickler sah, WAS der Verein den Eltern eigentlich schreibt, und
+// ein Komma zu aendern kostete einen Deploy. Michel-Auftrag: "alle ausgelösten
+// Emails unter der Verwaltung sehen, um sie ggf auch anpassen zu können."
+//
+// ⚠️ Gleiche Bauform wie die Teilnahmebedingungen (`fcAgbText`): der Text steht
+// an genau EINER Stelle im Code, und `einstellungen.mailVorlagen[<id>]` ueber-
+// schreibt ihn ohne Deploy. Ein leerer oder fehlender Eintrag heisst "nimm die
+// Vorgabe" -- NICHT "verschicke nichts".
+//
+// ⚠️ Die Platzhalter sind KEINE Template-Literale. Ein vom Nutzer gespeicherter
+// Text darf nie als Code laufen; er wird ausschliesslich ueber eine Weissliste
+// ersetzt (fcMailFuellen). Was nicht in der Liste steht, bleibt woertlich stehen.
+//
+// ⚠️ Die BERECHNETEN Bloecke (Zahlungsangaben, Erstattungsregel, Aendern-Link)
+// bleiben Platzhalter und sind nicht frei schreibbar. Genau daran haengen die
+// heiklen Zusagen: der Zahlungsblock traegt die IBAN, der Geldblock die Quote aus
+// Punkt 4 der Teilnahmebedingungen, der Aendern-Link ist der einzige Weg, ueber
+// den eine Familie ihre Anmeldung noch erreicht.
+
+const FC_MAIL_BETREFF_MAX = 140;
+const FC_MAIL_TEXT_MAX = 6000;
+
+// Was ein Platzhalter bedeutet -- geht so auch an die Verwaltung heraus, damit in
+// der Maske neben jedem Feld steht, was man einsetzen kann.
+const FC_MAIL_PLATZHALTER = {
+  eltern:        "Name der Erziehungsberechtigten",
+  kind:          "Name des Kindes",
+  camp:          "Name des Camps",
+  campblock:     "Der Kasten mit Camp, Wann, Täglich und Wo",
+  zahlungsblock: "Betrag, Kontoverbindung, Verwendungszweck und Zahlungsfrist",
+  aendernblock:  "Der persönliche Link zum Ändern und Absagen",
+  geldblock:     "Was bei einer Absage mit dem Beitrag passiert (Punkt 4 bzw. 11)",
+  ablaufblock:   "Der Tagesablauf des Camps, falls einer hinterlegt ist",
+  zahlhinweis:   "Hinweis, falls der Beitrag noch offen ist (sonst leer)",
+  feedbacklink:  "Der Link zum Feedbackbogen",
+  betrag:        "Der Beitrag dieser Anmeldung, z. B. 180,00 €",
+  wartende:      "Wie viele Kinder auf der Warteliste stehen (sonst leer)",
+  kontakt:       "Die Zeile mit dem Ansprechpartner, falls einer hinterlegt ist",
+  fuss:          "Die Grußformel des Vereins"
+};
+
+// ⚠️ `pflicht` ist keine Formsache. Fehlt `{aendernblock}`, hat die Familie
+// keinen Weg mehr zu ihrer Anmeldung; fehlt `{zahlungsblock}`, weiss niemand,
+// was und wohin zu überweisen ist; fehlt `{geldblock}`, steht in einer
+// Absage-Mail nichts mehr über das Geld -- und fehlt `{feedbacklink}`, ist die
+// ganze Mail sinnlos. Der Worker LEHNT eine Vorlage ohne diese Platzhalter ab,
+// statt sie stillschweigend zu ergänzen: ein automatisch angehängter Block
+// stünde an einer Stelle, die niemand gewählt hat.
+//
+// ⚠️ Im BETREFF sind nur `{camp}` erlaubt -- ausdrücklich NICHT `{kind}`. Der
+// Betreff steht in der Handy-Vorschau auf dem Sperrbildschirm und im
+// Versandprotokoll von Brevo, also an zwei Stellen mehr als der Text. Gleiche
+// Linie wie bei den Unterschriften und den Privatnachrichten.
+const FC_MAIL_BETREFF_FELDER = ["camp"];
+
+const FC_MAIL_VORLAGEN = [
+  {
+    id: "bestaetigung",
+    name: "Anmeldung bestätigt",
+    wann: "Sofort nach dem Absenden des Anmeldeformulars, wenn ein Platz frei war.",
+    felder: ["eltern", "kind", "camp", "campblock", "zahlungsblock", "aendernblock", "kontakt", "fuss"],
+    pflicht: ["zahlungsblock", "aendernblock"],
+    betreff: "Anmeldung bestätigt: {camp}",
+    text: `Hallo {eltern},
+
+{kind} ist zum Fußballcamp angemeldet. Wir freuen uns!
+
+{campblock}
+
+{zahlungsblock}
+
+{aendernblock}{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil über unsere Vereinsseite eine
+Anmeldung zum Fußballcamp abgeschickt wurde.`
+  },
+  {
+    id: "warteliste",
+    name: "Auf der Warteliste",
+    wann: "Sofort nach dem Absenden, wenn das Camp schon ausgebucht war.",
+    felder: ["eltern", "kind", "camp", "campblock", "aendernblock", "kontakt", "fuss"],
+    pflicht: ["aendernblock"],
+    betreff: "Warteliste: {camp}",
+    text: `Hallo {eltern},
+
+danke für die Anmeldung von {kind} zu unserem Fußballcamp.
+
+{campblock}
+
+Das Camp ist im Moment ausgebucht. {kind} steht deshalb auf der
+Warteliste. Sagt jemand ab, rücken wir nach und melden uns sofort bei dir.
+
+BITTE ÜBERWEISE JETZT NOCH NICHTS. Der Beitrag wird erst fällig, wenn wir dir
+einen festen Platz zusagen konnten.
+
+{aendernblock}{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil über unsere Vereinsseite eine
+Anmeldung zum Fußballcamp abgeschickt wurde.`
+  },
+  {
+    id: "zusage",
+    name: "Nachgerückt — ein Platz ist frei",
+    wann: "Wenn die Verwaltung jemanden von der Warteliste nachrücken lässt.",
+    felder: ["eltern", "kind", "camp", "campblock", "zahlungsblock", "aendernblock", "kontakt", "fuss"],
+    pflicht: ["zahlungsblock", "aendernblock"],
+    betreff: "Ein Platz ist frei: {camp}",
+    text: `Hallo {eltern},
+
+gute Nachricht: es ist ein Platz frei geworden. {kind} ist damit fest
+zum Fußballcamp angemeldet.
+
+{campblock}
+
+{zahlungsblock}
+
+{aendernblock}{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil dein Kind auf der Warteliste
+dieses Camps stand.`
+  },
+  {
+    id: "start",
+    name: "Bald geht es los",
+    wann: "Ein paar Tage vor dem ersten Camptag, nachts. Abschaltbar unter Erinnerungen.",
+    felder: ["eltern", "kind", "camp", "campblock", "zahlhinweis", "aendernblock", "kontakt", "fuss"],
+    pflicht: ["aendernblock"],
+    betreff: "Bald geht es los: {camp}",
+    text: `Hallo {eltern},
+
+in wenigen Tagen geht es los — {kind} ist beim Fußballcamp dabei.
+
+{campblock}
+
+Bitte denkt an Sportsachen, Fußballschuhe, Schienbeinschoner, eine Trinkflasche
+und wettergemäße Kleidung.{zahlhinweis}
+
+{aendernblock}{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil dein Kind zu diesem Camp
+angemeldet ist.`
+  },
+  {
+    id: "zahlung",
+    name: "Beitrag noch offen",
+    wann: "Nachts, wenn der Beitrag aussteht und die Zahlungsfrist naht. Abschaltbar.",
+    felder: ["eltern", "kind", "camp", "zahlungsblock", "aendernblock", "kontakt", "fuss"],
+    pflicht: ["zahlungsblock", "aendernblock"],
+    betreff: "Beitrag noch offen: {camp}",
+    text: `Hallo {eltern},
+
+für die Anmeldung von {kind} zum Fußballcamp ist bei uns noch kein
+Beitrag eingegangen.
+
+{zahlungsblock}
+
+Falls die Überweisung schon unterwegs ist oder sich unsere Nachrichten gekreuzt
+haben, betrachte diese Mail bitte als gegenstandslos.
+
+{aendernblock}{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
+uns noch offen steht.`
+  },
+  {
+    id: "bezahlt",
+    name: "Beitrag eingegangen",
+    wann: "Sobald die Verwaltung eine Anmeldung als bezahlt abhakt. Höchstens einmal.",
+    felder: ["eltern", "kind", "camp", "campblock", "betrag", "ablaufblock", "aendernblock", "kontakt", "fuss"],
+    pflicht: ["aendernblock"],
+    betreff: "Beitrag eingegangen: {camp}",
+    text: `Hallo {eltern},
+
+der Beitrag für {kind} ist bei uns eingegangen — vielen Dank. Damit
+ist alles erledigt, der Platz beim Fußballcamp steht fest.
+
+{campblock}
+  Beitrag  {betrag} — bezahlt{ablaufblock}
+
+Bitte denkt an Sportsachen, Fußballschuhe, Schienbeinschoner, eine Trinkflasche
+und wettergemäße Kleidung.
+
+{aendernblock}{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
+uns eingegangen ist.`
+  },
+  {
+    id: "absage-eltern",
+    name: "Absage bestätigt (die Familie hat abgesagt)",
+    wann: "Wenn die Eltern über ihren Link selbst absagen.",
+    felder: ["eltern", "kind", "camp", "campblock", "geldblock", "kontakt", "fuss"],
+    pflicht: ["geldblock"],
+    betreff: "Absage bestätigt: {camp}",
+    text: `Hallo {eltern},
+
+wir haben deine Absage für {kind} erhalten. Der Platz beim Fußballcamp
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.
+
+{campblock}
+
+{geldblock}
+
+War die Absage ein Versehen? Über den Link aus der Anmeldebestätigung lässt sie
+sich nicht mehr zurücknehmen — melde dich in dem Fall bitte direkt bei uns.{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
+für dieses Camp abgeschickt wurde.`
+  },
+  {
+    id: "absage-verwaltung",
+    name: "Absage bestätigt (der Verein hat ausgetragen)",
+    wann: "Wenn die Verwaltung eine Anmeldung absagt und das Häkchen für die Mail setzt.",
+    felder: ["eltern", "kind", "camp", "campblock", "geldblock", "kontakt", "fuss"],
+    pflicht: ["geldblock"],
+    betreff: "Absage bestätigt: {camp}",
+    text: `Hallo {eltern},
+
+die Anmeldung von {kind} zum Fußballcamp ist abgesagt. Der Platz
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.
+
+{campblock}
+
+{geldblock}
+
+Stimmt das so nicht, oder hast du Fragen dazu? Dann melde dich bitte kurz bei
+uns — wir klären das.{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde verschickt, weil die Anmeldung deines Kindes zu diesem Camp
+abgesagt wurde.`
+  },
+  {
+    id: "feedback",
+    name: "Wie war das Camp?",
+    wann: "Ein paar Tage nach dem letzten Camptag, nachts. Muss eingeschaltet werden.",
+    felder: ["eltern", "kind", "camp", "feedbacklink", "kontakt", "fuss"],
+    pflicht: ["feedbacklink"],
+    betreff: "Wie war das {camp}?",
+    text: `Hallo {eltern},
+
+das {camp} ist vorbei. Wir hoffen, {kind} hatte Spaß!
+
+Damit das nächste Camp noch besser wird, würden wir gern wissen, wie es
+gelaufen ist. Das dauert zwei Minuten:
+
+  {feedbacklink}
+
+Deine Antworten sind anonym. Wir speichern sie ohne Namen und ohne Verbindung
+zur Anmeldung — wir sehen also, WAS geantwortet wurde, aber nicht von wem.
+Antworten lässt sich einmal.{kontakt}
+{fuss}
+
+--
+Diese E-Mail wurde automatisch verschickt, weil dein Kind an diesem Camp
+teilgenommen hat.`
+  }
+];
+
+function fcMailVorlageDef(id) {
+  return FC_MAIL_VORLAGEN.find((v) => v.id === id) || null;
+}
+
+// Der WIRKSAME Text einer Vorlage: das Gespeicherte, sonst die Vorgabe.
+//
+// ⚠️ Betreff und Text fallen EINZELN zurück. Wer nur den Betreff angepasst hat,
+// soll beim Text weiter die gepflegte Vorgabe bekommen -- sonst fröre ein
+// Komma im Betreff den Text auf dem Stand des Deploys ein.
+function fcMailVorlage(einst, id) {
+  const def = fcMailVorlageDef(id);
+  if (!def) return null;
+  const roh = (einst && einst.mailVorlagen && einst.mailVorlagen[id]) || {};
+  const betreff = String(roh.betreff || "").trim();
+  const text = String(roh.text || "").trim();
+  return {
+    betreff: betreff || def.betreff,
+    text: text || def.text,
+    eigenerBetreff: !!betreff,
+    eigenerText: !!text
+  };
+}
+
+// Setzt die Werte ein. ⚠️ NUR was in `felder` der Vorlage steht -- ein
+// Platzhalter, den diese Mail nicht kennt, bleibt woertlich stehen, statt
+// versehentlich etwas aus einer anderen Mail einzuschleusen.
+//
+// ⚠️ Ersetzt wird ueber eine Schleife ueber die erlaubten Namen, NICHT ueber
+// eine Regex, die jedes `{...}` greift: sonst verschluckte ein Text mit einer
+// geschweiften Klammer stillschweigend Zeichen.
+function fcMailFuellen(text, felder, werte) {
+  let out = String(text || "");
+  (felder || []).forEach((name) => {
+    const wert = werte && werte[name] !== undefined && werte[name] !== null ? String(werte[name]) : "";
+    out = out.split("{" + name + "}").join(wert);
+  });
+  return out;
+}
+
+// Baut Betreff und Text einer Mail. Einziger Weg -- jede der neun Mailfunktionen
+// geht hierdurch, damit es keine zweite Fassung eines Textes gibt.
+function fcMailBauen(einst, id, werte) {
+  const def = fcMailVorlageDef(id);
+  if (!def) throw new FcFehler("Unbekannte Mailvorlage.", 500);
+  const v = fcMailVorlage(einst, id);
+  return {
+    betreff: fcMailFuellen(v.betreff, FC_MAIL_BETREFF_FELDER, werte).trim(),
+    text: fcMailFuellen(v.text, def.felder, werte)
+  };
+}
+
+// Prueft eine vom Nutzer gespeicherte Vorlage.
+//
+// ⚠️ Leer heisst "zurueck auf die Vorgabe" und ist ausdruecklich erlaubt -- das
+// ist der Rueckweg, wenn jemand sich verschrieben hat. Geprueft wird nur, was
+// wirklich dasteht.
+function fcMailVorlagePruefen(def, betreff, text) {
+  const b = capStr(betreff, FC_MAIL_BETREFF_MAX).trim();
+  const t = capStr(text, FC_MAIL_TEXT_MAX).trim();
+  if (!b && !t) return null;
+
+  // Nur der Text traegt die Pflicht-Platzhalter -- im Betreff stehen sie nicht.
+  if (t) {
+    const fehlend = (def.pflicht || []).filter((p) => !t.includes("{" + p + "}"));
+    if (fehlend.length) {
+      throw new FcFehler(
+        `In der Vorlage „${def.name}" fehlt ${fehlend.length === 1 ? "der Platzhalter" : "die Platzhalter"} ` +
+        fehlend.map((p) => "{" + p + "}").join(", ") +
+        ". Ohne ihn wäre die Mail unbrauchbar — bitte wieder einsetzen.", 400);
+    }
+  }
+  return { betreff: b, text: t };
+}
+
+// Was die Verwaltung zu sehen bekommt: Vorgabe UND wirksamer Stand, dazu die
+// erlaubten Platzhalter. ⚠️ Der Client rechnet nichts selbst aus -- eine zweite
+// Liste der Platzhalter im Browser liefe unweigerlich auseinander.
+// Nimmt entgegen, was die Verwaltung geschickt hat, und gibt zurueck, was
+// gespeichert werden darf.
+//
+// ⚠️ Nur bekannte Vorlagen-Ids. Ein erfundener Schluessel wuerde nie benutzt und
+// waechse still in der Datei mit.
+// ⚠️ `Object.create(null)`: eine Id `__proto__` traefe sonst den Prototyp.
+// ⚠️ Eine Vorlage, die genau der Vorgabe entspricht, wird als LEER gespeichert.
+// Sonst haette sich jemand eine eingefrorene Kopie eingehandelt, nur weil er den
+// Verwaltungs-Tab einmal gespeichert hat -- und eine spaetere Verbesserung des
+// Textes im Code kaeme bei ihm nie an. Gleiche Ueberlegung wie beim AGB-Text.
+function fcMailVorlagenPruefen(roh) {
+  const raus = Object.create(null);
+  if (!roh || typeof roh !== "object") return raus;
+  FC_MAIL_VORLAGEN.forEach((def) => {
+    const eintrag = roh[def.id];
+    if (!eintrag || typeof eintrag !== "object") return;
+    const sauber = fcMailVorlagePruefen(def, eintrag.betreff, eintrag.text);
+    if (!sauber) return;
+    const betreff = sauber.betreff === def.betreff.trim() ? "" : sauber.betreff;
+    const text = sauber.text === def.text.trim() ? "" : sauber.text;
+    if (betreff || text) raus[def.id] = { betreff, text };
+  });
+  return raus;
+}
+
+function fcMailVorlagenFuerAdmin(einst) {
+  return FC_MAIL_VORLAGEN.map((def) => {
+    const v = fcMailVorlage(einst, def.id);
+    return {
+      id: def.id, name: def.name, wann: def.wann,
+      felder: def.felder, pflicht: def.pflicht,
+      betreffVorgabe: def.betreff, textVorgabe: def.text,
+      betreff: v.betreff, text: v.text,
+      eigenerBetreff: v.eigenerBetreff, eigenerText: v.eigenerText
+    };
+  });
+}
+
 async function fcMailSenden(env, empfaenger, betreff, text) {
   if (!env.BREVO_API_KEY) return false;
   const to = String(empfaenger || "").trim();
@@ -22013,105 +22424,55 @@ an die Anmeldung — dort kannst du die Angaben ändern oder absagen:
 Bitte gib den Link nicht weiter — wer ihn hat, sieht die Anmeldung.`;
 }
 
+// Die Werte, die in jeder Mail vorkommen koennen. ⚠️ EINE Stelle: gaebe es je
+// Mail eine eigene Zusammenstellung, hiesse `{kind}` frueher oder spaeter in
+// zwei Mails etwas anderes.
+function fcMailWerte(camp, a, einst) {
+  return {
+    eltern: a.elternName || "",
+    kind: fcKindName(a),
+    camp: camp.name || "",
+    campblock: fcCampBlock(camp),
+    zahlungsblock: fcZahlungsBlock(camp, a, einst),
+    aendernblock: fcAendernBlock(a),
+    ablaufblock: fcAblaufBlock(camp),
+    betrag: fcEuro(fcBetrag(camp, a)),
+    wartende: String(fcWartende(camp).length || ""),
+    feedbacklink: FC_APP_URL + "feedback.html?a=" + encodeURIComponent(a.token || ""),
+    kontakt: fcKontaktBlock(einst),
+    fuss: FC_MAIL_FUSS
+  };
+}
+
 async function fcBestaetigungMail(env, camp, a, einst) {
-  const wartend = a.status === "warteliste";
-  const text = wartend
-    ? `Hallo ${a.elternName || ""},
-
-danke für die Anmeldung von ${fcKindName(a)} zu unserem Fußballcamp.
-
-${fcCampBlock(camp)}
-
-Das Camp ist im Moment ausgebucht. ${fcKindName(a)} steht deshalb auf der
-Warteliste. Sagt jemand ab, rücken wir nach und melden uns sofort bei dir.
-
-BITTE ÜBERWEISE JETZT NOCH NICHTS. Der Beitrag wird erst fällig, wenn wir dir
-einen festen Platz zusagen konnten.
-
-${fcAendernBlock(a)}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil über unsere Vereinsseite eine
-Anmeldung zum Fußballcamp abgeschickt wurde.`
-    : `Hallo ${a.elternName || ""},
-
-${fcKindName(a)} ist zum Fußballcamp angemeldet. Wir freuen uns!
-
-${fcCampBlock(camp)}
-
-${fcZahlungsBlock(camp, a, einst)}
-
-${fcAendernBlock(a)}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil über unsere Vereinsseite eine
-Anmeldung zum Fußballcamp abgeschickt wurde.`;
-
-  return fcMailSenden(env, a.elternEmail,
-    wartend ? `Warteliste: ${camp.name}` : `Anmeldung bestätigt: ${camp.name}`, text);
+  // ⚠️ ZWEI Vorlagen, nicht eine mit Bedingung darin: die Wartelisten-Mail sagt
+  // ausdruecklich "ueberweise noch nichts" und traegt deshalb gar keinen
+  // Zahlungsblock. In einer gemeinsamen Vorlage muesste die Verwaltung beim
+  // Aendern immer beide Faelle mitdenken.
+  const id = a.status === "warteliste" ? "warteliste" : "bestaetigung";
+  const m = fcMailBauen(einst, id, fcMailWerte(camp, a, einst));
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 async function fcZusageMail(env, camp, a, einst) {
-  const text = `Hallo ${a.elternName || ""},
-
-gute Nachricht: es ist ein Platz frei geworden. ${fcKindName(a)} ist damit fest
-zum Fußballcamp angemeldet.
-
-${fcCampBlock(camp)}
-
-${fcZahlungsBlock(camp, a, einst)}
-
-${fcAendernBlock(a)}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil dein Kind auf der Warteliste
-dieses Camps stand.`;
-
-  return fcMailSenden(env, a.elternEmail, `Ein Platz ist frei: ${camp.name}`, text);
+  const m = fcMailBauen(einst, "zusage", fcMailWerte(camp, a, einst));
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 async function fcStartMail(env, camp, a, einst) {
-  const text = `Hallo ${a.elternName || ""},
-
-in wenigen Tagen geht es los — ${fcKindName(a)} ist beim Fußballcamp dabei.
-
-${fcCampBlock(camp)}
-
-Bitte denkt an Sportsachen, Fußballschuhe, Schienbeinschoner, eine Trinkflasche
-und wettergemäße Kleidung.${a.bezahlt ? "" : "\n\nDer Beitrag ist bei uns übrigens noch nicht eingegangen. Falls die Überweisung\nschon unterwegs ist, ist alles gut — sonst wäre jetzt ein guter Zeitpunkt."}
-
-${fcAendernBlock(a)}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil dein Kind zu diesem Camp
-angemeldet ist.`;
-
-  return fcMailSenden(env, a.elternEmail, `Bald geht es los: ${camp.name}`, text);
+  // ⚠️ `zahlhinweis` bleibt BERECHNET und ist kein frei schreibbarer Absatz: er
+  // haengt daran, ob der Beitrag eingegangen ist. Stuende er fest im Text,
+  // bekaeme auch jemand, der laengst bezahlt hat, eine Zahlungsaufforderung.
+  const werte = fcMailWerte(camp, a, einst);
+  werte.zahlhinweis = a.bezahlt ? "" :
+    "\n\nDer Beitrag ist bei uns übrigens noch nicht eingegangen. Falls die Überweisung\nschon unterwegs ist, ist alles gut — sonst wäre jetzt ein guter Zeitpunkt.";
+  const m = fcMailBauen(einst, "start", werte);
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 async function fcZahlMail(env, camp, a, einst) {
-  const text = `Hallo ${a.elternName || ""},
-
-für die Anmeldung von ${fcKindName(a)} zum Fußballcamp ist bei uns noch kein
-Beitrag eingegangen.
-
-${fcZahlungsBlock(camp, a, einst)}
-
-Falls die Überweisung schon unterwegs ist oder sich unsere Nachrichten gekreuzt
-haben, betrachte diese Mail bitte als gegenstandslos.
-
-${fcAendernBlock(a)}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
-uns noch offen steht.`;
-
-  return fcMailSenden(env, a.elternEmail, `Beitrag noch offen: ${camp.name}`, text);
+  const m = fcMailBauen(einst, "zahlung", fcMailWerte(camp, a, einst));
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 // Der Tagesablauf des Camps, wie ihn die Verwaltung im Camp-Dialog gepflegt hat.
@@ -22134,25 +22495,8 @@ ${t}`;
 // handleFcAnmeldungSpeichern (bezahltMailAm), nicht hier. Diese Funktion selbst
 // weiss nichts davon und wuerde beliebig oft verschicken.
 async function fcBezahltMail(env, camp, a, einst) {
-  const text = `Hallo ${a.elternName || ""},
-
-der Beitrag für ${fcKindName(a)} ist bei uns eingegangen — vielen Dank. Damit
-ist alles erledigt, der Platz beim Fußballcamp steht fest.
-
-${fcCampBlock(camp)}
-  Beitrag  ${fcEuro(fcBetrag(camp, a))} — bezahlt${fcAblaufBlock(camp)}
-
-Bitte denkt an Sportsachen, Fußballschuhe, Schienbeinschoner, eine Trinkflasche
-und wettergemäße Kleidung.
-
-${fcAendernBlock(a)}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil der Beitrag für dieses Camp bei
-uns eingegangen ist.`;
-
-  return fcMailSenden(env, a.elternEmail, `Beitrag eingegangen: ${camp.name}`, text);
+  const m = fcMailBauen(einst, "bezahlt", fcMailWerte(camp, a, einst));
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 // Die Bitte um Feedback, ein paar Tage nach dem letzten Camptag.
@@ -22164,25 +22508,8 @@ uns eingegangen ist.`;
 // eine Zusage, die im Code steht -- wer handleFcFeedbackSenden umbaut, bricht
 // sie.
 async function fcFeedbackMail(env, camp, a, einst) {
-  const text = `Hallo ${a.elternName || ""},
-
-das ${camp.name} ist vorbei. Wir hoffen, ${fcKindName(a)} hatte Spaß!
-
-Damit das nächste Camp noch besser wird, würden wir gern wissen, wie es
-gelaufen ist. Das dauert zwei Minuten:
-
-  ${FC_APP_URL}feedback.html?a=${encodeURIComponent(a.token)}
-
-Deine Antworten sind anonym. Wir speichern sie ohne Namen und ohne Verbindung
-zur Anmeldung — wir sehen also, WAS geantwortet wurde, aber nicht von wem.
-Antworten lässt sich einmal.${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-Diese E-Mail wurde automatisch verschickt, weil dein Kind an diesem Camp
-teilgenommen hat.`;
-
-  return fcMailSenden(env, a.elternEmail, `Wie war das ${camp.name}?`, text);
+  const m = fcMailBauen(einst, "feedback", fcMailWerte(camp, a, einst));
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 // Was mit dem Geld passiert, wenn die Eltern absagen.
@@ -22265,44 +22592,28 @@ sagen dir, was davon wirklich fällig wird.`;
 // Richtung wäre gefährlich — ein vergessener Parameter behauptete den Eltern
 // gegenüber, sie hätten selbst abgesagt.
 async function fcAbsageMail(env, camp, a, einst, quelle) {
-  const vonVerwaltung = quelle === "verwaltung";
+  // ⚠️ ZWEI Vorlagen statt einer mit drei Bedingungen darin. Die alte Fassung
+  // baute Einstieg, Rueckweg und Fussnote je einzeln aus `quelle` -- in der
+  // Verwaltungsmaske waere daraus ein Text mit unsichtbaren Verzweigungen
+  // geworden. Getrennt sieht man beim Aendern, welchen Fall man vor sich hat.
+  //
+  // ⚠️ `quelle` hat weiterhin KEINEN Default: nur das ausdrueckliche
+  // "verwaltung" schaltet um. Ein vergessener Parameter behauptete den Eltern
+  // gegenueber sonst, sie haetten selbst abgesagt.
+  const id = quelle === "verwaltung" ? "absage-verwaltung" : "absage-eltern";
 
-  const einstieg = vonVerwaltung
-    ? `die Anmeldung von ${fcKindName(a)} zum Fußballcamp ist abgesagt. Der Platz
-ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.`
-    : `wir haben deine Absage für ${fcKindName(a)} erhalten. Der Platz beim Fußballcamp
-ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.`;
+  // ⚠️ Der Geldblock bleibt BERECHNET und ist kein frei schreibbarer Absatz. Er
+  // traegt die Quote aus Punkt 4 der Teilnahmebedingungen bzw. den Verweis auf
+  // Punkt 11 -- eine von Hand geschriebene Zusage waere eine Zahlungszusage, die
+  // der Vertrag nicht deckt.
+  //
+  // ⚠️ Der Absage-GRUND aus der Verwaltung steht hier NICHT und ist auch kein
+  // Platzhalter. Die Maske sagt beim Eintragen zu, er bleibe intern.
+  const werte = fcMailWerte(camp, a, einst);
+  werte.geldblock = fcAbsageGeldBlock(camp, a, quelle);
 
-  // ⚠️ Der Absage-GRUND aus der Verwaltung steht hier NICHT. Die Maske sagt beim
-  // Eintragen ausdrücklich zu, er bleibe intern — wer ihn hier mitschickt, bricht
-  // diese Zusage rückwirkend für jeden Grund, der je eingetragen wurde.
-  const rueckweg = vonVerwaltung
-    ? `Stimmt das so nicht, oder hast du Fragen dazu? Dann melde dich bitte kurz bei
-uns — wir klären das.`
-    : `War die Absage ein Versehen? Über den Link aus der Anmeldebestätigung lässt sie
-sich nicht mehr zurücknehmen — melde dich in dem Fall bitte direkt bei uns.`;
-
-  const fuss = vonVerwaltung
-    ? `Diese E-Mail wurde verschickt, weil die Anmeldung deines Kindes zu diesem Camp
-abgesagt wurde.`
-    : `Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
-für dieses Camp abgeschickt wurde.`;
-
-  const text = `Hallo ${a.elternName || ""},
-
-${einstieg}
-
-${fcCampBlock(camp)}
-
-${fcAbsageGeldBlock(camp, a, quelle)}
-
-${rueckweg}${fcKontaktBlock(einst)}
-${FC_MAIL_FUSS}
-
---
-${fuss}`;
-
-  return fcMailSenden(env, a.elternEmail, `Absage bestätigt: ${camp.name}`, text);
+  const m = fcMailBauen(einst, id, werte);
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);
 }
 
 // ============================================================
