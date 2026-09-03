@@ -359,8 +359,8 @@ const MUTATIONEN = [
    "  if (!ziel || !liste.length) return {};"],
 
   ["Leerer Kasten liefert {} und raeumt damit alle Vorlagen weg", "app.js",
-   "  if (!gefunden) return undefined;",
-   "  void gefunden;"],
+   "  if (!gefunden) return undefined;\n  return raus;",
+   "  return raus;"],
 
   // ---------- 11. "Keine" ist eine Nicht-Angabe ----------
   // ⚠️ Die gefaehrlichste Verschlechterung ueberhaupt: ein Teilstueck-
@@ -381,6 +381,59 @@ const MUTATIONEN = [
   ["Gross- und Kleinschreibung zaehlt wieder ('Keine' rutscht durch)", "app.js",
    "  const w = String(wert).trim().toLowerCase()",
    "  const w = String(wert).trim()"],
+
+  // ---------- 12. Verwaltung korrigiert eine Anmeldung ----------
+  ["Ein am Camp abgeschaltetes Feld wird doch geschrieben", "admin-worker.js",
+   '          if (!def.fest && ((camp.felder || {})[id] || "aus") === "aus") return;',
+   '          if (!def.fest && (camp.felder || {})[id] === "aus") return;'],
+
+  ["Ein kaputtes Datum wird ungeprueft gespeichert", "admin-worker.js",
+   '            if (def.typ === "datum") wert = fcDatum(wert);',
+   "            void 0;"],
+
+  ["Eine kaputte Mailadresse geht durch", "admin-worker.js",
+   'if (def.typ === "email" && wert &&',
+   "if (false &&"],
+
+  ["Ja/Nein nimmt beliebigen Text an", "admin-worker.js",
+   '            wert = roheingabe === true ? "ja" : (roheingabe === "ja" || roheingabe === "nein" ? roheingabe : "");',
+   "            wert = String(roheingabe || \"\");"],
+
+  ["Der Kindername laesst sich leeren", "admin-worker.js",
+   'if (def.fest && def.typ !== "haken" && !wert) {',
+   "if (false) {"],
+
+  ["Die Korrektur hinterlaesst keine Spur im Verlauf", "admin-worker.js",
+   "      if (feldGeaendert.length) {",
+   "      if (false) {"],
+
+  ["Der Verlauf merkt sich auch die alten WERTE", "admin-worker.js",
+   "          if (fcWertSchluessel(a[id]) !== fcWertSchluessel(wert)) feldGeaendert.push(id);",
+   "          if (fcWertSchluessel(a[id]) !== fcWertSchluessel(wert)) feldGeaendert.push(id + \":\" + a[id] + \"->\" + wert);"],
+
+  ["Eine Zusatzantwort entsteht auch ohne Zusatzfrage", "admin-worker.js",
+   "      if (roh.zusatzantwort !== undefined && camp.zusatzfrage) {",
+   "      if (roh.zusatzantwort !== undefined) {"],
+
+  ["Der Bearbeiten-Modus bleibt beim naechsten Oeffnen stehen", "app.js",
+   "  // Zweck verloren.\n  anmBearbeiten = false;",
+   "  // Zweck verloren."],
+
+  ["Die Knopf-Beschriftung faellt nicht zurueck", "app.js",
+   '  if (bearbKnopf) bearbKnopf.textContent = "Angaben bearbeiten";',
+   "  void bearbKnopf;"],
+
+  ["Im Bearbeiten-Modus wird die Notiz mit geleert", "app.js",
+   "  const nutzlast = { id: anmEntwurf.id };",
+   '  const nutzlast = { id: anmEntwurf.id, notiz: wert("ad-notiz") };'],
+
+  ["Das Formular bietet auch abgeschaltete Felder an", "app.js",
+   'const felder = FORMULAR_FELDER.filter((f) => f.fest || konf[f.id] === "optional" || konf[f.id] === "pflicht");',
+   "const felder = FORMULAR_FELDER.slice();"],
+
+  ["Ja/Nein verliert den Zustand \"nicht beantwortet\"", "app.js",
+   '<option value=""${g === "" ? " selected" : ""}>— nicht beantwortet —</option>',
+   ""],
 
   ["Die Anmeldeliste faellt auf den alten Marker zurueck", "app.js",
    "const gesund = [a.allergien, a.medikamente, a.krankheiten, a.essenHinweis].some((w) => !istLeereAngabe(w));",

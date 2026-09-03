@@ -968,6 +968,114 @@ zusage("Der Worker wirft \"keine\" NICHT weg",
   "im Worker gefunden -- dort gehoert die Anzeige-Regel nicht hin");
 
 // =========================================================================
+abschnitt("11. Die Verwaltung korrigiert eine Anmeldung");
+// =========================================================================
+
+const korr = async (felder, extra) => {
+  RECHT = { canEdit: true, canAdmin: true };
+  return bau.handleFcAnmeldungSpeichern(anfrage(),
+    { campId: "c1", anmeldung: Object.assign({ id: "a1", felder }, extra || {}) }, ENV, AUTH, {});
+};
+
+frisch({}, [{ geburtsdatum: "2015-05-05", trikotgroesse: "140", allergien: "Nüsse", alleinNachHause: "nein" }]);
+r = await korr({ trikotgroesse: "134" });
+zusage("Eine Groesse laesst sich korrigieren", r.status === 200 && anm0().trikotgroesse === "134", anm0().trikotgroesse);
+zusage("...und der Rest bleibt unangetastet",
+  anm0().allergien === "Nüsse" && anm0().geburtsdatum === "2015-05-05");
+// ⚠️ Der einzige Weg, auf dem sich Angaben zu einem Kind aendern, ohne dass die
+// Eltern es ausloesen -- ohne Eintrag waere das der einzige stille Vorgang.
+const korrEintrag = (camp0().verlauf || []).find((e) => e.was === "geaendert-verwaltung");
+zusage("Die Korrektur steht im Verlauf", !!korrEintrag, JSON.stringify(camp0().verlauf));
+zusage("...mit den Feld-Ids", !!korrEintrag && JSON.stringify(korrEintrag.felder) === '["trikotgroesse"]', korrEintrag && JSON.stringify(korrEintrag.felder));
+// ⚠️ NIE die Werte: ein aufbewahrter alter Wert waere eine zweite Kopie
+// derselben Gesundheitsangabe, die keine Loeschung mehr erwischt.
+zusage("...aber OHNE den alten oder neuen Wert",
+  !JSON.stringify(korrEintrag).includes("140") && !JSON.stringify(korrEintrag).includes("134"), JSON.stringify(korrEintrag));
+zusage("...und ohne Kindernamen (fcVerlaufNotiz streicht `wen`)",
+  !JSON.stringify(camp0().verlauf).includes("Kind1"), JSON.stringify(camp0().verlauf));
+
+// Ohne echte Aenderung kein Eintrag -- sonst waechst der Verlauf bei jedem
+// Hinsehen, und niemand geht ihm mehr nach.
+frisch({}, [{ trikotgroesse: "140" }]);
+await korr({ trikotgroesse: "140" });
+zusage("Gleicher Wert -> kein Verlaufseintrag",
+  !(camp0().verlauf || []).some((e) => e.was === "geaendert-verwaltung"), JSON.stringify(camp0().verlauf));
+
+// ---- Normalisierung wie im Eltern-Weg ------------------------------------
+frisch({ felder: { geburtsdatum: "optional", alleinNachHause: "optional", vegetarisch: "optional" } },
+       [{ geburtsdatum: "2015-05-05", alleinNachHause: "nein" }]);
+await korr({ geburtsdatum: "morgen" });
+zusage("Ein kaputtes Datum wird verworfen, nicht gespeichert", anm0().geburtsdatum === "", anm0().geburtsdatum);
+await korr({ alleinNachHause: "vielleicht" });
+zusage("Ja/Nein nimmt nur ja, nein oder leer", anm0().alleinNachHause === "", anm0().alleinNachHause);
+await korr({ alleinNachHause: "ja" });
+zusage("...ein gueltiges ja kommt durch", anm0().alleinNachHause === "ja");
+await korr({ vegetarisch: true });
+zusage("Ein Haken wird ein echtes true", anm0().vegetarisch === true, String(anm0().vegetarisch));
+
+frisch({}, [{ elternEmail: "gut@example.org" }]);
+r = await korr({ elternEmail: "kaputt" });
+zusage("Eine kaputte Mailadresse wird abgelehnt (400)", r.status === 400, JSON.stringify(r.__json));
+zusage("...und die alte bleibt stehen", anm0().elternEmail === "gut@example.org", anm0().elternEmail);
+
+// ⚠️ Ohne diese Sperre liesse sich der Kindername auf nichts setzen -- die
+// Anmeldung hiesse ueberall "Ohne Namen", auch im Verwendungszweck.
+frisch({}, [{}]);
+r = await korr({ kindVorname: "   " });
+zusage("Ein festes Feld laesst sich nicht leeren (400)", r.status === 400, JSON.stringify(r.__json));
+zusage("...und der Name steht noch da", anm0().kindVorname === "Kind1", anm0().kindVorname);
+
+// ⚠️ Ein am Camp ABGESCHALTETES Feld wird verworfen -- sonst legte eine
+// Korrektur Daten an, die dieses Camp gar nicht erhebt.
+frisch({ felder: {} }, [{}]);
+await korr({ krankenkasse: "AOK" });
+zusage("Ein abgeschaltetes Feld wird verworfen", anm0().krankenkasse === undefined, String(anm0().krankenkasse));
+
+// Zusatzfrage
+frisch({ zusatzfrage: "In welche Gruppe?" }, [{ zusatzantwort: "egal" }]);
+await korr({}, { zusatzantwort: "zu Ben" });
+zusage("Die Zusatzantwort laesst sich aendern", anm0().zusatzantwort === "zu Ben", anm0().zusatzantwort);
+frisch({ zusatzfrage: "" }, [{}]);
+await korr({}, { zusatzantwort: "erfunden" });
+zusage("Ohne Zusatzfrage wird keine Antwort angelegt", !anm0().zusatzantwort, String(anm0().zusatzantwort));
+
+// ---- Rechte ---------------------------------------------------------------
+frisch({}, [{}]);
+RECHT = { canEdit: false, canAdmin: false };
+r = await bau.handleFcAnmeldungSpeichern(anfrage(),
+  { campId: "c1", anmeldung: { id: "a1", felder: { trikotgroesse: "999" } } }, ENV, AUTH, {});
+zusage("Ohne Bearbeiten-Recht: 403", r.status === 403, JSON.stringify(r.__json));
+zusage("...und nichts geaendert", anm0().trikotgroesse === "152", anm0().trikotgroesse);
+RECHT = { canEdit: true, canAdmin: true };
+
+// ---- Client ---------------------------------------------------------------
+zusage("Der Bearbeiten-Knopf steht in index.html", INDEXHTML.includes('id="btn-anm-bearbeiten"'));
+zusage("app.js verdrahtet ihn", APPJS.includes("anmBearbeitenUmschalten"));
+// ⚠️ Beim Oeffnen zurueck auf Ansehen -- Flag UND Beschriftung.
+zusage("Beim Oeffnen faellt der Modus zurueck",
+  /function oeffneAnmDialog[\s\S]{0,600}?anmBearbeiten = false;/.test(APPJS));
+zusage("...und die Beschriftung des Knopfes mit",
+  /function oeffneAnmDialog[\s\S]{0,1400}?bearbKnopf\.textContent = "Angaben bearbeiten";/.test(APPJS));
+// ⚠️ Im Bearbeiten-Modus gibt es `ad-notiz` gar nicht -- ein wert() darauf waere
+// ein leerer String und LOESCHTE die Notiz.
+// \u26a0\ufe0f `nutzlast` MUSS nur mit der Id anfangen. Steht dort schon ein
+// `notiz: wert("ad-notiz")`, ist es im Bearbeiten-Modus ein leerer String --
+// das Feld gibt es im Rumpf dann gar nicht -- und ein Speichern loescht die
+// interne Notiz. Die if/else-Form allein faengt das nicht.
+zusage("Die Nutzlast faengt NUR mit der Id an",
+  APPJS.includes("const nutzlast = { id: anmEntwurf.id };"),
+  (APPJS.match(/const nutzlast = \{[^}]*\}/) || [])[0]);
+zusage("Im Bearbeiten-Modus werden bezahlt/Notiz NICHT mitgeschickt",
+  /if \(felder\) \{[\s\S]{0,400}?\} else \{[\s\S]{0,200}?nutzlast\.notiz = wert\("ad-notiz"\);/.test(APPJS));
+zusage("Das Formular nimmt nur eingeschaltete Felder",
+  APPJS.includes('FORMULAR_FELDER.filter((f) => f.fest || konf[f.id] === "optional" || konf[f.id] === "pflicht")'));
+// ⚠️ Ja/Nein braucht DREI Zustaende, sonst wird aus "nicht beantwortet" ein "nein".
+zusage("Ja/Nein bietet auch \"nicht beantwortet\" an",
+  APPJS.includes("— nicht beantwortet —"));
+zusage("Bei Rechteverlust faellt der Modus zurueck",
+  /raeumeWasNichtMehrErlaubtIst[\s\S]{0,3000}anmBearbeiten = false;/.test(APPJS));
+
+// =========================================================================
 const gesamt = gruen + funde.length;
 console.log(`\n${gruen}/${gesamt} Zusagen erfuellt.`);
 if (funde.length) {

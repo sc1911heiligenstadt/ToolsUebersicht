@@ -19871,8 +19871,8 @@ function fcAufraeumFaellig(camp, einstellungen) {
 // der Arbeitsnachweis, und das Loeschversprechen im Anmeldeformular gilt ihm
 // nicht. Wer diese Liste erweitert, loescht also den falschen Nachweis.
 const FC_VERLAUF_ANMELDE_ARTEN = new Set([
-  "angemeldet", "geaendert", "abgesagt", "bezahlt", "bezahlt-zurueck",
-  "nachgerueckt", "anmeldung-geloescht"
+  "angemeldet", "geaendert", "geaendert-verwaltung", "abgesagt", "bezahlt",
+  "bezahlt-zurueck", "nachgerueckt", "anmeldung-geloescht"
 ]);
 
 // Ist ein Camp laengst vorbei, ohne dass es je jemand abgeschlossen hat?
@@ -21438,19 +21438,81 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
       }
       if (roh.notiz !== undefined) a.notiz = capStr(roh.notiz, 600);
 
-      // Korrektur einzelner Felder durch die Verwaltung (Tippfehler im Namen).
+      // Korrektur einzelner Felder durch die Verwaltung. Seit 2026-09-03 hat das
+      // eine Oberflaeche (Knopf "Angaben bearbeiten" im Anmeldungs-Dialog) --
+      // vorher war es ein Weg, den nur die Konsole kannte.
+      //
       // Nur bekannte, am Camp eingeschaltete Felder -- gleiche Regel wie beim
-      // Eltern-Weg, nur ohne Pflichtpruefung: eine bestehende Anmeldung soll
+      // Eltern-Weg, nur OHNE Pflichtpruefung: eine bestehende Anmeldung soll
       // nicht daran scheitern, dass ein Feld nachtraeglich Pflicht wurde.
+      //
+      // ⚠️ Die Werte werden GENAUSO normalisiert wie im Eltern-Weg
+      // (fcFelderPruefen). Bis hierher lief alles ausser einem Haken durch ein
+      // blosses capStr: ein Geburtsdatum konnte als "morgen" in der Datei
+      // landen, `alleinNachHause` als beliebiger Text, und eine kaputte
+      // Mailadresse fiel erst auf, wenn die naechste Bestaetigung lautlos
+      // nirgends ankam. Solange der Weg nur ueber die Konsole ging, war das
+      // theoretisch -- mit einem Knopf daneben ist es das nicht mehr.
+      const feldGeaendert = [];
       if (roh.felder && typeof roh.felder === "object") {
         Object.keys(roh.felder).forEach((id) => {
           const def = FC_FELDER[id];
           if (!def) return;
-          if (!def.fest && (camp.felder || {})[id] === "aus") return;
-          a[id] = def.typ === "haken"
-            ? roh.felder[id] === true
-            : capStr(String(roh.felder[id] === null || roh.felder[id] === undefined ? "" : roh.felder[id]), def.max || 200).trim();
+          // ⚠️ `|| "aus"` ist tragend: ein Feld, das in `camp.felder` GAR NICHT
+          // steht, ist ausgeschaltet -- genauso wie im Eltern-Weg
+          // (fcFelderPruefen). Mit blossem `=== "aus"` rutschte es durch, und
+          // eine Korrektur legte Daten an, die dieses Camp nie erhebt. Vom
+          // Pruefstand gefunden.
+          if (!def.fest && ((camp.felder || {})[id] || "aus") === "aus") return;
+
+          const roheingabe = roh.felder[id];
+          let wert;
+          if (def.typ === "haken") {
+            wert = roheingabe === true || roheingabe === "true";
+          } else if (def.typ === "janein") {
+            // ⚠️ Dieselbe Dreiwertigkeit wie beim Eltern-Weg: "ja", "nein" oder
+            // leer. Alles andere ist keine Antwort und darf keine werden.
+            wert = roheingabe === true ? "ja" : (roheingabe === "ja" || roheingabe === "nein" ? roheingabe : "");
+          } else {
+            wert = capStr(String(roheingabe === null || roheingabe === undefined ? "" : roheingabe), def.max || 200).trim();
+            if (def.typ === "datum") wert = fcDatum(wert);
+            if (def.typ === "email" && wert && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(wert)) {
+              throw new FcFehler("Die E-Mail-Adresse sieht nicht richtig aus.", 400);
+            }
+          }
+
+          // ⚠️ Die festen Felder duerfen nicht LEER werden. Ohne diese Sperre
+          // liesse sich der Kindername auf nichts setzen, und die Anmeldung
+          // hiesse ueberall "Ohne Namen" -- auf der Liste am Platz genauso wie
+          // im Verwendungszweck der Ueberweisung.
+          if (def.fest && def.typ !== "haken" && !wert) {
+            throw new FcFehler("Name und E-Mail lassen sich nicht leeren.", 400);
+          }
+
+          if (fcWertSchluessel(a[id]) !== fcWertSchluessel(wert)) feldGeaendert.push(id);
+          a[id] = wert;
         });
+      }
+
+      // Die eigene Zusatzfrage des Camps. ⚠️ Nur wenn das Camp ueberhaupt eine
+      // hat -- sonst legte eine Korrektur eine Antwort auf eine Frage an, die
+      // niemandem gestellt wurde.
+      if (roh.zusatzantwort !== undefined && camp.zusatzfrage) {
+        const za = capStr(roh.zusatzantwort, 200).trim();
+        if (String(a.zusatzantwort || "") !== za) feldGeaendert.push("zusatzantwort");
+        a.zusatzantwort = za;
+      }
+
+      // ⚠️ Eine Korrektur hinterlaesst eine Spur. Sie ist der einzige Weg, auf
+      // dem sich Angaben zu einem Kind aendern, ohne dass die Eltern es
+      // ausloesen -- ohne Eintrag waere das der einzige stille Vorgang der App.
+      //
+      // ⚠️ Vermerkt werden NUR die Feld-Ids, NIE die Werte. Ein aufbewahrter
+      // alter Wert waere eine zweite Kopie derselben Gesundheitsangabe, die
+      // keine Loeschung mehr erwischt (siehe die Durchsicht vom 2026-08-21).
+      if (feldGeaendert.length) {
+        fcVerlaufNotiz(camp, { was: "geaendert-verwaltung", von: ctx.session.username,
+                               nr: a.nummer || 0, felder: feldGeaendert });
       }
 
       // Die Verwaltung hat die Aenderung der Eltern gesehen, indem sie die
