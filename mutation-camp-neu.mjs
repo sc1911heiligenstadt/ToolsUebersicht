@@ -507,6 +507,63 @@ const MUTATIONEN = [
   ["Die App zeigt eine leere Stelle statt des Grundes", "app.js",
    "    if (!texte.length && fb.texteZurueckgehalten) {", "    if (false) {"],
 
+  // ---------- 17. Mails haeppchenweise (Bugjagd 03.09.2026) ----------
+
+  // \u26a0\u26a0 Der Rueckfall in den Zustand von vor der Bugjagd.
+  ["Die Feedback-Mails gehen wieder eine nach der anderen", "admin-worker.js",
+   "const FC_MAIL_HAEPPCHEN = 10;", "const FC_MAIL_HAEPPCHEN = 1;"],
+
+  // \u26a0\ufe0f Ohne das await liefen ALLE Haeppchen gleichzeitig los -- die
+  // Drosselung waere wirkungslos, und genau davor warnt der Zwilling.
+  ["Die Drosselung wird wirkungslos (kein await vor Promise.all)", "admin-worker.js",
+   "    const ergebnisse = await Promise.all(teil.map(async (f) => {",
+   "    const ergebnisse = await Promise.all(liste.map(async (f) => {"],
+
+  ["Eine geworfene Mail reisst ihr Haeppchen mit", "admin-worker.js",
+   "      try { return await sende(f); } catch (e) {",
+   "      if (false) try { return await sende(f); } catch (e) {"],
+
+  // \u26a0\u26a0 Der Kern: der Merker steht schon, diese Familien bekommen NIE wieder
+  // Post. Ohne den Vermerk im Lauf-Eintrag ist der Ausfall lautlos.
+  ["Ein Fehlschlag beim Feedback bleibt wieder lautlos", "admin-worker.js",
+   "  if (gesendet < faellig.length) {\n    await fcLaufFehlschlagVermerken(authHeader,\n      `feedback:",
+   "  if (false) {\n    await fcLaufFehlschlagVermerken(authHeader,\n      `feedback:"],
+
+  ["Ein Fehlschlag bei der Erinnerung bleibt lautlos", "admin-worker.js",
+   "  if (gesendet < faellig.length) {\n    await fcLaufFehlschlagVermerken(authHeader,\n      `${art}:",
+   "  if (false) {\n    await fcLaufFehlschlagVermerken(authHeader,\n      `${art}:"],
+
+  // \u26a0\ufe0f Auch die Gegenrichtung: eine geglueckte Nacht darf keinen zweiten
+  // Schreibvorgang ins Nextcloud kosten.
+  ["Auch eine geglueckte Nacht meldet einen Fehlschlag", "admin-worker.js",
+   "  if (gesendet < faellig.length) {\n    await fcLaufFehlschlagVermerken(authHeader,\n      `feedback:",
+   "  if (true) {\n    await fcLaufFehlschlagVermerken(authHeader,\n      `feedback:"],
+
+  ["Der Erinnerungslauf benutzt den Helfer nicht mehr", "admin-worker.js",
+   "  const gesendet = await fcMailsHaeppchenweise(faellig, (f) => (art === \"start\"",
+   "  let gesendet = 0; for (const f of faellig) { if (await ((f2) => (art === \"start\""],
+
+  // ---------- 18. Aufgaben-Gitter ueber katalogId ----------
+
+  // \u26a0\u26a0 Der Rueckfall auf f-name-als-key.
+  ["Das Gitter gruppiert wieder ueber den Namen", "app.js",
+   'const schluessel = (j) => (j.katalogId ? "k:" + j.katalogId : "n:" + (j.name || ""));',
+   'const schluessel = (j) => "n:" + (j.name || "");'],
+
+  ["Die Zelle sucht wieder ueber den Namen", "app.js",
+   "const job = (t.jobs || []).find((j) => schluessel(j) === s.k);",
+   "const job = (t.jobs || []).find((j) => j.name === s.name);"],
+
+  // \u26a0\ufe0f Ohne den Namens-Rueckfall fielen ALLE von Hand angelegten Jobs in
+  // eine einzige Spalte -- sie haben alle katalogId "".
+  ["Jobs ohne katalogId fallen in eine Spalte", "app.js",
+   'const schluessel = (j) => (j.katalogId ? "k:" + j.katalogId : "n:" + (j.name || ""));',
+   'const schluessel = (j) => "k:" + (j.katalogId || "");'],
+
+  ["Der Kopf behauptet wieder eine Zeit fuer alle Tage", "app.js",
+   "      if (sp.von !== (j.von || \"\") || sp.bis !== (j.bis || \"\")) sp.gleicheZeit = false;",
+   "      void sp;"],
+
   // ---------- 13. Ja/Nein mit Nachfrage ----------
   ["Allergien wird wieder ein nacktes Textfeld", "admin-worker.js",
    '  allergien:        { typ: "janein_text", max: 500, sensibel: true },',

@@ -52,6 +52,9 @@ for (const marke of [
   "async function fcBezahltMail(env, camp, a, einst) {",
   "const FC_FEEDBACK_FENSTER_TAGE",
   "const FC_FEEDBACK_TEXTE_AB",
+  "const FC_MAIL_HAEPPCHEN",
+  "async function fcMailsHaeppchenweise(liste, sende) {",
+  "async function fcLaufFehlschlagVermerken(authHeader, text) {",
   "case \"fussballcamp-feedback-info\":",
   "case \"fussballcamp-feedback-senden\":",
   // Mailvorlagen: die Verdrahtung, nicht der Wortlaut.
@@ -67,6 +70,14 @@ for (const marke of [
 let DOC = null;
 let RECHT = { canEdit: true, canAdmin: true };
 let MAILS = [];
+// ⚠️ Steuerbare Mail-Attrappe fuer Abschnitt 15. `verzoegerung` MUSS echte
+// Millisekunden bedeuten: eine Attrappe, die als Microtask aufloest, verdeckt
+// genau den Unterschied zwischen "eine nach der anderen" und "zehn parallel".
+const MAIL = { antwort: true, verzoegerung: 0, wirft: 0, laufend: 0, gleichzeitigMax: 0, versuche: 0 };
+function mailZaehlerZuruecksetzen() {
+  MAIL.antwort = true; MAIL.verzoegerung = 0; MAIL.wirft = 0;
+  MAIL.laufend = 0; MAIL.gleichzeitigMax = 0; MAIL.versuche = 0;
+}
 let BETREUER_VON = null;   // null = fcIstBetreuer bleibt im Original
 
 const kopf = `
@@ -105,7 +116,7 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
          fcMailBauen, fcMailVorlage, fcMailVorlagenPruefen, fcMailVorlagenFuerAdmin,
          FC_BETREUER_FELDER, FC_FEEDBACK_FRAGEN, FC_FEEDBACK_NOTEN,
          FC_FEEDBACK_FENSTER_TAGE, FC_FEEDBACK_TAGE_VORGABE, FC_ROLLEN,
-         FC_FEEDBACK_TEXTE_AB,
+         FC_FEEDBACK_TEXTE_AB, FC_MAIL_HAEPPCHEN, fcMailsHaeppchenweise, fcErinnerungslauf,
          FC_MAIL_VORLAGEN, FC_MAIL_PLATZHALTER, FC_MAIL_BETREFF_FELDER };
 `;
 
@@ -113,7 +124,15 @@ const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
   kopf + capStrQ + "\n" + kboQ + "\n" + fcQ + "\n" + fuss
 )(
   () => DOC, (d) => { DOC = d; }, () => RECHT,
-  async (url, opt) => { try { MAILS.push(JSON.parse(opt.body)); } catch (_) {} return { ok: true }; },
+  async (url, opt) => {
+    try { MAILS.push(JSON.parse(opt.body)); } catch (_) {}
+    MAIL.laufend++; MAIL.versuche++;
+    MAIL.gleichzeitigMax = Math.max(MAIL.gleichzeitigMax, MAIL.laufend);
+    if (MAIL.verzoegerung) await new Promise((r) => setTimeout(r, MAIL.verzoegerung));
+    MAIL.laufend--;
+    if (MAIL.wirft && MAIL.versuche === MAIL.wirft) throw new Error("Vorlage kaputt (simuliert)");
+    return { ok: MAIL.antwort };
+  },
   globalThis.crypto
 );
 
@@ -129,7 +148,7 @@ const docStub = {
   body: { appendChild() {}, removeChild() {} }
 };
 const CLIENT = new Function("document", "window", "localStorage", "navigator", "fetch",
-  CONFIGJS + "\n" + APPJS + "\nreturn { istLeereAngabe, teilnehmerHinweise, LEERE_ANGABEN };"
+  CONFIGJS + "\n" + APPJS + "\nreturn { istLeereAngabe, teilnehmerHinweise, LEERE_ANGABEN, jobGitter };"
 )(docStub,
   { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }), innerWidth: 1280, location: { href: "", search: "" } },
   { getItem: () => null, setItem() {}, removeItem() {} }, { userAgent: "node" },
@@ -1369,6 +1388,217 @@ zusage("...die Zahl der verschickten Boegen bleibt gerechnet erhalten",
 zusage("app.js zeigt den Grund statt einer leeren Stelle",
   APPJS.includes("if (!texte.length && fb.texteZurueckgehalten) {"));
 zusage("...und braucht die Merker selbst nicht", !APPJS.includes("feedbackGebetenAm"));
+
+// =========================================================================
+abschnitt("15. Naechtliche Mails gehen haeppchenweise raus (Bugjagd 03.09.2026)");
+// =========================================================================
+//
+// ⚠⚠ Der Fund war NICHT die Laufzeit, sondern die Nachbarschaft: derselbe
+// Worker haeppchent den Push (PUSH_HAEPPCHEN) und die Privatnachricht
+// (PN_MAIL_HAEPPCHEN) laengst mit 10 -- nur die Camp-Laeufe liefen als reine
+// ${T}for ... await${T}-Schleife. Bei FC_MAX_ANMELDUNGEN = 500 je Camp sind das 500
+// Roundtrips nacheinander in EINEM naechtlichen waitUntil.
+
+zusage("FC_MAIL_HAEPPCHEN steht als Konstante da", bau.FC_MAIL_HAEPPCHEN >= 2,
+  String(bau.FC_MAIL_HAEPPCHEN));
+// Gegenprobe zur Nachbarschaft: dieselbe Zahl wie die beiden Zwillinge.
+zusage("...mit derselben Zahl wie PUSH_HAEPPCHEN und PN_MAIL_HAEPPCHEN",
+  /const PUSH_HAEPPCHEN = 10;/.test(QUELLE) && /const PN_MAIL_HAEPPCHEN = 10;/.test(QUELLE) &&
+  bau.FC_MAIL_HAEPPCHEN === 10, String(bau.FC_MAIL_HAEPPCHEN));
+
+// ---- Der Helfer allein ---------------------------------------------------
+mailZaehlerZuruecksetzen();
+MAIL.verzoegerung = 12;
+let liste = Array.from({ length: 25 }, (_, i) => i);
+let g = await bau.fcMailsHaeppchenweise(liste, async () => {
+  MAIL.laufend++; MAIL.gleichzeitigMax = Math.max(MAIL.gleichzeitigMax, MAIL.laufend);
+  await new Promise((r) => setTimeout(r, 12));
+  MAIL.laufend--; return true;
+});
+zusage("25 Mails: alle gezaehlt", g === 25, String(g));
+// ⚠️ Ohne das ${T}await${T} vor Promise.all liefen ALLE Haeppchen gleichzeitig los und
+// die Drosselung waere wirkungslos -- dann stuende hier 25 statt 10.
+zusage("...hoechstens FC_MAIL_HAEPPCHEN gleichzeitig",
+  MAIL.gleichzeitigMax > 1 && MAIL.gleichzeitigMax <= bau.FC_MAIL_HAEPPCHEN,
+  "gemessen: " + MAIL.gleichzeitigMax);
+
+// ⚠️ Ein Fehler beim BAUEN des Textes darf nicht neun andere Familien
+// mitreissen -- deshalb faengt der Helfer je Mail einzeln ab.
+mailZaehlerZuruecksetzen();
+g = await bau.fcMailsHaeppchenweise([1, 2, 3, 4, 5], async (n) => {
+  if (n === 2) throw new Error("Vorlage kaputt");
+  return true;
+});
+zusage("Eine geworfene Mail reisst ihr Haeppchen NICHT mit", g === 4, "gezaehlt: " + g);
+
+mailZaehlerZuruecksetzen();
+g = await bau.fcMailsHaeppchenweise([1, 2, 3], async (n) => n !== 2);
+zusage("Ein false wird nicht mitgezaehlt", g === 2, "gezaehlt: " + g);
+
+// ---- Ende zu Ende: der Feedbacklauf --------------------------------------
+function campFuerFeedback(anzahl) {
+  const anm = [];
+  for (let i = 0; i < anzahl; i++) {
+    anm.push({ elternEmail: "e" + i + "@example.org", kindVorname: "K" + i, kindNachname: "M" });
+  }
+  frisch({ status: "abgeschlossen", vonDatum: inTagen(-6), bisDatum: inTagen(-2) }, anm);
+  DOC.einstellungen.feedbackAktiv = true;
+  DOC.einstellungen.feedbackTage = 2;
+}
+
+campFuerFeedback(35);
+mailZaehlerZuruecksetzen();
+MAIL.verzoegerung = 8;
+MAILS = [];
+r = await bau.fcFeedbackLauf(ENV, AUTH, null);
+zusage("Der Feedbacklauf verschickt alle 35", r.gesendet === 35 && r.gefunden === 35, JSON.stringify(r));
+zusage("...und zwar haeppchenweise",
+  MAIL.gleichzeitigMax > 1 && MAIL.gleichzeitigMax <= bau.FC_MAIL_HAEPPCHEN,
+  "hoechste Gleichzeitigkeit: " + MAIL.gleichzeitigMax);
+// ⚠️ Gegenprobe: eine geglueckte Nacht darf KEINEN zweiten Schreibvorgang
+// kosten. Sonst laeuft jede Nacht ein Extra-Schreiben ins Nextcloud.
+zusage("Eine geglueckte Nacht meldet keinen Fehlschlag",
+  !/NICHT zugestellt/.test((camp0() && DOC.lauf && DOC.lauf.ergebnis) || ""),
+  JSON.stringify(DOC.lauf));
+
+// ---- Der Kern des Fundes: ein Fehlschlag darf nicht lautlos sein ---------
+// ⚠⚠ Der Merker feedbackGebetenAm steht schon, BEVOR die erste Mail rausgeht
+// ("lieber eine Mail zu wenig als ein Postfach voll" -- richtig so). Genau
+// deshalb bekommen diese Familien NIE wieder einen Bogen, wenn der Versand
+// klemmt. Der Lauf-Eintrag ist die einzige Stelle, an der das sichtbar wird.
+campFuerFeedback(12);
+mailZaehlerZuruecksetzen();
+MAIL.antwort = false;
+MAILS = [];
+r = await bau.fcFeedbackLauf(ENV, AUTH, null);
+zusage("Klemmt Brevo, wird nichts gesendet", r.gesendet === 0 && r.gefunden === 12, JSON.stringify(r));
+const markiert = (camp0().anmeldungen || []).filter((a) => a.feedbackGebetenAm).length;
+zusage("...die 12 gelten trotzdem als gefragt (bewusst, gegen doppelte Post)", markiert === 12,
+  String(markiert));
+zusage("...ABER der Lauf-Eintrag sagt es jetzt",
+  /12 NICHT zugestellt/.test((DOC.lauf && DOC.lauf.ergebnis) || ""),
+  JSON.stringify(DOC.lauf));
+// app.js zeigt genau dieses Feld an -- ohne das waere der Vermerk wertlos.
+zusage("...und die App zeigt dieses Feld an", APPJS.includes("lauf.ergebnis"));
+
+// ---- Dasselbe fuer den Erinnerungslauf ----------------------------------
+zusage("Der Erinnerungslauf benutzt denselben Helfer",
+  /fcMailsHaeppchenweise\(faellig, \(f\) => \(art === "start"/.test(QUELLE));
+// \u26a0\ufe0f Diese Zusage war zuerst NUR statisch (Textbaustein in der Datei
+// gesucht) und damit blind: eine Mutation, die die WACHE auf `false` setzt,
+// laesst den Baustein stehen. Die Mutationsprobe hat es gefunden, das Auge
+// nicht -- dieselbe Familie wie in Abschnitt 13. Jetzt wird das Verhalten
+// gemessen.
+frisch({ status: "offen", vonDatum: inTagen(2), bisDatum: inTagen(5) },
+  [{ elternEmail: "a@example.org" }, { elternEmail: "b@example.org" }, { elternEmail: "c@example.org" }]);
+DOC.einstellungen.startErinnerung = true;
+DOC.einstellungen.startErinnerungTage = 3;
+mailZaehlerZuruecksetzen();
+MAIL.antwort = false;
+MAILS = [];
+r = await bau.fcErinnerungslauf(ENV, AUTH, "start", null);
+zusage("Der Erinnerungslauf findet die drei Faelligen", r.gefunden === 3 && r.gesendet === 0, JSON.stringify(r));
+zusage("...und meldet seine Fehlschlaege im Lauf-Eintrag",
+  /3 NICHT zugestellt/.test((DOC.lauf && DOC.lauf.ergebnis) || ""),
+  JSON.stringify(DOC.lauf));
+// Gegenprobe: geht alles raus, bleibt der Zusatz weg.
+frisch({ status: "offen", vonDatum: inTagen(2), bisDatum: inTagen(5) },
+  [{ elternEmail: "a@example.org" }, { elternEmail: "b@example.org" }]);
+DOC.einstellungen.startErinnerung = true;
+DOC.einstellungen.startErinnerungTage = 3;
+mailZaehlerZuruecksetzen();
+MAILS = [];
+r = await bau.fcErinnerungslauf(ENV, AUTH, "start", null);
+zusage("Geht alles raus, steht kein Fehlschlag da",
+  r.gesendet === 2 && !/NICHT zugestellt/.test((DOC.lauf && DOC.lauf.ergebnis) || ""),
+  JSON.stringify({ r, lauf: DOC.lauf }));
+zusage("...und auch hier haeppchenweise",
+  /fcMailsHaeppchenweise\(faellig, \(f\) => \(art === "start"/.test(QUELLE));
+// Gegenprobe: die alten Schleifen sind wirklich weg.
+zusage("Keine nackte for-await-Mailschleife mehr im Camp-Teil",
+  !/for \(const f of faellig\) \{[\s\S]{0,120}?await fc\w*Mail\(/.test(QUELLE));
+
+// =========================================================================
+abschnitt("16. Das Aufgaben-Gitter gruppiert ueber katalogId (Bugjagd 03.09.2026)");
+// =========================================================================
+//
+// ⚠⚠ Vorher lief die Gruppierung ueber den frei getippten Job-NAMEN. Ein Job
+// laesst sich je Tag einzeln bearbeiten -- eine Umbenennung an EINEM Tag
+// spaltete die Spalte, und der alte Tag zeigte ein "—", als gaebe es die
+// Aufgabe dort nicht. Genau die Frage, fuer die das Gitter da ist.
+
+const jg = (tage) => CLIENT.jobGitter({ tage }, false);
+const jgSpalten = (html) => [...html.matchAll(/<th class="job-kopf">(.*?)<span class="jk-zeit">(.*?)<\/span>/g)]
+  .map((m) => ({ name: m[1], zeit: m[2] }));
+const jgJob = (id, katalogId, name, von, bis) =>
+  ({ id, katalogId, name, von, bis, anzahl: 2, besetzung: [] });
+
+// ---- Der Normalfall ------------------------------------------------------
+let sp = jgSpalten(jg([
+  { datum: "2026-10-12", jobs: [jgJob("j1", "k1", "Betreuung", "09:00", "16:00")] },
+  { datum: "2026-10-13", jobs: [jgJob("j2", "k1", "Betreuung", "09:00", "16:00")] },
+  { datum: "2026-10-14", jobs: [jgJob("j3", "k1", "Betreuung", "09:00", "16:00")] }
+]));
+zusage("Derselbe Job an drei Tagen ist EINE Spalte", sp.length === 1, JSON.stringify(sp));
+zusage("...mit der gemeinsamen Zeit im Kopf", sp[0] && sp[0].zeit === "09:00\u201316:00", JSON.stringify(sp));
+
+// ---- Umbenennen an EINEM Tag --------------------------------------------
+[["ein Leerzeichen", "Betreuung "], ["eine echte Umbenennung", "Betreuung Vormittag"]].forEach(([was, neu]) => {
+  const sp2 = jgSpalten(jg([
+    { datum: "2026-10-12", jobs: [jgJob("j1", "k1", "Betreuung", "09:00", "16:00")] },
+    { datum: "2026-10-13", jobs: [jgJob("j2", "k1", neu, "09:00", "16:00")] }
+  ]));
+  zusage(`${was} an einem Tag spaltet die Spalte NICHT`, sp2.length === 1,
+    JSON.stringify(sp2.map((x) => x.name)));
+});
+
+// ---- Zwei VERSCHIEDENE Aufgaben, zufaellig gleich benannt ---------------
+sp = jgSpalten(jg([
+  { datum: "2026-10-12", jobs: [jgJob("j1", "k1", "Aufbau", "07:00", "09:00")] },
+  { datum: "2026-10-13", jobs: [jgJob("j2", "k9", "Aufbau", "17:00", "19:00")] }
+]));
+zusage("Zwei verschiedene Aufgaben bleiben getrennt", sp.length === 2, JSON.stringify(sp));
+
+// ---- Die Zeit im Kopf ----------------------------------------------------
+// ⚠️ Weicht ein Tag ab, darf der Kopf keine einzelne Zeit behaupten -- sie
+// stuende sichtbar ueber ALLEN Tagen der Spalte.
+sp = jgSpalten(jg([
+  { datum: "2026-10-12", jobs: [jgJob("j1", "k1", "Betreuung", "09:00", "16:00")] },
+  { datum: "2026-10-13", jobs: [jgJob("j2", "k1", "Betreuung", "09:00", "13:00")] }
+]));
+zusage("Abweichende Zeiten: der Kopf behauptet keine einzelne", sp.length === 1 && sp[0].zeit === "Zeit je Tag",
+  JSON.stringify(sp));
+
+// ---- Ein Job OHNE katalogId (von Hand angelegt) -------------------------
+// Dort gibt es keinen anderen Schluessel als den Namen -- das Verhalten bleibt.
+sp = jgSpalten(jg([
+  { datum: "2026-10-12", jobs: [jgJob("j1", "", "Grillen", "12:00", "14:00")] },
+  { datum: "2026-10-13", jobs: [jgJob("j2", "", "Grillen", "12:00", "14:00")] }
+]));
+zusage("Jobs ohne katalogId gruppieren weiterhin ueber den Namen", sp.length === 1, JSON.stringify(sp));
+// Gegenprobe: ein Job MIT und einer OHNE Id duerfen nicht zusammenfallen.
+sp = jgSpalten(jg([
+  { datum: "2026-10-12", jobs: [jgJob("j1", "k1", "Grillen", "12:00", "14:00")] },
+  { datum: "2026-10-13", jobs: [jgJob("j2", "", "Grillen", "12:00", "14:00")] }
+]));
+zusage("...aber nicht mit einem gleichnamigen aus dem Katalog", sp.length === 2, JSON.stringify(sp));
+
+// ---- Die Zelle findet ihren Job ueber denselben Schluessel --------------
+// ⚠️ Ohne das stuende in der Spalte ein "—", obwohl der Job an dem Tag da ist.
+const html = jg([
+  { datum: "2026-10-12", jobs: [jgJob("j1", "k1", "Betreuung", "09:00", "16:00")] },
+  { datum: "2026-10-13", jobs: [jgJob("j2", "k1", "Betreuung Vormittag", "09:00", "16:00")] }
+]);
+zusage("Kein Tag zeigt \"—\", obwohl der Job da ist", !/class="muted">—</.test(html),
+  html.slice(html.indexOf("<tbody>"), html.indexOf("<tbody>") + 260));
+
+// ---- Statisch: der Schluessel steht wirklich im Code -------------------
+zusage("app.js benutzt katalogId als Spaltenschluessel",
+  APPJS.includes('const schluessel = (j) => (j.katalogId ? "k:" + j.katalogId : "n:" + (j.name || ""));'));
+zusage("...und die Zelle sucht ueber denselben Schluessel",
+  APPJS.includes("(t.jobs || []).find((j) => schluessel(j) === s.k)"));
+// Gegenprobe: die alte Namenssuche ist wirklich weg.
+zusage("Die alte Namenssuche ist raus", !APPJS.includes("find((j) => j.name === s.name)"));
 
 // =========================================================================
 const gesamt = gruen + funde.length;

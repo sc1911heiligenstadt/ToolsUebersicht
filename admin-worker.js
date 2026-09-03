@@ -19273,6 +19273,60 @@ const FC_FEEDBACK_FRAGEN = [
 // Sonst faellt beim naechsten Aendern der Skala genau eine Note aus der
 // Auswertung heraus, ohne dass es jemand merkt.
 const FC_FEEDBACK_NOTEN = [1, 2, 3, 4, 5, 6];
+// ⚠️ Mails gehen HAEPPCHENWEISE raus, nicht eine nach der anderen. Dieselbe
+// Zahl und derselbe Grund wie PUSH_HAEPPCHEN und PN_MAIL_HAEPPCHEN: Workers
+// deckeln die gleichzeitigen Subrequests, und Brevo hat eine Rate-Grenze.
+// Bugjagd 2026-09-03: hier standen reine ${T}for ... await${T}-Schleifen, waehrend
+// dieselbe Datei es beim Push und bei der Privatnachricht laengst richtig macht.
+// Bei FC_MAX_ANMELDUNGEN = 500 je Camp sind das sonst 500 Roundtrips
+// nacheinander in EINEM naechtlichen waitUntil -- gemessen 5,7 s je 120 Mails.
+const FC_MAIL_HAEPPCHEN = 10;
+
+// Verschickt eine Liste haeppchenweise und zaehlt, was wirklich ankam.
+//
+// ⚠️ Das ${T}await${T} vor Promise.all muss bleiben. Ohne es liefen alle Haeppchen
+// gleichzeitig los und die Drosselung waere wirkungslos.
+//
+// ⚠️ Je Mail ein eigenes catch: fcMailSenden faengt Netzfehler schon selbst ab,
+// aber ein Fehler beim BAUEN des Textes (kaputte Vorlage) wuerde sonst das
+// ganze Haeppchen mitreissen -- neun Familien bekaemen wegen einer zehnten
+// keine Post.
+async function fcMailsHaeppchenweise(liste, sende) {
+  let gesendet = 0;
+  for (let i = 0; i < liste.length; i += FC_MAIL_HAEPPCHEN) {
+    const teil = liste.slice(i, i + FC_MAIL_HAEPPCHEN);
+    const ergebnisse = await Promise.all(teil.map(async (f) => {
+      try { return await sende(f); } catch (e) {
+        console.error("Fussballcamp-Mail fehlgeschlagen: " + (e && e.message ? e.message : e));
+        return false;
+      }
+    }));
+    ergebnisse.forEach((ok) => { if (ok) gesendet++; });
+  }
+  return gesendet;
+}
+
+// Haelt im Lauf-Eintrag fest, dass Mails NICHT rausgingen.
+//
+// ⚠⚠ Das ist kein Schoenheitsfehler, sondern die Gegenseite zu "erst
+// vermerken, dann verschicken": der Merker steht da schon, diese Familien
+// bekommen also NIE wieder Post. Der Lauf-Eintrag ist die einzige Stelle, an
+// der die Verwaltung das ueberhaupt sehen kann (app.js zeigt ihn unter
+// "Letzter naechtlicher Lauf"). Ohne diese Zeile ist der Ausfall lautlos.
+//
+// ⚠️ Geschrieben wird NUR im Fehlerfall -- eine normale Nacht soll keinen
+// zweiten Schreibvorgang kosten.
+async function fcLaufFehlschlagVermerken(authHeader, text) {
+  try {
+    await fcMutiere(authHeader, (d) => {
+      d.lauf = { zuletztAm: new Date().toISOString(), ergebnis: text };
+      return {};
+    });
+  } catch (e) {
+    console.error("Fussballcamp: Lauf-Vermerk fehlgeschlagen: " + (e && e.message ? e.message : e));
+  }
+}
+
 const FC_FEEDBACK_TEXT_MAX = 1000;
 const FC_FEEDBACK_MAX_JE_CAMP = 500;   // so viele Anmeldungen kann ein Camp hoechstens haben
 
@@ -22864,12 +22918,13 @@ async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
     return {};
   });
 
-  let gesendet = 0;
-  for (const f of faellig) {
-    const ok = art === "start"
-      ? await fcStartMail(env, f.camp, f.a, einst)
-      : await fcZahlMail(env, f.camp, f.a, einst);
-    if (ok) gesendet++;
+  const gesendet = await fcMailsHaeppchenweise(faellig, (f) => (art === "start"
+    ? fcStartMail(env, f.camp, f.a, einst)
+    : fcZahlMail(env, f.camp, f.a, einst)));
+
+  if (gesendet < faellig.length) {
+    await fcLaufFehlschlagVermerken(authHeader,
+      `${art}: ${faellig.length} Erinnerungen, ${faellig.length - gesendet} NICHT zugestellt`);
   }
 
   return { gesendet, gefunden: faellig.length };
@@ -22927,10 +22982,11 @@ async function fcFeedbackLauf(env, authHeader, nurCampId) {
     return {};
   });
 
-  let gesendet = 0;
-  for (const f of faellig) {
-    const ok = await fcFeedbackMail(env, f.camp, f.a, einst);
-    if (ok) gesendet++;
+  const gesendet = await fcMailsHaeppchenweise(faellig, (f) => fcFeedbackMail(env, f.camp, f.a, einst));
+
+  if (gesendet < faellig.length) {
+    await fcLaufFehlschlagVermerken(authHeader,
+      `feedback: ${faellig.length} Bögen, ${faellig.length - gesendet} NICHT zugestellt`);
   }
   return { gesendet, gefunden: faellig.length };
 }
