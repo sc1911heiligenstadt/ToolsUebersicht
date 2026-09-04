@@ -19214,7 +19214,18 @@ const FC_FELDER = {
   // als PFLICHTfeld waere ein Haken nur erfuellbar, indem man JEDEM Kind erlaubt
   // allein zu gehen. Werte: "ja" | "nein" | "" (noch nicht beantwortet).
   alleinNachHause:  { typ: "janein" },
-  abholberechtigt:  { typ: "text",  max: 300 },
+  // ⚠️ `leerWenn` -- dieses Feld vertraegt sich nicht mit einer bestimmten
+  // Antwort auf eine ANDERE Frage. "Wer darf das Kind abholen" gehoert nicht zu
+  // einem Kind, das laut Formular allein nach Hause darf; stuende dort trotzdem
+  // etwas, beantworteten zwei Stellen dieselbe Frage verschieden. Dieselbe
+  // Ueberlegung wie beim Leeren des Textes eines `janein_text` bei "nein".
+  //
+  // ⚠️ NICHT dasselbe wie `zeigtWenn` im Client (dort auf "nein"). Verborgen
+  // ist das Feld schon, solange die Frage gar nicht beantwortet ist -- GELEERT
+  // wird aber nur bei der einen Antwort, die dem Eintrag wirklich widerspricht.
+  // Ein Abholberechtigter neben einer unbeantworteten Frage ist eine Angabe,
+  // kein Widerspruch, und wird nicht weggeraeumt.
+  abholberechtigt:  { typ: "text",  max: 300, leerWenn: { feld: "alleinNachHause", wert: "ja" } },
   bemerkung:        { typ: "text",  max: 800 }
 };
 
@@ -20449,6 +20460,26 @@ function fcFelderPruefen(camp, roh) {
     if (stufe === "pflicht" && !v) fehlend.push(id);
   });
 
+  // Abhaengige Felder (`leerWenn`). Laeuft als NACHLAUF, nicht in der Schleife
+  // darueber: sonst haenge das Ergebnis an der Reihenfolge der Schluessel in
+  // FC_FELDER, und ein Umsortieren dort kippte still die Regel.
+  //
+  // ⚠️ Ein geleertes Feld ist dann auch keine PFLICHTangabe mehr. Ohne die
+  // zwei Zeilen darunter waere ein Camp, das die Abholberechtigten zur Pflicht
+  // macht, fuer jedes Kind unanmeldbar, das allein nach Hause darf.
+  //
+  // ⚠️ Ist die Steuerfrage am Camp gar nicht eingeschaltet, steht sie nicht in
+  // `sauber` -- dann gibt es keine Antwort, die etwas ausschliessen koennte, und
+  // das abhaengige Feld bleibt ein gewoehnliches Feld.
+  Object.keys(FC_FELDER).forEach((id) => {
+    const ab = FC_FELDER[id].leerWenn;
+    if (!ab || sauber[id] === undefined) return;
+    if (sauber[ab.feld] === undefined || sauber[ab.feld] !== ab.wert) return;
+    sauber[id] = "";
+    const i = fehlend.indexOf(id);
+    if (i >= 0) fehlend.splice(i, 1);
+  });
+
   if (fehlend.length) {
     throw new FcFehler("Es fehlen noch Pflichtangaben. Bitte das Formular vollständig ausfüllen.", 400);
   }
@@ -21626,6 +21657,30 @@ async function handleFcAnmeldungSpeichern(request, body, env, authHeader, corsHe
 
           if (fcWertSchluessel(a[id]) !== fcWertSchluessel(wert)) feldGeaendert.push(id);
           a[id] = wert;
+        });
+
+        // Abhaengige Felder (`leerWenn`), gleiche Regel wie im Eltern-Weg
+        // (fcFelderPruefen) -- hier aber auf dem ZUSAMMENGEFUEHRTEN Stand `a`.
+        // Das ist der eigentliche Fall: die Verwaltung stellt "darf allein nach
+        // Hause" auf "ja" und ruehrt das Abhol-Feld gar nicht an. Liefe die
+        // Regel nur ueber die mitgeschickten Werte, bliebe der Widerspruch
+        // genau dann stehen, wenn er entsteht.
+        //
+        // ⚠️ Nur wenn DIESE Anfrage eines der beiden Felder ueberhaupt anfasst.
+        // Sonst raeumte eine Korrektur an der Mailadresse nebenbei eine Angabe
+        // weg, die sich niemand angesehen hat.
+        //
+        // ⚠️ Die Aenderung wird im Verlauf vermerkt (`feldGeaendert`). Ein
+        // stilles Leeren waere fuer die Verwaltung nicht nachvollziehbar.
+        Object.keys(FC_FELDER).forEach((id) => {
+          const ab = FC_FELDER[id].leerWenn;
+          if (!ab || !a[id]) return;
+          if (roh.felder[id] === undefined && roh.felder[ab.feld] === undefined) return;
+          const steuerDef = FC_FELDER[ab.feld];
+          if (!steuerDef.fest && ((camp.felder || {})[ab.feld] || "aus") === "aus") return;
+          if (a[ab.feld] !== ab.wert) return;
+          feldGeaendert.push(id);
+          a[id] = "";
         });
       }
 
