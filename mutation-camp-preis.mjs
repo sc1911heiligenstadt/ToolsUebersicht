@@ -71,8 +71,8 @@ const MUTATIONEN = [
     `      preisFrueh: c.preisFrueh || 0, preisFruehBis: c.preisFruehBis || "",\n`, ``],
 
   ["Der Betrag fehlt in der Eltern-Sicht",
-    `                    betrag: fcBetrag(camp, anmeldung), zusatzantwort: anmeldung.zusatzantwort || "" };`,
-    `                    zusatzantwort: anmeldung.zusatzantwort || "" };`],
+    `                    betrag: fcBetrag(camp, anmeldung), zusatzantwort: anmeldung.zusatzantwort || "",`,
+    `                    zusatzantwort: anmeldung.zusatzantwort || "",`],
 
   // ⚠️ `betrag: fcPreisAmTag(camp)` waere an DIESER Stelle verhaltensgleich: die
   // Anmeldung ist gerade eben mit genau diesem Wert angelegt worden, die beiden

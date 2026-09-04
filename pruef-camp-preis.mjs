@@ -284,7 +284,14 @@ zusage(8.3, "Der Name ueberlebt es NICHT", !camp().anmeldungen[0].kindVorname);
 // ⚠️ Der Camp-Preis muss hier > 0 sein, sonst sind `camp.preis` und
 // `fcBetrag()` derselbe Wert und die Zusage kann die beiden gar nicht
 // auseinanderhalten — genau daran lief die Mutationsprobe zuerst ins Leere.
-frisch({ preisFrueh: 0, preisFruehBis: "" });
+//
+// ⚠️ Das Camp muss ausserdem NAH liegen (wie bei 8.5). Mit dem Standard-Camp
+// aus frisch() (Start in 60 Tagen) blieb die Erinnerung schon an der ZAHLFRIST
+// haengen -- die Zusage war dann gruen, ohne den Betrag je angesehen zu haben.
+// mutation-camp-preis.mjs wies das am 04.09.2026 nach: der Tausch von
+// `if (!fcBetrag(camp, a)) return;` gegen `if (!camp.preis) return;` rutschte
+// glatt durch.
+frisch({ preisFrueh: 0, preisFruehBis: "", vonDatum: inTagen(9), bisDatum: inTagen(13) });
 DOC.einstellungen.zahlErinnerung = true;
 DOC.einstellungen.zahlErinnerungTage = 1;
 await bau.handleFcAnmelden(anfrage(), anmKoerper(), ENV, AUTH, {}, null);

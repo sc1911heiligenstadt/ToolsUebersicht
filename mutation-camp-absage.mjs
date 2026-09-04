@@ -47,16 +47,13 @@ const MUTATIONEN = [
 
   // ---- Der eigene Text der Verwaltungs-Absage --------------------------
   ["Die Verwaltungs-Mail traegt den internen Absagegrund nach aussen",
-    `\${rueckweg}\${fcKontaktBlock(einst)}`,
-    `\${a.absageGrund ? "Grund: " + a.absageGrund + "\\n\\n" : ""}\${rueckweg}\${fcKontaktBlock(einst)}`],
+    `  werte.geldblock = fcAbsageGeldBlock(camp, a, quelle);`,
+    `  werte.geldblock = fcAbsageGeldBlock(camp, a, quelle);
+  werte.campblock = werte.campblock + " Grund: " + (a.absageGrund || "");`],
 
-  ["Die Verwaltungs-Mail bekommt die Fusszeile der Eltern-Absage",
-    `  const fuss = vonVerwaltung
-    ? \`Diese E-Mail wurde verschickt, weil die Anmeldung deines Kindes zu diesem Camp
-abgesagt wurde.\``,
-    `  const fuss = vonVerwaltung
-    ? \`Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
-für dieses Camp abgeschickt wurde.\``],
+  ["Die Verwaltungs-Mail bekommt die Vorlage der Eltern-Absage",
+    `  const id = quelle === "verwaltung" ? "absage-verwaltung" : "absage-eltern";`,
+    `  const id = "absage-eltern";`],
 
   // ⚠️ Punkt 4 gilt nur bei einer Stornierung DURCH DIE TEILNEHMENDEN. Bei einer
   // Verwaltungs-Absage weiss die App nicht, welcher Fall vorliegt.
@@ -90,39 +87,42 @@ für dieses Camp abgeschickt wurde.\``],
   // Mailfehler die Absage nicht kippt. Nur eben ueber die innere Schranke.
 
   ["Die Fusszeile der Eltern-Absage sagt nicht mehr, warum die Mail kam",
-    `    : \`Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
-für dieses Camp abgeschickt wurde.\`;`,
-    `    : \`Diese E-Mail wurde automatisch verschickt.\`;`],
+    `Diese E-Mail wurde automatisch verschickt, weil über unsere Seite eine Absage
+für dieses Camp abgeschickt wurde.`,
+    `Diese E-Mail wurde automatisch verschickt.`],
 
   ["Die Eltern-Mail nennt das Kind nicht mehr beim Namen",
-    `    : \`wir haben deine Absage für \${fcKindName(a)} erhalten. Der Platz beim Fußballcamp`,
-    `    : \`wir haben deine Absage erhalten. Der Platz beim Fußballcamp`],
+    `wir haben deine Absage für {kind} erhalten. Der Platz beim Fußballcamp`,
+    `wir haben deine Absage erhalten. Der Platz beim Fußballcamp`],
 
   ["Die Verwaltungs-Mail nennt das Kind nicht mehr beim Namen",
-    `    ? \`die Anmeldung von \${fcKindName(a)} zum Fußballcamp ist abgesagt. Der Platz`,
-    `    ? \`die Anmeldung ist abgesagt. Der Platz`],
+    `die Anmeldung von {kind} zum Fußballcamp ist abgesagt. Der Platz`,
+    `die Anmeldung zum Fußballcamp ist abgesagt. Der Platz`],
 
   ["Die Camp-Angaben fehlen in der Absage-Mail",
-    `\${fcCampBlock(camp)}
+    `wir haben deine Absage für {kind} erhalten. Der Platz beim Fußballcamp
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.
 
-\${fcAbsageGeldBlock(camp, a, quelle)}`,
-    `\${fcAbsageGeldBlock(camp, a, quelle)}`],
+{campblock}
+
+{geldblock}`,
+    `wir haben deine Absage für {kind} erhalten. Der Platz beim Fußballcamp
+ist damit wieder frei. Schade — vielleicht klappt es beim nächsten Mal.
+
+{geldblock}`],
 
   ["Der Betreff verraet nicht mehr, worum es geht",
-    "  return fcMailSenden(env, a.elternEmail, `Absage bestätigt: ${camp.name}`, text);",
-    "  return fcMailSenden(env, a.elternEmail, `Nachricht vom Verein`, text);"],
+    `  const m = fcMailBauen(einst, id, werte);
+  return fcMailSenden(env, a.elternEmail, m.betreff, m.text);`,
+    `  const m = fcMailBauen(einst, id, werte);
+  return fcMailSenden(env, a.elternEmail, "Nachricht vom Verein", m.text);`],
 
   // ⚠️ Der Aendern-Link waere hier eine Sackgasse: nach der Absage antwortet
   // handleFcMeineSpeichern mit 410. Und er traegt den Eltern-Token.
   ["Die Absage-Mail traegt wieder den Aendern-Link samt Eltern-Token",
-    `\${fcAbsageGeldBlock(camp, a, quelle)}
-
-\${rueckweg}`,
-    `\${fcAbsageGeldBlock(camp, a, quelle)}
-
-\${fcAendernBlock(a)}
-
-\${rueckweg}`],
+    `  const m = fcMailBauen(einst, id, werte);`,
+    `  werte.geldblock = werte.geldblock + " " + fcAendernBlock(a);
+  const m = fcMailBauen(einst, id, werte);`],
 
   // ---- Die Erstattungsstaffel -----------------------------------------
   ["Der 28. Tag zaehlt schon zur halben Erstattung",
