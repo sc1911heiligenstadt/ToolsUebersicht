@@ -11,7 +11,17 @@
 // Nachbau prueft, sagt nichts ueber die App.
 //
 //   node pruef-camp-neu.mjs [pfad-zu-admin-worker.js]
-import { readFileSync } from "node:fs";
+import { readFileSync as readFileSyncRoh } from "node:fs";
+// ⚠️ Zeilenenden beim Einlesen auf LF normalisieren. Die Schnittmarken unten
+// ("\n];\n" und Verwandte) gibt es in einer CRLF-Datei nicht -- und git liefert
+// mit core.autocrlf=true und ohne .gitattributes genau die aus. Ohne diese
+// Huelle bricht der Pruefstand nach jedem frischen Checkout mit "Endmarke
+// fehlt" ab und prueft KEINE EINZIGE Zusage -- der Absturz sieht dabei aus wie
+// ein Fehler am geprueften Code. Bugjagd 04.09.2026: 9 von 11 Camp-Pruefstaenden.
+const readFileSync = (p, e) => {
+  const r = readFileSyncRoh(p, e);
+  return typeof r === "string" ? r.replace(/\r\n/g, "\n") : r;
+};
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
