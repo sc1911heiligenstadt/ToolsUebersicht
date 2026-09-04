@@ -19242,7 +19242,19 @@ const FC_FELDER = {
 // Material ausgegeben wird. Sie ist keine Gesundheitsangabe und kein
 // Kontaktdatum -- der Kreis, der sie zu sehen bekommt, waechst dadurch um genau
 // die Leute, die die Trikots verteilen.
-const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "trikotgroesse", "allergien", "medikamente", "krankheiten", "essenHinweis", "elternTelefon", "alleinNachHause"];
+// ⚠️ `abholberechtigt` steht MIT in der Liste (Abnahme 04.09.2026). Es fehlte
+// hier, obwohl der Betreuer am Ausgang der einzige ist, der es braucht: die
+// Eltern trugen ein, wer das Kind abholen darf, und im Camp sah es niemand.
+// Ohne die Angabe ist "darf nicht allein gehen" nur die halbe Auskunft -- sie
+// sagt, dass jemand kommen muss, aber nicht wer kommen darf.
+//
+// ⚠️ Damit stehen hier Namen DRITTER (Oma, Nachbarin). Die Art.-13-Information
+// auf anmeldung.html und meine-anmeldung.html nennt sie ausdruecklich als Teil
+// der Betreuerliste; wer diese Zeile aendert, zieht beide Texte mit.
+//
+// Ein Kind, das allein gehen darf, traegt hier nichts: `leerWenn` oben raeumt
+// das Feld, und die Zeile unten laesst leere Werte ohnehin weg.
+const FC_BETREUER_FELDER = ["kindVorname", "kindNachname", "geburtsdatum", "trikotgroesse", "allergien", "medikamente", "krankheiten", "essenHinweis", "elternTelefon", "alleinNachHause", "abholberechtigt"];
 
 // ---------- Feedbackbogen (seit 2026-09-03) ----------
 //
