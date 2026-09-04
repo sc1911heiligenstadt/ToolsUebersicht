@@ -218,18 +218,18 @@
         <p class="muted" style="margin-bottom:14px;">Sag uns, was dir auffällt, oder wünsch dir eine neue Funktion — dein Name wird mit übermittelt, damit wir bei Rückfragen wissen, an wen wir uns wenden.</p>
         <form id="feedback-form" class="form-grid" style="align-items:flex-end;">
           <div class="form-field">
-            <label>Typ</label>
+            <label for="feedback-type">Typ</label>
             <select id="feedback-type" class="form-select">
               <option value="feedback">Feedback</option>
               <option value="wunsch">Wunsch</option>
             </select>
           </div>
           <div class="form-field">
-            <label>Tool (optional)</label>
+            <label for="feedback-tool">Tool (optional)</label>
             <select id="feedback-tool" class="form-select"><option value="">— Allgemein —</option></select>
           </div>
           <div class="form-field" style="grid-column:1 / -1;">
-            <label>Text</label>
+            <label for="feedback-text">Text</label>
             <textarea id="feedback-text" rows="4" maxlength="2000" required></textarea>
           </div>
           <div class="form-field">
@@ -453,11 +453,11 @@
         <p class="muted" style="margin-bottom:14px;">Es existiert noch kein Nutzerkonto. Hier einmalig das erste Admin-Konto anlegen.</p>
         <form id="bootstrap-form">
           <div class="form-field" style="margin-bottom:10px;">
-            <label>Nutzername</label>
+            <label for="bootstrap-username">Nutzername</label>
             <input type="text" id="bootstrap-username" autocomplete="username" required />
           </div>
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Passwort</label>
+            <label for="bootstrap-password">Passwort</label>
             <input type="password" id="bootstrap-password" autocomplete="new-password" required minlength="12" />
             <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
           </div>
@@ -474,7 +474,7 @@
         <p class="muted" style="margin-bottom:14px;">Mit Nutzername oder E-Mail-Adresse anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
         <form id="login-form">
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Nutzername oder E-Mail-Adresse</label>
+            <label for="login-username">Nutzername oder E-Mail-Adresse</label>
             <input type="text" id="login-username" autocomplete="username" required />
             <small class="muted" style="display:block; margin-top:6px;">Egal ob „Max Mustermann“, „max.mustermann“ oder die eigene E-Mail-Adresse.</small>
           </div>
@@ -491,7 +491,7 @@
         <p class="muted" style="margin-bottom:14px;">Passwort für <strong id="login-password-username"></strong> eingeben.</p>
         <form id="login-password-form">
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Passwort</label>
+            <label for="login-password">Passwort</label>
             <input type="password" id="login-password" autocomplete="current-password" required />
           </div>
           <p class="muted" id="login-password-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
@@ -508,7 +508,7 @@
         <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> gibt es noch keinen aktiven Zugang. Lege jetzt ein Passwort fest, um das Konto damit zu verknüpfen — danach kannst du dich immer mit diesem Nutzernamen (oder deiner E-Mail-Adresse) und dem Passwort anmelden.</p>
         <form id="first-login-form">
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Neues Passwort</label>
+            <label for="first-login-password">Neues Passwort</label>
             <input type="password" id="first-login-password" autocomplete="new-password" required minlength="12" />
             <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
           </div>
@@ -879,7 +879,7 @@
       <form id="news-form" class="form-grid" style="margin-top:16px; align-items:flex-end;">
         <input type="hidden" id="news-edit-id" value="" />
         <div class="form-field">
-          <label>Typ</label>
+          <label for="news-type">Typ</label>
           <select id="news-type" class="form-select">
             <option value="neu">Neu</option>
             <option value="update">Update</option>
@@ -888,19 +888,19 @@
           </select>
         </div>
         <div class="form-field">
-          <label>Datum</label>
+          <label for="news-date">Datum</label>
           <input type="date" id="news-date" />
         </div>
         <div class="form-field">
-          <label>Verknüpftes Tool (optional)</label>
+          <label for="news-tool">Verknüpftes Tool (optional)</label>
           <select id="news-tool" class="form-select"><option value="">— keins —</option></select>
         </div>
         <div class="form-field" style="grid-column:1 / -1;">
-          <label>Titel</label>
+          <label for="news-title">Titel</label>
           <input type="text" id="news-title" maxlength="200" required />
         </div>
         <div class="form-field" style="grid-column:1 / -1;">
-          <label>Text (optional)</label>
+          <label for="news-text">Text (optional)</label>
           <textarea id="news-text" rows="2" maxlength="1000"></textarea>
         </div>
         <div class="form-field" style="grid-column:1 / -1;">
@@ -914,7 +914,7 @@
           <p class="muted" style="font-size:12px; margin-top:6px;">JPEG, PNG, GIF, WebP, MP4 oder WebM. Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar.</p>
         </div>
         <div class="form-field" style="grid-column:1 / -1;">
-          <label>Video-Link (optional, für längere Videos)</label>
+          <label for="news-video-url">Video-Link (optional, für längere Videos)</label>
           <input type="url" id="news-video-url" maxlength="500" placeholder="https://…" />
           <p class="muted" style="font-size:12px; margin-top:6px;">Für Videos, die über 10 MB liegen — z. B. YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nicht eingebettet.</p>
         </div>
@@ -1195,22 +1195,22 @@
       </div>
       <form id="create-user-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
         <div class="form-field">
-          <label>Art</label>
+          <label for="new-user-art">Art</label>
           <select id="new-user-art">
             <option value="personal">Personal (Trainer, Betreuer, Geschäftsstelle)</option>
             <option value="spieler">Spieler / Eltern</option>
           </select>
         </div>
         <div class="form-field">
-          <label>Vorname</label>
+          <label for="new-user-vorname">Vorname</label>
           <input type="text" id="new-user-vorname" required />
         </div>
         <div class="form-field">
-          <label>Nachname</label>
+          <label for="new-user-nachname">Nachname</label>
           <input type="text" id="new-user-nachname" required />
         </div>
         <div class="form-field">
-          <label>Trainerlizenz</label>
+          <label for="new-user-lizenz">Trainerlizenz</label>
           <select id="new-user-lizenz">
             <option value="">— keine —</option>
             <option value="ohne Lizenz">ohne Lizenz</option>
@@ -1222,7 +1222,7 @@
           </select>
         </div>
         <div class="form-field">
-          <label>Mannschaft(en)</label>
+          <label for="new-user-mannschaften">Mannschaft(en)</label>
           <input type="text" id="new-user-mannschaften" list="mannschaft-suggestions" placeholder="z. B. B-Jugend, C-Jugend" />
           <datalist id="mannschaft-suggestions"></datalist>
         </div>
@@ -1259,7 +1259,7 @@
       <div id="groups-list"></div>
       <form id="create-group-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
         <div class="form-field">
-          <label>Gruppenname</label>
+          <label for="new-group-name">Gruppenname</label>
           <input type="text" id="new-group-name" required />
         </div>
         <div class="form-field">
