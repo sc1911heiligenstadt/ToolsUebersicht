@@ -16,7 +16,11 @@ import { dirname, join } from "node:path";
 // sich auch prüfen, was in einem Commit steht, ohne das Arbeitsverzeichnis
 // anzufassen (auf E:\ laufen mehrere Sitzungen auf denselben Repos).
 const HIER = dirname(fileURLToPath(import.meta.url));
-const QUELLE = readFileSync(process.argv[2] || join(HIER, "admin-worker.js"), "utf8");
+// ⚠️ Zeilenenden vereinheitlichen. Die Marken unten sind mit \n geschrieben;
+// liegt die Datei mit CRLF im Arbeitsverzeichnis (git worktree auf Windows),
+// fand die Suche sonst nichts und der Lauf brach ab, bevor er etwas prueft.
+const QUELLE = readFileSync(process.argv[2] || join(HIER, "admin-worker.js"), "utf8")
+  .replace(/\r\n/g, "\n");
 
 function schneide(vonMarke, bisMarke, name) {
   const a = QUELLE.indexOf(vonMarke);
@@ -49,6 +53,8 @@ function json(obj, status, corsHeaders) { return { __json: obj, status }; }
 const NOTIFY_FROM_EMAIL = "test@example.org";
 const NOTIFY_FROM_NAME = "Test";
 const USER_ART_SPIELER = "spieler";
+const DAV_APPS = { vereinskalender: "https://example.invalid/vereinskalender.json" };
+const jsonCache = new Map();
 function aufgabenAnzeigeName() { return ""; }
 async function getVerifiedSession() { return null; }
 async function userMayAccessTool() { return false; }
@@ -103,7 +109,8 @@ const anmeldeKoerper = (campToken, extra) => Object.assign({
   daten: {
     kindVorname: "Lena", kindNachname: "Muster",
     elternName: "Anja Muster", elternEmail: "anja.muster@example.org",
-    elternTelefon: "0170 1234567", allergien: "Erdnuss — Notfallset im Rucksack"
+    elternTelefon: "0170 1234567",
+    allergienHat: "ja", allergien: "Erdnuss — Notfallset im Rucksack"
   }
 }, extra || {});
 
@@ -134,7 +141,7 @@ const b1 = await bau.handleFcAnmelden(anfrage("198.51.100.5"), anmeldeKoerper(CA
   daten: {
     kindVorname: "LENA", kindNachname: "muster",
     elternName: "Wer auch immer", elternEmail: "Anja.Muster@Example.ORG",
-    allergien: "egal"
+    allergienHat: "ja", allergien: "egal"
   }
 }), ENV, "auth", {}, null);
 
@@ -211,7 +218,7 @@ const f3 = await bau.handleFcAnmelden(anfrage("203.0.113.11"), anmeldeKoerper(CA
   daten: {
     kindVorname: "Jonas", kindNachname: "Muster",
     elternName: "Anja Muster", elternEmail: "anja.muster@example.org",
-    allergien: "keine"
+    allergienHat: "nein"
   }
 }), ENV, "auth", {}, null);
 zusage("F3", "Ein Geschwisterkind wird normal angemeldet",
