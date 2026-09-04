@@ -162,7 +162,7 @@ function pruefe(F) {
   sag(/o === "created" \|\| o === "aktualisiert"/.test(CODE), "E1 ein reines Nachtragen löst keinen Schreibvorgang aus");
   sag(/outcomes\[k\] === "created" \|\| outcomes\[k\] === "aktualisiert"/.test(CODE), "E2 Fehlerpfad markiert 'aktualisiert' nicht als Fehler");
   {
-    const app = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+    const app = readFileSync(new URL("./app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     sag(/count\("aktualisiert"\)/.test(app), "E3 die Oberfläche zeigt nachgetragene Einträge nicht an");
   }
 

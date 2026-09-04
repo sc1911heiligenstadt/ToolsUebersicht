@@ -17,17 +17,17 @@ import { dirname, join } from "node:path";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const PFAD = process.argv[2] || join(HIER, "admin-worker.js");
-const QUELLE = readFileSync(PFAD, "utf8");
+const QUELLE = readFileSync(PFAD, "utf8").replace(/\r\n/g, "\n");
 // Ohne Vorgabe die App nebenan; mit FC_APP_DIR eine andere Fassung.
 const APP = (process.env.FC_APP_DIR || join(HIER, "..", "fussballcamp")) + "/";
-const CONFIGJS = readFileSync(APP + "config.js", "utf8");
-const APPJS = readFileSync(APP + "app.js", "utf8");
-const OEFFJS = readFileSync(APP + "oeffentlich.js", "utf8");
-const FEEDBACKJS = readFileSync(APP + "feedback.js", "utf8");
-const INDEXHTML = readFileSync(APP + "index.html", "utf8");
-const FEEDBACKHTML = readFileSync(APP + "feedback.html", "utf8");
-const ANMHTML = readFileSync(APP + "anmeldung.html", "utf8");
-const MEINHTML = readFileSync(APP + "meine-anmeldung.html", "utf8");
+const CONFIGJS = readFileSync(APP + "config.js", "utf8").replace(/\r\n/g, "\n");
+const APPJS = readFileSync(APP + "app.js", "utf8").replace(/\r\n/g, "\n");
+const OEFFJS = readFileSync(APP + "oeffentlich.js", "utf8").replace(/\r\n/g, "\n");
+const FEEDBACKJS = readFileSync(APP + "feedback.js", "utf8").replace(/\r\n/g, "\n");
+const INDEXHTML = readFileSync(APP + "index.html", "utf8").replace(/\r\n/g, "\n");
+const FEEDBACKHTML = readFileSync(APP + "feedback.html", "utf8").replace(/\r\n/g, "\n");
+const ANMHTML = readFileSync(APP + "anmeldung.html", "utf8").replace(/\r\n/g, "\n");
+const MEINHTML = readFileSync(APP + "meine-anmeldung.html", "utf8").replace(/\r\n/g, "\n");
 
 function schneide(vonMarke, bisMarke, name) {
   const a = QUELLE.indexOf(vonMarke);
@@ -668,8 +668,8 @@ zusage("Der Feedbackbogen waehlt keine Note vor", !/name="\$\{oEsc\(id\)\}"[^>]*
 zusage("baueFormular nimmt die Rollen entgegen", OEFFJS.includes("function baueFormular(ziel, konf, werte, rollen)"));
 zusage("...und stellt die Frage nur bei ZWEI Ausrichtungen",
   OEFFJS.includes("if (liste.length < 2) return \"\";"));
-zusage("anmeldung.js reicht camp.rollen durch", readFileSync(APP + "anmeldung.js", "utf8").includes("camp.felder, letzteEltern || {}, camp.rollen"));
-zusage("meine-anmeldung.js reicht camp.rollen durch", readFileSync(APP + "meine-anmeldung.js", "utf8").includes("camp.felder, a, camp.rollen"));
+zusage("anmeldung.js reicht camp.rollen durch", readFileSync(APP + "anmeldung.js", "utf8").replace(/\r\n/g, "\n").includes("camp.felder, letzteEltern || {}, camp.rollen"));
+zusage("meine-anmeldung.js reicht camp.rollen durch", readFileSync(APP + "meine-anmeldung.js", "utf8").replace(/\r\n/g, "\n").includes("camp.felder, a, camp.rollen"));
 
 // Verdrahtung in der Oberflaeche.
 for (const [id, wo] of [

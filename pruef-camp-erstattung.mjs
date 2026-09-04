@@ -18,13 +18,13 @@ import { dirname, join } from "node:path";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const WORKER_PFAD = process.argv[2] || join(HIER, "admin-worker.js");
-const WORKER = fs.readFileSync(WORKER_PFAD, "utf8");
+const WORKER = fs.readFileSync(WORKER_PFAD, "utf8").replace(/\r\n/g, "\n");
 // Ohne Vorgabe die App nebenan; mit FC_APP_DIR eine andere Fassung -- so laesst
 // sich der Selbsttest gegen einen aelteren Commit fahren, ohne das
 // Arbeitsverzeichnis anzufassen (auf E:\ laufen mehrere Sitzungen).
 const APP = (process.env.FC_APP_DIR || join(HIER, "..", "fussballcamp")) + "/";
-const CONFIGJS = fs.readFileSync(APP + "config.js", "utf8");
-const APPJS = fs.readFileSync(APP + "app.js", "utf8");
+const CONFIGJS = fs.readFileSync(APP + "config.js", "utf8").replace(/\r\n/g, "\n");
+const APPJS = fs.readFileSync(APP + "app.js", "utf8").replace(/\r\n/g, "\n");
 
 let ok = 0;
 const funde = [];

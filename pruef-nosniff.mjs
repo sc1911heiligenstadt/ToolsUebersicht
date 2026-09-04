@@ -23,7 +23,7 @@ const HIER = dirname(fileURLToPath(import.meta.url));
 const DATEI = process.env.WORKER_DATEI
   || process.argv.find((a) => !a.startsWith("--") && a.endsWith(".js"))
   || join(HIER, "admin-worker.js");
-const W = readFileSync(DATEI, "utf8");
+const W = readFileSync(DATEI, "utf8").replace(/\r\n/g, "\n");
 
 function schneide(von, bis, name) {
   const a = W.indexOf(von);

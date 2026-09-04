@@ -20,8 +20,8 @@ const PRUEF = join(HIER, "pruef-camp-erstattung.mjs");
 const TMP = fs.mkdtempSync(join(os.tmpdir(), "fc-mut-"));
 
 const ORIG = {
-  "config.js": fs.readFileSync(join(APP, "config.js"), "utf8"),
-  "app.js": fs.readFileSync(join(APP, "app.js"), "utf8")
+  "config.js": fs.readFileSync(join(APP, "config.js"), "utf8").replace(/\r\n/g, "\n"),
+  "app.js": fs.readFileSync(join(APP, "app.js"), "utf8").replace(/\r\n/g, "\n")
 };
 
 // [Name, Datei, Suchtext, Ersatz]

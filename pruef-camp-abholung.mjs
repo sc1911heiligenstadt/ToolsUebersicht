@@ -19,9 +19,9 @@ import { fileURLToPath } from "node:url";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const APP = join(HIER, "..", "fussballcamp") + "/";
-const WORKER_Q = readFileSync(join(HIER, "admin-worker.js"), "utf8");
-const OEFF_Q = readFileSync(APP + "oeffentlich.js", "utf8");
-const CONFIG_Q = readFileSync(APP + "config.js", "utf8");
+const WORKER_Q = readFileSync(join(HIER, "admin-worker.js"), "utf8").replace(/\r\n/g, "\n");
+const OEFF_Q = readFileSync(APP + "oeffentlich.js", "utf8").replace(/\r\n/g, "\n");
+const CONFIG_Q = readFileSync(APP + "config.js", "utf8").replace(/\r\n/g, "\n");
 
 function schneide(quelle, von, bis, name) {
   const a = quelle.indexOf(von);

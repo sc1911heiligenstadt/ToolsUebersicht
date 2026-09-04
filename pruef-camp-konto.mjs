@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 const APP = join(HIER, "..", "fussballcamp") + "/";
-const lies = (f) => fs.readFileSync(APP + f, "utf8");
+const lies = (f) => fs.readFileSync(APP + f, "utf8").replace(/\r\n/g, "\n");
 const APP_JS = lies("app.js");
 const INDEX = lies("index.html");
 

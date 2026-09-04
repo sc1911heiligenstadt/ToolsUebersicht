@@ -8,8 +8,8 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HIER = dirname(fileURLToPath(import.meta.url));
-const WORKER = fs.readFileSync(join(HIER, "admin-worker.js"), "utf8");
-const APPJS  = fs.readFileSync(join(HIER, "..", "fussballcamp", "app.js"), "utf8");
+const WORKER = fs.readFileSync(join(HIER, "admin-worker.js"), "utf8").replace(/\r\n/g, "\n");
+const APPJS  = fs.readFileSync(join(HIER, "..", "fussballcamp", "app.js"), "utf8").replace(/\r\n/g, "\n");
 
 function schneide(quelle, marke, name) {
   const a = quelle.indexOf(marke);

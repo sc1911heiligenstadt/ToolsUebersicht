@@ -8,8 +8,8 @@ import { dirname, join } from "node:path";
 const HIER = dirname(fileURLToPath(import.meta.url));
 // Die App liegt neben diesem Repo, nicht darin.
 const APP = join(HIER, "..", "fussballcamp") + "/";
-const WORKER = fs.readFileSync(join(HIER, "admin-worker.js"), "utf8");
-const lies = (f) => fs.readFileSync(APP + f, "utf8");
+const WORKER = fs.readFileSync(join(HIER, "admin-worker.js"), "utf8").replace(/\r\n/g, "\n");
+const lies = (f) => fs.readFileSync(APP + f, "utf8").replace(/\r\n/g, "\n");
 
 const funde = [];
 const ok = [];

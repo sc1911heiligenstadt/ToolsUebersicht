@@ -16,7 +16,7 @@ const DATEI = process.env.WORKER_DATEI
   || process.argv.find((a) => !a.startsWith("--") && a.endsWith(".js"))
   || "E:/ToolsUebersicht/admin-worker.js";
 
-const Q = readFileSync(DATEI, "utf8");
+const Q = readFileSync(DATEI, "utf8").replace(/\r\n/g, "\n");
 
 function schneide(von, bis, name) {
   const a = Q.indexOf(von);

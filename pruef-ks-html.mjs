@@ -21,7 +21,7 @@ const DATEI = process.env.WORKER_DATEI
   || process.argv.find((a) => !a.startsWith("--") && a.endsWith(".js"))
   || join(HIER, "admin-worker.js");
 
-const W = readFileSync(DATEI, "utf8");
+const W = readFileSync(DATEI, "utf8").replace(/\r\n/g, "\n");
 
 function schneide(von, bis, name) {
   const a = W.indexOf(von);
@@ -39,9 +39,9 @@ function lade(quelle) {
 }
 
 // Der echte Konzepttext aus der App — die Gegenprobe, dass nichts kaputtgeht.
-const VORGABE = readFileSync("E:/kinderschutz/inhalte-vorgabe.js", "utf8");
-const APP = readFileSync("E:/kinderschutz/app.js", "utf8");
-const CSS = readFileSync("E:/kinderschutz/kinderschutz.css", "utf8");
+const VORGABE = readFileSync("E:/kinderschutz/inhalte-vorgabe.js", "utf8").replace(/\r\n/g, "\n");
+const APP = readFileSync("E:/kinderschutz/app.js", "utf8").replace(/\r\n/g, "\n");
+const CSS = readFileSync("E:/kinderschutz/kinderschutz.css", "utf8").replace(/\r\n/g, "\n");
 const zaehle = (t, tag) => (t.match(new RegExp("<" + tag + "[ >]", "gi")) || []).length;
 
 // ---------------------------------------------------------------------------

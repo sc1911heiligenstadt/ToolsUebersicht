@@ -25,8 +25,8 @@ const TMP = fs.mkdtempSync(join(os.tmpdir(), "fc-mut-neu-"));
 const CLIENT_DATEIEN = ["config.js", "app.js", "oeffentlich.js", "feedback.js",
                         "anmeldung.js", "meine-anmeldung.js", "index.html", "feedback.html",
                         "anmeldung.html", "meine-anmeldung.html"];
-const ORIG = { "admin-worker.js": fs.readFileSync(join(HIER, "admin-worker.js"), "utf8") };
-CLIENT_DATEIEN.forEach((d) => { ORIG[d] = fs.readFileSync(join(APP, d), "utf8"); });
+const ORIG = { "admin-worker.js": fs.readFileSync(join(HIER, "admin-worker.js"), "utf8").replace(/\r\n/g, "\n") };
+CLIENT_DATEIEN.forEach((d) => { ORIG[d] = fs.readFileSync(join(APP, d), "utf8").replace(/\r\n/g, "\n"); });
 
 // [Name, Datei, Suchtext, Ersatz] -- oder mit zwei weiteren Feldern eine ZWEITE
 // Ersetzung in derselben Datei.

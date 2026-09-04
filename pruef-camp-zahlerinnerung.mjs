@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 const HIER = dirname(fileURLToPath(import.meta.url));
 const PFAD = process.argv[2] || join(HIER, "admin-worker.js");
-const QUELLE = readFileSync(PFAD, "utf8");
+const QUELLE = readFileSync(PFAD, "utf8").replace(/\r\n/g, "\n");
 
 function schneide(vonMarke, bisMarke, name) {
   const a = QUELLE.indexOf(vonMarke);

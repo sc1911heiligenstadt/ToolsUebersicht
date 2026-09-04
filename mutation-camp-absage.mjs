@@ -12,7 +12,7 @@ const QUELL = join(HIER, "admin-worker.js");
 // ⚠️ Die Mutanten-Datei liegt im Temp-Ordner, NICHT im Repo — sonst landet
 // eine absichtlich kaputte Worker-Fassung im nächsten Commit.
 const ZIEL = join(os.tmpdir(), "mutant-camp-absage.js");
-const ORIGINAL = readFileSync(QUELL, "utf8");
+const ORIGINAL = readFileSync(QUELL, "utf8").replace(/\r\n/g, "\n");
 
 const MUTATIONEN = [
   // ---- Die Verdrahtung -------------------------------------------------
