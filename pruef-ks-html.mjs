@@ -228,10 +228,19 @@ function verlauf() {
     + 'function normalizeUsername(r){return String(r||"").trim().toLowerCase().replace(/\\s+/g,".");}\n';
   const m = new Function(stubs + quelle + "\nreturn { ksKlarname, ksVerlaufOeffentlich };")();
 
+  // ⚠️ GENAU die Form, die handleCreateUser in nutzer.json schreibt:
+  // username/vorname/nachname. Bis zum 05.09.2026 stand hier `{ name: "..." }` --
+  // ein Feld, das es in der Datei gar nicht gibt. Der Prüfstand war damit gegen
+  // den Fehler gebaut, den er hätte finden sollen: ksKlarname las `u.name`, die
+  // Attrappe lieferte `u.name`, alles grün — live griff der Rückfall immer, und
+  // im öffentlichen Verlauf stand "(unbekannt)".
+  //
+  // Wer diese Attrappe je wieder an den Code anpasst statt an die echte Datei,
+  // holt sich denselben blinden Fleck zurück.
   const users = {
-    "max.mueller": { name: "Max Müller" },
-    "max": { name: "Max Klein" },
-    "a.beispiel": { name: "Anna Beispiel" }
+    "max.mueller": { username: "max.mueller", vorname: "Max", nachname: "Müller" },
+    "max": { username: "max", vorname: "Max", nachname: "Klein" },
+    "a.beispiel": { username: "a.beispiel", vorname: "Anna", nachname: "Beispiel" }
   };
   const doc = { users };
   const z = [];
