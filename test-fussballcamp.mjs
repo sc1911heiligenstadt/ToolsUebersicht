@@ -16,7 +16,11 @@ import { dirname, join } from "node:path";
 // sich auch prüfen, was in einem Commit steht, ohne das Arbeitsverzeichnis
 // anzufassen (auf E:\ laufen mehrere Sitzungen auf denselben Repos).
 const HIER = dirname(fileURLToPath(import.meta.url));
-const QUELLE = readFileSync(process.argv[2] || join(HIER, "admin-worker.js"), "utf8");
+// ⚠️ Zeilenenden vereinheitlichen. Die Schnittmarken unten enthalten "\n";
+// ein Auschecken mit CRLF (core.autocrlf=true) liess sie ins Leere greifen, und der
+// Pruefstand brach beim Einlesen ab statt zu pruefen. Gemessen am 06.09.2026.
+const QUELLE = readFileSync(process.argv[2] || join(HIER, "admin-worker.js"), "utf8")
+  .replace(/\r\n/g, "\n");
 
 function schneide(vonMarke, bisMarke, name) {
   const a = QUELLE.indexOf(vonMarke);
@@ -28,6 +32,12 @@ function schneide(vonMarke, bisMarke, name) {
 
 const capStrQ = schneide("function capStr(v, max) {", "\n}\n", "capStr") + "\n}\n";
 const kboQ    = schneide("function kboBremse(map, max, request) {", "function kboNormalize(", "kboBremse/kboHexToken");
+// ⚠️ Der Fussballcamp-Schnitt laeuft bis zum DATEIENDE. Alles, was spaeter unten
+// angehaengt wird, landet damit mit im Block -- so kam VK_POSTAUSGANG_URL herein und
+// mit ihm ein Bezug nach draussen auf DAV_APPS; der Pruefstand starb seither beim
+// Einlesen an einem ReferenceError. Also wird DAV_APPS ECHT mitgeschnitten (kein
+// Nachbau), damit der Block fuer sich allein lauffaehig bleibt.
+const davQ    = schneide("const DAV_APPS = {", "\n};\n", "DAV_APPS") + "\n};\n";
 const fcQ     = schneide("const FUSSBALLCAMP_URL =", null, "Fussballcamp-Abschnitt");
 
 for (const [was, wo] of [
@@ -60,7 +70,7 @@ async function writeJson(url, auth, doc, rev) { __SETDOC(JSON.parse(JSON.stringi
 `;
 
 const bau = new Function("__DOC", "__SETDOC", "fetch",
-  kopf + capStrQ + "\n" + kboQ + "\n" + fcQ +
+  kopf + davQ + "\n" + capStrQ + "\n" + kboQ + "\n" + fcQ +
   "\nreturn { handleFcAnmelden, handleFcMeineInfo, fcLeer, kboHexToken, FC_LINK_ERNEUT_PAUSE_MS };"
 )(
   () => DOC,
@@ -103,7 +113,13 @@ const anmeldeKoerper = (campToken, extra) => Object.assign({
   daten: {
     kindVorname: "Lena", kindNachname: "Muster",
     elternName: "Anja Muster", elternEmail: "anja.muster@example.org",
-    elternTelefon: "0170 1234567", allergien: "Erdnuss — Notfallset im Rucksack"
+    elternTelefon: "0170 1234567",
+    // ⚠️ "allergien" ist im Katalog FC_FELDER vom Typ "janein_text" und braucht
+    // ZWEI Werte: den Schalter allergienHat und den Text. Bis zum 06.09.2026 stand
+    // hier nur der Text -- die Attrappe hatte die Form, die der Lesecode einmal
+    // erwartete, nicht die, die das Formular wirklich schickt. Der Worker wies jede
+    // Anmeldung mit "Es fehlen noch Pflichtangaben" ab und der ganze Pruefstand war rot.
+    allergienHat: "ja", allergien: "Erdnuss — Notfallset im Rucksack"
   }
 }, extra || {});
 
