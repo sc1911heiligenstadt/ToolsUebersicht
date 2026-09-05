@@ -11204,12 +11204,24 @@ async function handleVvNachweisGet(request, body, env, authHeader, corsHeaders) 
 
 // Der Verband verlangt Aufbewahrung beim Verein fuer mindestens zwei
 // Jahre -- geloescht wird hier deshalb nicht im Alltag, sondern auf
-// ausdrueckliche Anforderung. Darum GLOBALER Admin und nicht bloss das
+// ausdrueckliche Anforderung. Darum die Stufe ADMINISTRIEREN und nicht das
 // Bearbeiten-Recht, das die ganze Geschaeftsstelle hat.
+//
+// ⚠️ Bis zum 05.09.2026 stand hier `session.isAdmin`, also GLOBALER Admin.
+// Gelesen werden dieselben Dateien ueber vvNachweisDarfSehen, das am
+// Bearbeiten-Recht haengt -- wer die Nachweise oeffnen und den Loeschknopf
+// sehen konnte, durfte sie also nie loeschen. Der Knopf stand da, die
+// Rueckfrage versprach "Mitgeloescht werden: die hochgeladenen Nachweise",
+// und danach blieb der Antrag unveraendert stehen. Genau dafuer gibt es die
+// dritte Stufe: App-interne Admin-Funktionen delegierbar machen, ohne
+// globale Admin-Rechte zu vergeben. resolveAdminPermission laesst globale
+// Admins weiter durch -- solange adminGroupIds der Kachel leer ist, aendert
+// sich am Kreis der Berechtigten also nichts.
 async function handleVvNachweisLoeschen(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  const darf = await resolveAdminPermission("vereinsverwaltung", session, env, authHeader);
+  if (!darf) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const owner = String(body.owner || "");
   if (!VV_NACHWEIS_OWNER_RE.test(owner)) {
