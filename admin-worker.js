@@ -24815,10 +24815,17 @@ async function ksTaeglicherLauf(env, authHeader, execCtx) {
       m.status !== "abgeschlossen" && !m.antwortAm &&
       (jetzt - (Date.parse(m.eingangAm) || jetzt)) > fristTage * 86400000).length;
 
+    // ⚠️ Diese Formel MUSS mit `loeschReif` in kinderschutz/app.js
+    // uebereinstimmen -- zwei Sichten auf dieselbe Frist. Bis zum 05.09.2026 lief
+    // sie hier fuer jeden Stand ausser "extern" ab dem EINGANG; die App rechnete
+    // ab dem 05.09. ab dem Abschluss. Fuer dieselbe offene Meldung sagte die App
+    // damit "noch nicht loeschreif" und diese naechtliche Mail "Aufbewahrungsfrist
+    // erreicht". Eine offene, unbeantwortete Meldung ist kein erledigter Vorgang;
+    // der Datenschutztext sagt "spaetestens acht Wochen NACH Abschluss".
+    // "extern" ist damit von selbst gedeckt (der Stand ist nicht "abgeschlossen").
     const loeschreif = (mdoc.meldungen || []).filter((m) => {
-      if (m.status === "extern") return false;
-      const start = m.status === "abgeschlossen" ? m.abgeschlossenAm : m.eingangAm;
-      return (jetzt - (Date.parse(start) || jetzt)) >= wochen * 7 * 86400000;
+      if (m.status !== "abgeschlossen" || !m.abgeschlossenAm) return false;
+      return (jetzt - (Date.parse(m.abgeschlossenAm) || jetzt)) >= wochen * 7 * 86400000;
     }).length;
 
     if (ueberfaellig || loeschreif) {
