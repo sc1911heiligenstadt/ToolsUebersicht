@@ -24014,6 +24014,7 @@ function ksAnhaengePruefen(roh, einstellungen) {
 async function ksBenachrichtigen(env, authHeader, doc, execCtx) {
   try {
     const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
     const namen = (doc.beauftragteUsernames || []).map((n) => normalizeUsername(String(n || ""))).filter(Boolean);
     if (!namen.length) return;
 
@@ -24024,9 +24025,19 @@ async function ksBenachrichtigen(env, authHeader, doc, execCtx) {
       "Diese Nachricht enthaelt bewusst keine Angaben zum Inhalt.\n\n" +
       "1. SC 1911 Heiligenstadt e.V.";
 
+    // ⚠️ Die Adresse kommt aus den TRAINERDATEN, nicht aus nutzer.json. Dort
+    // gibt es weder `email` noch `mail` -- keine der drei Anlegestellen
+    // (Bootstrap-Admin, create-user, Spieler-Selbstanlage) schreibt je eine
+    // Adresse, und update-user ändert nur Vor- und Nachname. Der frühere
+    // Ausdruck `u.email || u.mail` war damit IMMER undefined und `if (mail)`
+    // übersprang jeden Empfänger: es ging nie eine einzige Mail raus, und weil
+    // der ganze Aufruf in waitUntil steckt und jeden Fehler wegfängt, stand
+    // darüber auch nichts im Log. Übrig blieb der Push -- wer kein Abo hat,
+    // erfuhr von einer Kinderschutz-Meldung gar nichts.
+    // Derselbe Worker löst das an drei anderen Stellen längst so auf
+    // (handleNotifyUser, busplanAdresse, vkPostAdresse).
     for (const n of namen) {
-      const u = getOwn(usersDoc.users || {}, n);
-      const mail = u && (u.email || u.mail);
+      const mail = busplanAdresse(n, usersDoc, trainerdatenDoc);
       if (mail) await ksMailSenden(env, mail, betreff, text);
     }
 
@@ -24740,11 +24751,14 @@ async function handleKsBeauftragteSetzen(request, body, env, authHeader, corsHea
 // keine Automatik, die es nicht gibt.
 async function ksTaeglicherLauf(env, authHeader, execCtx) {
   try {
-    const [doc, mdoc, sdoc, usersDoc] = await Promise.all([
+    // trainerdatenDoc muss mit: die Mailadressen des Personals stehen dort,
+    // nicht in nutzer.json (siehe den Kommentar in ksBenachrichtigen).
+    const [doc, mdoc, sdoc, usersDoc, trainerdatenDoc] = await Promise.all([
       readJson(KINDERSCHUTZ_URL, authHeader, ksLeer()).then(ksNormalisiere),
       readJson(KS_MELDUNGEN_URL, authHeader, ksMeldungenLeer()),
       readJson(KS_SCHULUNG_URL, authHeader, ksSchulungLeer()),
-      readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
+      readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc()),
+      readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] })
     ]);
     const e = doc.einstellungen || {};
     const fristTage = Number(e.rueckmeldeTage) || 3;
@@ -24769,8 +24783,7 @@ async function ksTaeglicherLauf(env, authHeader, execCtx) {
         "\n\nhttps://sc1911heiligenstadt.github.io/kinderschutz/\n\n" +
         "Diese Nachricht enthaelt bewusst keine Angaben zum Inhalt.\n\n1. SC 1911 Heiligenstadt e.V.";
       for (const n of (doc.beauftragteUsernames || [])) {
-        const u = getOwn(usersDoc.users || {}, normalizeUsername(String(n || "")));
-        const mail = u && (u.email || u.mail);
+        const mail = busplanAdresse(normalizeUsername(String(n || "")), usersDoc, trainerdatenDoc);
         if (mail) await ksMailSenden(env, mail, "Kinderschutz: offene Punkte", text);
       }
     }
@@ -24785,19 +24798,26 @@ async function ksTaeglicherLauf(env, authHeader, execCtx) {
         if (jetzt - zuletzt < 28 * 86400000) continue;
         faellig.push(name);
       }
+      // ⚠️ `angeschrieben` trennt "hat eine Mail bekommen" von "war fällig".
+      // Vorher bekamen ALLE fälligen Namen den Merker `erinnertAm`, auch die,
+      // bei denen `continue` den Versand gerade übersprungen hatte: der Lauf
+      // schrieb alle 28 Tage Zeitstempel fort, ohne je etwas zu verschicken.
+      // Wer keine Adresse hat, bleibt jetzt offen und taucht in der nächsten
+      // Nacht wieder auf — sichtbar statt still abgehakt.
+      const angeschrieben = [];
       for (const name of faellig) {
-        const u = getOwn(usersDoc.users || {}, name);
-        const mail = u && (u.email || u.mail);
+        const mail = busplanAdresse(name, usersDoc, trainerdatenDoc);
         if (!mail) continue;
+        angeschrieben.push(name);
         await ksMailSenden(env, mail, "Kurze Schulung Kinder- und Jugendschutz",
           "Hallo,\n\ndie kurze Schulung zum Kinder- und Jugendschutz steht bei dir noch offen. " +
           "Sie dauert etwa 20 Minuten und besteht aus " + kapitel.length + " kurzen Kapiteln.\n\n" +
           "https://sc1911heiligenstadt.github.io/kinderschutz/\n\n" +
           "Danke dir!\n1. SC 1911 Heiligenstadt e.V.");
       }
-      if (faellig.length) {
+      if (angeschrieben.length) {
         await ksSchulungMutiere(authHeader, (s2) => {
-          for (const name of faellig) {
+          for (const name of angeschrieben) {
             if (s2.stand[name]) s2.stand[name].erinnertAm = new Date().toISOString();
           }
           return {};
