@@ -304,11 +304,35 @@ async function loadAndRenderUsers(vorabP) {
     // bleibt es wie bisher bedienbar (der Schreibweg ist ohnehin die Schranke).
     mannschaftAbgleichAn = !!data.mannschaftenAbgleichAktiv;
     renderUsersList(usersState);
+    neuerNutzerMannschaftGate();
     renderMannschaftSuggestions();
   } catch (e) {
     errorEl.textContent = e.message;
     errorEl.style.display = "block";
   }
+}
+
+// Das Mannschaftsfeld im Formular "Neuen Nutzer anlegen" folgt derselben Regel
+// wie das im Bearbeiten-Panel.
+//
+// ⚠️ Es fehlte hier bis zum 05.09.2026, und das war nicht bloß fehlende Optik:
+// bei laufendem Abgleich ist u.mannschaften ein BERECHNETES Feld. Ein hier
+// eingetipptes "B1" stand als zweite Wahrheit neben der Liste, wirkte sofort
+// flottenweit (Fotoaufträge, Ablaufplan- und Busplan-Erinnerung suchen ihre
+// Empfänger darüber) und wurde beim nächsten Abgleichlauf ersatzlos gelöscht.
+// Niemand erfuhr davon. Die eigentliche Schranke sitzt seit demselben Tag im
+// Worker (handleCreateUser); hier geht es darum, kein Feld anzubieten, dessen
+// Inhalt ohnehin verworfen wird.
+//
+// readonly statt disabled: ein gesperrtes Feld schluckt den Klick kommentarlos,
+// und der Hinweis darunter sagt ja gerade, wo man es richtig macht.
+function neuerNutzerMannschaftGate() {
+  const feld = document.getElementById("new-user-mannschaften");
+  const hinweis = document.getElementById("new-user-mannschaften-hinweis");
+  if (!feld || !hinweis) return;
+  feld.readOnly = mannschaftAbgleichAn;
+  if (mannschaftAbgleichAn) feld.value = "";
+  hinweis.style.display = mannschaftAbgleichAn ? "block" : "none";
 }
 
 // Füllt das <datalist> für die Mannschaft(en)-Felder (Anlegen + Bearbeiten) mit allen

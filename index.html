@@ -1224,6 +1224,10 @@
         <div class="form-field">
           <label for="new-user-mannschaften">Mannschaft(en)</label>
           <input type="text" id="new-user-mannschaften" list="mannschaft-suggestions" placeholder="z. B. B-Jugend, C-Jugend" />
+          <!-- Wird von neuerNutzerMannschaftGate() eingeblendet, sobald der
+               Abgleich läuft — dann ist das Feld darüber readonly. Default
+               versteckt, damit es beim Erstladen nicht kurz aufblitzt. -->
+          <p class="muted" id="new-user-mannschaften-hinweis" style="font-size:12px; margin:4px 0 0; display:none;">Wird aus der Mannschaftsliste berechnet. Zum Ändern die Person unter <strong>Mannschaften</strong> an die richtige Mannschaft hängen.</p>
           <datalist id="mannschaft-suggestions"></datalist>
         </div>
         <div class="form-field">
@@ -1877,7 +1881,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.7"></script>
-<script src="app.js?v=1.4"></script>
+<script src="config.js?v=1.8"></script>
+<script src="app.js?v=1.5"></script>
 </body>
 </html>

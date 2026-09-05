@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.8",
+    groups: [
+      {
+        title: "Beim Anlegen eines Kontos keine Mannschaft mehr eintippen",
+        items: [
+          "Solange die Mannschaften zentral gepflegt werden, kommt die Mannschaft einer Person aus dieser Liste. Im Formular „Neuen Nutzer anlegen“ ließ sie sich trotzdem eintippen — der Wert galt sofort in der ganzen Flotte (Fotoaufträge, Erinnerungen im Ablaufplan und im Busplan) und wurde beim nächsten Abgleich ersatzlos gelöscht. Der Trainer sah erst „seine“ Aufträge und danach keine mehr.",
+          "Das Feld ist jetzt gesperrt und sagt, wo man es richtig macht: unter Mannschaften die Person an ihre Mannschaft hängen.",
+          "Der Server nimmt den Wert in diesem Fall auch dann nicht an, wenn ihn ein alter Browser noch mitschickt."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.7",
     groups: [
       {

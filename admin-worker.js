@@ -2238,6 +2238,17 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
   const usersDoc = session.usersDoc;
   if (!usersDoc.groups) usersDoc.groups = {};
 
+  // ⚠️ Dieselbe Schranke wie in handleUpdateUser, und aus demselben Grund:
+  // seit 2026-08-12 ist u.mannschaften ein ABGELEITETES Feld, sobald
+  // mannschaften.json den Schalter abgleichAktiv traegt. Bis zum 05.09.2026
+  // fehlte sie hier -- ein beim Anlegen eingetipptes "B1" stand als zweite
+  // Wahrheit neben der berechneten Liste, wirkte sofort flottenweit
+  // (TEAM_FILTERED_APPS filtert die Fotoauftraege daran, Ablaufplan- und
+  // Busplan-Erinnerung suchen ihre Empfaenger darueber) und wurde beim
+  // naechsten Abgleichlauf ersatzlos geloescht. Der Trainer sah erst "seine"
+  // Auftraege und danach keine mehr, ohne dass irgendwo etwas dazu stand.
+  const mannschaftenGesperrt = await mannschaftenAbgleichLaeuft(authHeader);
+
   // Namenskollision gegen den GESAMTEN Bestand prüfen, nicht nur gegen die
   // eigene Art -- Spieler und Personal teilen sich einen Namensraum (Login).
   const username = generateUsername(vorname, nachname, new Set(Object.keys(usersDoc.users)));
@@ -2249,7 +2260,11 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
     // Art-Trennung sofort aushebeln (Admin umgeht jeden Sichtbarkeits-Check).
     isAdmin: art === USER_ART_SPIELER ? false : !!body.isAdmin,
     mustSetPassword: true,
-    lizenz: normalizeLizenz(body.lizenz), mannschaften: normalizeMannschaften(body.mannschaften),
+    lizenz: normalizeLizenz(body.lizenz),
+    // Bei laufendem Abgleich bleibt das Feld leer -- der naechste Lauf fuellt es
+    // aus mannschaften.json. Ein hier eingetragener Wert waere ohnehin nur bis
+    // dahin gueltig.
+    mannschaften: mannschaftenGesperrt ? [] : normalizeMannschaften(body.mannschaften),
     vertragBenoetigt: !!body.vertragBenoetigt,
     createdAt: new Date().toISOString(), passwordSetAt: null
   };
@@ -2273,7 +2288,10 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
     if (apps.length) provisioned = await provisionUsers([usersDoc.users[username]], apps, env, authHeader, usersDoc);
   } catch (_) { /* Provisioning ist best effort */ }
 
-  return json({ username, vorname, nachname, art, mustSetPassword: true, provisioned }, 201, corsHeaders);
+  // mannschaftenGesperrt additiv, genau wie in handleUpdateUser -- der Client
+  // sagt daran an, dass die Mannschaft aus der zentralen Liste kommt. Ein
+  // aelterer Client ignoriert das Feld und verhaelt sich wie bisher.
+  return json({ username, vorname, nachname, art, mustSetPassword: true, provisioned, mannschaftenGesperrt }, 201, corsHeaders);
 }
 
 async function handleListUsers(request, env, authHeader, corsHeaders) {
