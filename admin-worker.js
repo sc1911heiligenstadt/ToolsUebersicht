@@ -18410,27 +18410,31 @@ async function busplanErinnerungslauf(env, authHeader, execCtx) {
 
   const faellig = busplanFaellige(doc, ids, heute, letzterTag);
   if (!faellig.length) {
+    // ⚠️ `leerlauf: true` -- ohne das ueberschrieb dieser Lauf die Warnzeilen
+    // des letzten echten Laufs mit leeren Listen. Die Karte "🔔 Bus-Erinnerungen"
+    // war damit am naechsten Morgen sauber, obwohl niemand eine Nachricht
+    // bekommen hat. Genau der Fall, den die Karte sichtbar machen soll.
     await busplanLaufVermerken(authHeader, merker, ids, jetzt,
-      { fahrten: 0, push: 0, mails: 0, ohneTrainer: [], ohneAdresse: [] }, null);
+      { fahrten: 0, push: 0, mails: 0, ohneTrainer: [], ohneAdresse: [] }, null, true);
     return { gesendet: 0 };
   }
 
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
 
-  // ⚠️ Reihenfolge bindend: erst merken, dann verschicken -- dieselbe Lehre wie
-  // beim Ablaufplan. Andersherum meldete ein Fehlschlag beim Schreiben dieselbe
-  // Fahrt in jeder Nacht erneut, und hier haengt an jeder Wiederholung eine Mail.
-  const jetztIso = new Date(jetzt).toISOString();
-  faellig.forEach((f) => { ids[f.schluessel] = jetztIso; });
-  try {
-    await busplanLaufVermerken(authHeader, merker, ids, jetzt, null, null);
-  } catch (_) {
-    return { gesendet: 0, fehler: "merker" };
-  }
-
   const bericht = { fahrten: 0, push: 0, mails: 0, ohneTrainer: [], ohneAdresse: [] };
 
+  // ⚠️ Die Empfaenger werden VOR dem Merker bestimmt. Bis zum 05.09.2026 wurde
+  // fuer JEDE faellige Fahrt gemerkt -- auch fuer die, die gleich darauf im
+  // `continue`-Zweig landete, weil keiner Mannschaft ein Trainerkonto zugeordnet
+  // ist. Diese Fahrt war damit endgueltig verbraucht: sie kommt nie wieder in
+  // `busplanFaellige`, und die Warnzeile dazu war am naechsten Morgen ebenfalls
+  // weg (siehe leerlauf oben). Wer die Zuordnung nachtraegt, bekam trotzdem
+  // nichts mehr.
+  //
+  // Fuer die Fahrten, die wirklich rausgehen, gilt "erst merken, dann
+  // verschicken" unveraendert -- dort haengt an jeder Wiederholung eine Mail.
+  const zuSenden = [];
   for (const f of faellig) {
     const empfaenger = busplanEmpfaenger(f.team.name, usersDoc);
     if (!empfaenger.length) {
@@ -18440,6 +18444,18 @@ async function busplanErinnerungslauf(env, authHeader, execCtx) {
       if (bericht.ohneTrainer.indexOf(f.team.name) < 0) bericht.ohneTrainer.push(f.team.name);
       continue;
     }
+    zuSenden.push({ f, empfaenger });
+  }
+
+  const jetztIso = new Date(jetzt).toISOString();
+  zuSenden.forEach(({ f }) => { ids[f.schluessel] = jetztIso; });
+  try {
+    await busplanLaufVermerken(authHeader, merker, ids, jetzt, null, null);
+  } catch (_) {
+    return { gesendet: 0, fehler: "merker" };
+  }
+
+  for (const { f, empfaenger } of zuSenden) {
     bericht.fahrten++;
 
     pushSenden(env, authHeader, execCtx, empfaenger, "busplan", busplanPushText(f, heute));
@@ -18466,17 +18482,36 @@ async function busplanErinnerungslauf(env, authHeader, execCtx) {
 // Merker und Laufbericht in einem Rutsch. Ohne die sichtbare Zeile faellt ein
 // stiller Fehlschlag um 4 Uhr nachts niemandem auf -- der Busplan zeigt sie im
 // Tab Übersicht an.
-async function busplanLaufVermerken(authHeader, merker, ids, jetzt, bericht, fehler) {
+async function busplanLaufVermerken(authHeader, merker, ids, jetzt, bericht, fehler, leerlauf) {
   merker.version = 1;
   merker.ids = busplanMerkerAufraeumen(ids, jetzt);
   if (bericht) {
+    const vorher = (merker.lauf && typeof merker.lauf === "object") ? merker.lauf : {};
+    // ⚠️ Ein Lauf OHNE faellige Fahrt darf die Warnzeilen des letzten echten
+    // Laufs nicht wegwischen. Bis zum 05.09.2026 schrieb der Leerlauf-Zweig
+    // leere Listen -- die Karte "🔔 Bus-Erinnerungen" war am naechsten Morgen
+    // sauber, obwohl niemand eine Nachricht bekommen hat. Ein Lauf, der
+    // wirklich Fahrten verarbeitet und dabei nichts zu melden hat, raeumt die
+    // Listen dagegen richtigerweise.
+    const behalten = !!leerlauf;
+    const ohneTrainer = behalten
+      ? (Array.isArray(vorher.ohneTrainer) ? vorher.ohneTrainer : [])
+      : bericht.ohneTrainer.slice(0, 20);
+    const ohneAdresse = behalten
+      ? (Array.isArray(vorher.ohneAdresse) ? vorher.ohneAdresse : [])
+      : bericht.ohneAdresse.slice(0, 20);
     merker.lauf = {
       zuletztAm: new Date(jetzt).toISOString(),
       fahrten: bericht.fahrten,
       push: bericht.push,
       mails: bericht.mails,
-      ohneTrainer: bericht.ohneTrainer.slice(0, 20),
-      ohneAdresse: bericht.ohneAdresse.slice(0, 20),
+      ohneTrainer,
+      ohneAdresse,
+      // Wann die Warnungen entstanden sind. Ohne das Datum liest sich eine
+      // stehengebliebene Zeile wie die Meldung von heute Nacht.
+      warnungenAm: behalten
+        ? capStr(vorher.warnungenAm || "", 40)
+        : ((ohneTrainer.length || ohneAdresse.length) ? new Date(jetzt).toISOString() : ""),
       fehler: fehler ? capStr(fehler, 200) : ""
     };
   }
