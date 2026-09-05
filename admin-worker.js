@@ -616,6 +616,14 @@ const FOTOAUFTRAEGE_ORDNER_BASIS = "https://nx88695.your-storageshare.de/remote.
 const BELEGE_EINGANG_DIR =
   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/02_Geschäftsstelle/Belege_aus_Belegtool";
 
+// ⚠️ Der Unterordner, in den die Geschaeftsstelle einen bearbeiteten Beleg mit
+// dem Knopf "Erledigt" verschiebt. Der Name steht so in
+// E:\sc-heiligenstadt-budget\geschaeftsstelle.html (getErledigtDir) und in
+// vereinsbudget.html -- zwei Repos, ein Ordnername. Wer ihn dort umbenennt,
+// aendert ihn hier mit, sonst verschwinden die Belege wieder aus dem
+// Fahrtenbuch.
+const BELEGE_ERLEDIGT_ORDNER = "Erledigt";
+
 // Apps, bei denen Schreiben (dav-save/dav-file-put/dav-file-delete) zusätzlich zur
 // reinen Tool-Sichtbarkeit ein explizites Bearbeiten-Recht voraussetzt (editGroupIds,
 // serverseitig über resolveEditPermission geprüft) — nicht nur ein UI-Hinweis wie
@@ -11531,28 +11539,37 @@ async function handleFahrtenbuchBelegeList(request, body, env, authHeader, corsH
   const fahrtId = String(body.fahrtId || "");
   if (!FILE_ID_RE.test(fahrtId)) return json({ error: "Ungültige Fahrt-Id" }, 400, corsHeaders);
 
-  let resp;
-  try {
-    resp = await fetch(BELEGE_EINGANG_DIR, {
-      method: "PROPFIND",
-      headers: { Authorization: authHeader, Depth: "1", "Content-Type": "application/xml" },
-      body: `<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
-    });
-  } catch (e) {
-    throw new NextcloudError("Nextcloud nicht erreichbar: " + e.message);
-  }
-  if (resp.status === 404) return json({ belege: [] }, 200, corsHeaders); // Ordner existiert noch nicht
-  if (resp.status !== 207) throw new NextcloudError(`Nextcloud PROPFIND ${resp.status}`);
-
-  const xml = await resp.text();
+  // ⚠️ ZWEI Ordner. Die Geschaeftsstelle legt einen bearbeiteten Beleg mit dem
+  // Knopf "Erledigt" in den Unterordner "Erledigt" -- danach verschwand er hier
+  // spurlos, obwohl er im Vereinsbudget weiter zur Uebernahme bereitliegt. Im
+  // Fahrtenbuch sah es aus, als haette nie jemand einen Beleg eingereicht.
+  // 404 auf dem Archiv heisst nur "noch nie etwas abgelegt", nicht Fehler.
   const suffix = `_fahrt-${fahrtId}.meta.json`;
-  const hrefs = Array.from(xml.matchAll(/<[a-zA-Z0-9]*:?href>([^<]+)<\/[a-zA-Z0-9]*:?href>/gi))
-    .map((m) => decodeURIComponent(m[1]));
-  const matches = hrefs.filter((href) => href.endsWith(suffix));
+  const treffer = [];
+  for (const dir of [BELEGE_EINGANG_DIR, BELEGE_EINGANG_DIR + "/" + BELEGE_ERLEDIGT_ORDNER]) {
+    let resp;
+    try {
+      resp = await fetch(dir, {
+        method: "PROPFIND",
+        headers: { Authorization: authHeader, Depth: "1", "Content-Type": "application/xml" },
+        body: `<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+      });
+    } catch (e) {
+      throw new NextcloudError("Nextcloud nicht erreichbar: " + e.message);
+    }
+    if (resp.status === 404) continue;   // Ordner existiert noch nicht
+    if (resp.status !== 207) throw new NextcloudError(`Nextcloud PROPFIND ${resp.status}`);
+
+    const xml = await resp.text();
+    const hrefs = Array.from(xml.matchAll(/<[a-zA-Z0-9]*:?href>([^<]+)<\/[a-zA-Z0-9]*:?href>/gi))
+      .map((m) => decodeURIComponent(m[1]));
+    hrefs.filter((href) => href.endsWith(suffix))
+      .forEach((href) => treffer.push({ href, dir, erledigt: dir !== BELEGE_EINGANG_DIR }));
+  }
 
   const belege = [];
-  for (const href of matches) {
-    const fileUrl = new URL(href, BELEGE_EINGANG_DIR).href;
+  for (const { href, dir, erledigt } of treffer) {
+    const fileUrl = new URL(href, dir.endsWith("/") ? dir : dir + "/").href;
     const fileResp = await fetch(fileUrl, { headers: { Authorization: authHeader } });
     if (!fileResp.ok) continue; // einzelner Lesefehler soll nicht die ganze Liste kippen
     let meta;
@@ -11568,6 +11585,10 @@ async function handleFahrtenbuchBelegeList(request, body, env, authHeader, corsH
       amount: typeof meta.amount === "number" ? meta.amount : null,
       desc: capStr(meta.desc, 200),
       name: capStr(meta.name, 200),
+      // Additiv. Der Client kann damit sagen, dass die Geschaeftsstelle den
+      // Beleg schon bearbeitet hat -- ein aelterer Client ignoriert es und
+      // zeigt ihn wie jeden anderen an, was immer noch besser ist als gar nicht.
+      erledigt,
       files
     });
   }
@@ -11597,14 +11618,21 @@ async function handleFahrtenbuchBelegFileGet(request, body, env, authHeader, cor
     return json({ error: "Ungültiger Dateiname" }, 400, corsHeaders);
   }
 
-  const fileUrl = BELEGE_EINGANG_DIR + "/" + encodeURIComponent(fileName);
-  let resp;
-  try {
-    resp = await fetch(fileUrl, { method: "GET", headers: { Authorization: authHeader } });
-  } catch (_) {
-    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  // ⚠️ Zweiter Leseversuch im Archiv -- dieselbe Begruendung wie in
+  // handleFahrtenbuchBelegeList. Ohne ihn liefe der Knopf "Beleg anzeigen" bei
+  // jedem bereits bearbeiteten Beleg ins 404, obwohl die Datei da ist.
+  // Der Dateiname ist oben gegen den Fahrt-Suffix geprueft und enthaelt weder
+  // "/" noch "..", der Archivpfad ist also genauso eng wie der Eingangspfad.
+  let resp = null;
+  for (const dir of [BELEGE_EINGANG_DIR, BELEGE_EINGANG_DIR + "/" + BELEGE_ERLEDIGT_ORDNER]) {
+    try {
+      resp = await fetch(dir + "/" + encodeURIComponent(fileName), { method: "GET", headers: { Authorization: authHeader } });
+    } catch (_) {
+      return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+    }
+    if (resp.status !== 404) break;
   }
-  if (resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+  if (!resp || resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
   if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
   const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
   return new Response(resp.body, {
