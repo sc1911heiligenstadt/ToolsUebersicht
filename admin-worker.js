@@ -20087,7 +20087,7 @@ function fcTageAusZeitraum(von, bis) {
 // ⚠️ Ein wegfallender Tag, auf dem noch jemand eingetragen ist, wird NICHT
 // stillschweigend entfernt -- sonst zieht man einem Helfer den Termin unter den
 // Fuessen weg, ohne dass es jemand merkt. Stattdessen ein Fehler mit Begruendung.
-function fcTageAngleichen(camp, von, bis) {
+function fcTageAngleichen(camp, doc, von, bis) {
   const soll = fcTageAusZeitraum(von, bis);
   const vorhanden = new Set((camp.tage || []).map((t) => t.datum));
   const sollSet = new Set(soll);
@@ -20110,7 +20110,13 @@ function fcTageAngleichen(camp, von, bis) {
     if (vorhanden.has(datum)) return;
     // Neue Tage bekommen die Aufgaben aus dem Katalog als eigene Kopie -- damit
     // ein verlaengertes Camp nicht mit leeren Tagen dasteht.
-    camp.tage.push({ datum, jobs: [] });
+    // ⚠️ Bis zum 05.09.2026 stand hier `jobs: []`, direkt unter diesem Kommentar.
+    // fcJobsAusKatalog lief nur im if(neu)-Sonderweg von handleFcCampSpeichern:
+    // ein VERLAENGERTES Camp bekam Tage ganz ohne Aufgaben, und die Kennzahl
+    // "Aufgaben offen" meldete trotzdem null, weil es dort nichts zu besetzen
+    // gab. Jetzt gilt fuer neue Camps und fuer nachtraeglich dazugekommene Tage
+    // dieselbe Regel, und der Sonderweg ist entfallen.
+    camp.tage.push({ datum, jobs: fcJobsAusKatalog(doc, camp, datum) });
     dazu++;
   });
   camp.tage.sort((a, b) => String(a.datum).localeCompare(String(b.datum)));
@@ -21193,10 +21199,11 @@ async function handleFcCampSpeichern(request, body, env, authHeader, corsHeaders
         throw new FcFehler(`Es sind bereits ${belegt} Kinder angemeldet — weniger als ${belegt} Plätze gehen nicht.`, 409);
       }
 
-      const tageInfo = fcTageAngleichen(camp, von, bis);
-      // Nur bei einem NEUEN Camp den Katalog auf die Tage kopieren. Bei einem
-      // bestehenden waere das eine zweite Runde derselben Aufgaben.
-      if (neu) camp.tage.forEach((t) => { t.jobs = fcJobsAusKatalog(doc, camp, t.datum); });
+      // fcTageAngleichen legt jeden NEU dazukommenden Tag mit dem Katalog an --
+      // bei einem neuen Camp sind das alle, bei einem verlaengerten genau die
+      // angehaengten. Der frueher hier stehende if(neu)-Sonderweg ist deshalb
+      // entfallen; er liess verlaengerte Camps mit leeren Tagen zurueck.
+      const tageInfo = fcTageAngleichen(camp, doc, von, bis);
 
       camp.name = name;
       camp.ort = capStr(roh.ort, 120).trim();
