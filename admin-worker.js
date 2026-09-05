@@ -13475,6 +13475,10 @@ const PUNKTE_PRO_TAT = 3;
 // wuerdigen soll.
 const PUNKTE_TAGESDECKEL = 100;
 const PUNKTE_ROHDATEN_MONATE = 13;
+// Wie viele Monate ein einzelner Abruf hoechstens verdichtet. Deckel gegen den
+// Erstlauf ueber einen gewachsenen Altbestand -- der Rest kommt beim naechsten
+// Abruf dran, gemerkt in `saldo.verdichtetBis`.
+const PUNKTE_VERDICHTUNG_FENSTER = 24;
 const PUNKTE_PROTOKOLL_TAGE = 30;
 
 // Boni (seit Regelversion 3, Michel-Vorgabe vom 2026-08-04).
@@ -13868,6 +13872,11 @@ function punkteMonatMinus(monat, n) {
   return String(nj).padStart(4, "0") + "-" + String(nm).padStart(2, "0");
 }
 
+// Gegenstueck fuer den Verdichtungslauf, der vorwaerts durch die Monate geht.
+function punkteMonatPlus(monat, n) {
+  return punkteMonatMinus(monat, -n);
+}
+
 function aktivitaetNutzerDir(username) {
   return AKTIVITAET_DIR + "/" + username;
 }
@@ -14174,11 +14183,33 @@ async function punkteStand(username, env, authHeader, mitProtokoll) {
     // Monate faellt, saehe nie ihre volle Zahl an Werkzeugen.
     if (doc) saldo.wochen = punkteWochenVereinen(saldo.wochen, punkteWochenAusEreignissen(doc.ereignisse));
     saldoGeaendert = true;
-    // Verdichtung: die Rohdatei dieses Monats faellt aus dem Aufbewahrungsfenster,
-    // sobald ihr Wert im Saldo steht und sie alt genug ist.
-    if (doc && i >= PUNKTE_ROHDATEN_MONATE) {
-      await aktivitaetRohdateiLoeschen(username, monat, authHeader);
+  }
+
+  // ⚠️ Die Verdichtung hing bis zum 05.09.2026 IN der Schleife darueber, an der
+  // Bedingung `i >= PUNKTE_ROHDATEN_MONATE`. Die Schleife bricht aber beim
+  // ersten Monat ab, der schon im Saldo steht -- und wer den Konto-Tab einmal
+  // im Monat oeffnet, hat den Vormonat immer schon drin. `i` erreichte ab dem
+  // zweiten Nutzungsmonat nie wieder mehr als 2, die Loeschung lief also nie.
+  // Der Info-Tab sagt aber woertlich zu, dass Einzelaufzeichnungen nach 13
+  // Monaten geloescht werden (index.html:391).
+  //
+  // Jetzt laeuft sie unabhaengig vom Nachtragen und merkt sich in
+  // `saldo.verdichtetBis`, bis zu welchem Monat schon aufgeraeumt wurde --
+  // sonst muesste jeder Abruf ueber die ganze Vergangenheit laufen.
+  const verdichtungsZiel = punkteMonatMinus(aktuellerMonat, PUNKTE_ROHDATEN_MONATE);
+  if (String(saldo.verdichtetBis || "") < verdichtungsZiel) {
+    // Beim ersten Lauf gibt es keinen Merker -- dann nur ein begrenztes Fenster
+    // rueckwaerts, damit ein Altbestand den Aufruf nicht in die Worker-Laufzeit
+    // treibt. Was aelter ist, holt der naechste Abruf.
+    const von = String(saldo.verdichtetBis || "")
+      ? punkteMonatPlus(saldo.verdichtetBis, 1)
+      : punkteMonatMinus(verdichtungsZiel, PUNKTE_VERDICHTUNG_FENSTER - 1);
+    for (let m = von, n = 0; m <= verdichtungsZiel && n < PUNKTE_VERDICHTUNG_FENSTER;
+         m = punkteMonatPlus(m, 1), n++) {
+      await aktivitaetRohdateiLoeschen(username, m, authHeader);
     }
+    saldo.verdichtetBis = verdichtungsZiel;
+    saldoGeaendert = true;
   }
 
   const aktuellDoc = await readJson(aktivitaetMonatUrl(username, aktuellerMonat), authHeader, null);
