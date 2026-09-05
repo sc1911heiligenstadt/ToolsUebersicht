@@ -519,6 +519,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.6",
+    groups: [
+      {
+        title: "Einstellungen am Handy: die Seite verrutscht nicht mehr zur Seite",
+        items: [
+          "In der Pflegeliste der Neuigkeiten genügte ein einziges langes deutsches Wort — „Führungszeugnisbestätigungen“ oder auch nur ein verknüpftes Werkzeug mit langem Namen —, damit die ganze Einstellungen-Seite am Handy seitlich überlief und sich waagerecht verschieben ließ.",
+          "Die Textspalte darf jetzt umbrechen, so wie es bei den Rückmeldungen und den Links längst der Fall war."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.5",
     groups: [
       {

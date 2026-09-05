@@ -791,8 +791,17 @@ a.news-item:hover .news-item-title, .news-item-klick:hover .news-item-title { te
 .news-badge-update  { color: var(--blue);  background: var(--blue-light); }
 .news-badge-fix     { color: var(--gold);  background: var(--gold-light); }
 .news-badge-hinweis { color: var(--muted); background: var(--gray); }
-.news-admin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+/* ⚠️ flex-wrap plus eine Basisbreite am Textteil -- dieselbe Gegenmassnahme wie
+   bei .feedback-admin-main (:951) und .links-admin-main (:2489). Ohne sie kann
+   die Textspalte nicht unter ihre min-content-Breite schrumpfen (die bestimmt
+   das laengste Wort, gemessen 180 px), waehrend der Knopfblock mit
+   flex-shrink: 0 feste 177 px belegt: 180 + 12 + 177 = 369 px Mindestbreite bei
+   rund 303 px Platz. Die GANZE Seite lief dann seitlich ueber, nicht nur die
+   Zeile -- gemessen 441 statt 375 px, schon bei einer einzigen Meldung mit
+   einem deutschen Zusammensetzungswort darin. */
+.news-admin-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
 .news-admin-row:first-child { border-top: none; }
+.news-admin-main { flex: 1 1 260px; min-width: 0; }
 .news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
 #news-form textarea { width: 100%; }
 /* position: relative ist der Bezugspunkt fuer die Namensliste unten -- sie wird per
