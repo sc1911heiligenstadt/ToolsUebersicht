@@ -19727,10 +19727,36 @@ async function fcMailsHaeppchenweise(liste, sende) {
 //
 // ⚠️ Geschrieben wird NUR im Fehlerfall -- eine normale Nacht soll keinen
 // zweiten Schreibvorgang kosten.
+// Schreibt einen Teillauf in d.lauf -- und HAENGT AN, wenn in derselben Nacht
+// schon einer drinsteht.
+//
+// ⚠️ Der naechtliche Lauf ruft vier Teillaeufe hintereinander
+// (autoSchliessen, start, zahlung, feedback), und alle schrieben in DASSELBE
+// Feld. Bis zum 05.09.2026 ueberschrieb der naechste den vorigen ersatzlos:
+// blieb der Start-Versand haengen und lief danach die Zahlungserinnerung sauber
+// durch, stand in der Verwaltung nur noch "zahlung: 2 Erinnerungen". Der
+// Ausfall der drei Start-Mails war damit vollstaendig unsichtbar -- und weil
+// der Merker schon steht, bekommen diese Familien nie wieder Post. Der
+// Lauf-Eintrag ist die einzige Stelle, an der man das sehen kann; genau er ging
+// verloren.
+//
+// Zusammengefasst wird nach KALENDERTAG (Europe/Berlin), nicht nach Lauf: ein
+// Lauf hat keine Kennung, und zwei Naechte sollen sich nicht vermischen.
+function fcLaufAnhaengen(d, text) {
+  const jetzt = new Date().toISOString();
+  const alt = (d.lauf && typeof d.lauf === "object") ? d.lauf : null;
+  const gleicherTag = !!(alt && String(alt.zuletztAm || "").slice(0, 10) === jetzt.slice(0, 10));
+  const vorher = gleicherTag ? String(alt.ergebnis || "").trim() : "";
+  d.lauf = {
+    zuletztAm: jetzt,
+    ergebnis: capStr(vorher ? (vorher + " · " + text) : text, 600)
+  };
+}
+
 async function fcLaufFehlschlagVermerken(authHeader, text) {
   try {
     await fcMutiere(authHeader, (d) => {
-      d.lauf = { zuletztAm: new Date().toISOString(), ergebnis: text };
+      fcLaufAnhaengen(d, text);
       return {};
     });
   } catch (e) {
@@ -23376,7 +23402,7 @@ async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
       const a = (camp.anmeldungen || []).find((x) => x.id === f.a.id);
       if (a) a[f.feld] = jetzt;
     });
-    d.lauf = { zuletztAm: jetzt, ergebnis: `${art}: ${faellig.length} Erinnerungen` };
+    fcLaufAnhaengen(d, `${art}: ${faellig.length} Erinnerungen`);
     return {};
   });
 
@@ -23467,7 +23493,7 @@ async function fcFeedbackLauf(env, authHeader, nurCampId) {
       const a = (camp.anmeldungen || []).find((x) => x.id === f.a.id);
       if (a) a.feedbackGebetenAm = jetzt;
     });
-    d.lauf = { zuletztAm: jetzt, ergebnis: `feedback: ${faellig.length} Bögen` };
+    fcLaufAnhaengen(d, `feedback: ${faellig.length} Bögen`);
     return {};
   });
 
