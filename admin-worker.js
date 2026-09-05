@@ -206,7 +206,7 @@
 //     Bearbeitern vorbehalten, ABSTIMMEN muss aber jeder dürfen, der den Termin sieht — sonst stimmt die
 //     Geschäftsstelle mit sich selbst ab. Schreibt ausschließlich umfrage.stimmen[<Token-Nutzer>][candId] eines
 //     einzelnen Termins und spiegelt dafür die Sichtbarkeitsregel für Privattermine serverseitig.
-//   POST { action: "vereinskalender-benachrichtigung-planen", terminId, art, neu[], bestehend[], inhaltGeaendert } (Bearbeiter) -> { ok, faelligAb, wartetMin }
+//   POST { action: "vereinskalender-benachrichtigung-planen", terminId, art, neu[], bestehend[], gruppenNeu[], gruppenBestehend[], inhaltGeaendert } (Bearbeiter) -> { ok, faelligAb, wartetMin }
 //     Legt Mail und Push für einen Termin in den Postausgang, statt sie sofort zu verschicken — abgeholt wird im
 //     Fünf-Minuten-Lauf, sobald das Sammelfenster (10 Min ab der letzten Änderung) abgelaufen ist. Michel-Wunsch
 //     vom 2026-09-02: wer einen Termin nach dem Anlegen noch dreimal nachbessert, soll EINE Nachricht mit dem
@@ -26125,6 +26125,52 @@ function vkPostNamenListe(roh) {
   return out.slice(0, 200);
 }
 
+// Dasselbe fuer Gruppen-Ids. Eigene Funktion, weil eine Gruppen-Id KEIN
+// Nutzername ist -- normalizeUsername wuerde Leerzeichen in Punkte verwandeln
+// und die Id damit verbiegen.
+function vkPostGruppenListe(roh) {
+  const out = [];
+  const gesehen = Object.create(null);
+  for (const x of (Array.isArray(roh) ? roh : [])) {
+    const id = capStr(x, 80).trim();
+    if (!id || gesehen[id]) continue;
+    gesehen[id] = true;
+    out.push(id);
+  }
+  return out.slice(0, 50);
+}
+
+// Die Mitglieder einer Gruppenliste, als Nutzernamen.
+//
+// ⚠️ Dieselben drei Ausschluesse wie im oeffentlichen Weg von
+// vkPostEintragVerschicken: keine archivierten Konten, keine Spielerkonten, und
+// nie der Ausloeser selbst.
+//
+// ⚠️ Die Mitgliedschaft steht an der GRUPPE (memberUsernames), nicht am Konto --
+// dieselbe Richtung wie getUserGroupIds. Ein `u.groupIds` gibt es in
+// nutzer.json nicht; wer danach fragt, bekommt lautlos eine leere Liste und
+// haette den Fehler damit nur verschoben.
+function vkPostGruppenMitglieder(gruppenIds, usersDoc, ausloeser) {
+  const ids = Array.isArray(gruppenIds) ? gruppenIds : [];
+  if (!ids.length) return [];
+  const users = (usersDoc && usersDoc.users) || {};
+  const groups = (usersDoc && usersDoc.groups) || {};
+  const raus = [];
+  const gesehen = Object.create(null);
+  for (const g of Object.values(groups)) {
+    if (!g || ids.indexOf(g.id) === -1) continue;
+    for (const roh of (Array.isArray(g.memberUsernames) ? g.memberUsernames : [])) {
+      const name = normalizeUsername(String(roh || ""));
+      if (!name || name === ausloeser || gesehen[name]) continue;
+      const u = getOwn(users, name);
+      if (!u || u.archiviert || !istPersonal(u)) continue;
+      gesehen[name] = true;
+      raus.push(name);
+    }
+  }
+  return raus;
+}
+
 // Read-modify-write auf der Postausgangsdatei. Eigene Datei statt eines Feldes
 // im Termin: die Warteschlange ist Steuerung, kein Termininhalt, und
 // vereinskalender.json wird von Client, Fussballcamp-Abgleich und Abstimmweg
@@ -26174,6 +26220,13 @@ async function handleVkBenachrichtigungPlanen(request, body, env, authHeader, co
   const artNeu = !(body && body.art === "geaendert");
   const neu = vkPostNamenListe(body && body.neu);
   const bestehend = vkPostNamenListe(body && body.bestehend);
+  // ⚠️ Ein privater Termin laesst sich auf ZWEI Wegen teilen: einzelne Personen
+  // (geteiltUsers) und ganze Gruppen (geteiltGruppen). Bis zum 05.09.2026 kannte
+  // die Benachrichtigung nur den ersten -- ein Termin, der nur an eine Gruppe
+  // ging, loeste weder Mail noch Push aus. Sichtbar war er sehr wohl; wer ihn
+  // nicht von sich aus im Kalender suchte, erfuhr nie von ihm.
+  const gruppenNeu = vkPostGruppenListe(body && body.gruppenNeu);
+  const gruppenBestehend = vkPostGruppenListe(body && body.gruppenBestehend);
   const inhaltGeaendert = !!(body && body.inhaltGeaendert);
   const ausloeser = normalizeUsername(session.username);
   const u = getOwn(session.usersDoc.users, session.username) || {};
@@ -26196,6 +26249,8 @@ async function handleVkBenachrichtigungPlanen(request, body, env, authHeader, co
         ausloeserName,
         neu,
         bestehend: bestehend.filter((x) => neu.indexOf(x) === -1),
+        gruppenNeu,
+        gruppenBestehend: gruppenBestehend.filter((x) => gruppenNeu.indexOf(x) === -1),
         inhaltGeaendert
       });
       return { geplant: true, faelligAb: faelligIso };
@@ -26215,6 +26270,10 @@ async function handleVkBenachrichtigungPlanen(request, body, env, authHeader, co
     alt.neu = vkPostNamenListe((alt.neu || []).concat(neu));
     alt.bestehend = vkPostNamenListe((alt.bestehend || []).concat(bestehend))
       .filter((x) => alt.neu.indexOf(x) === -1);
+    // Gruppen genauso zusammenfuehren, "neu" gewinnt gegen "bestehend".
+    alt.gruppenNeu = vkPostGruppenListe((alt.gruppenNeu || []).concat(gruppenNeu));
+    alt.gruppenBestehend = vkPostGruppenListe((alt.gruppenBestehend || []).concat(gruppenBestehend))
+      .filter((x) => alt.gruppenNeu.indexOf(x) === -1);
     // Die Uhr laeuft neu -- aber nie ueber den Deckel hinaus.
     const deckel = Date.parse(String(alt.spaetestensAb || ""));
     alt.faelligAb = (Number.isFinite(deckel) && deckel < jetzt + VK_POST_WARTE_MIN * 60000)
@@ -26325,10 +26384,31 @@ async function vkPostEintragVerschicken(eintrag, kalender, usersDoc, trainerdate
   // ⚠️ Gegen den AKTUELLEN Stand gefiltert -- wer im Wartefenster wieder
   // ausgetragen wurde, bekommt nichts mehr. Ohne diese Zeile verschickte das
   // Fenster genau das, was es verhindern soll.
-  const jetztGeteilt = Array.isArray(t.geteiltUsers) ? t.geteiltUsers.map(normalizeUsername) : [];
-  const neu = (eintrag.neu || []).filter((u) => jetztGeteilt.indexOf(u) !== -1);
+  //
+  // ⚠️ Geteilt wird auf ZWEI Wegen: einzelne Personen (geteiltUsers) und ganze
+  // Gruppen (geteiltGruppen). Bis zum 05.09.2026 stand hier nur der erste --
+  // ein Termin, der nur an eine Gruppe ging, kam als "keine-empfaenger" heraus:
+  // kein Fehler, kein Log, keine Zahl. Sichtbar war er sehr wohl (der Client
+  // prueft geteiltGruppen gegen die eigenen Gruppen), und die README sagt
+  // ausdruecklich zu, dass die Beteiligten eine Mail bekommen.
+  //
+  // Aufgeloest wird HIER und nicht im Client: nur der Worker kennt nutzer.json
+  // verlaesslich, und die Mitgliedschaft kann sich im Wartefenster aendern.
+  const ausloeser = normalizeUsername(String(eintrag.ausloeser || ""));
+  const ausGruppen = vkPostGruppenMitglieder(t.geteiltGruppen, usersDoc, ausloeser);
+  const jetztGeteilt = (Array.isArray(t.geteiltUsers) ? t.geteiltUsers.map(normalizeUsername) : [])
+    .concat(ausGruppen);
+  // Wer ueber eine NEU hinzugekommene Gruppe dazukam, bekommt die Einladung;
+  // wer ueber eine schon vorher gesetzte drin ist, die Aenderungsmeldung.
+  const neuAusGruppen = vkPostGruppenMitglieder(eintrag.gruppenNeu, usersDoc, ausloeser);
+  const bestehendAusGruppen = vkPostGruppenMitglieder(eintrag.gruppenBestehend, usersDoc, ausloeser);
+  const neu = vkPostNamenListe((eintrag.neu || []).concat(neuAusGruppen))
+    .filter((u) => jetztGeteilt.indexOf(u) !== -1);
   const bestehend = eintrag.inhaltGeaendert
-    ? (eintrag.bestehend || []).filter((u) => jetztGeteilt.indexOf(u) !== -1)
+    ? vkPostNamenListe((eintrag.bestehend || []).concat(bestehendAusGruppen))
+        .filter((u) => jetztGeteilt.indexOf(u) !== -1)
+        // Wer schon in `neu` steht, bekommt die Einladung -- nicht beides.
+        .filter((u) => neu.indexOf(u) === -1)
     : [];
   if (!neu.length && !bestehend.length) return { verworfen: "keine-empfaenger" };
 
