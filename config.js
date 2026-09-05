@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.7",
+    groups: [
+      {
+        title: "Rückmeldungen gehen nicht mehr verloren",
+        items: [
+          "Wer als Administrator den Feedback-Bereich offen liegen ließ und danach einen Haken setzte, löschte damit jede Rückmeldung, die in der Zwischenzeit eingegangen war. Das passierte lautlos: der Einreicher sah sie danach nicht mehr in „Meine Einreichungen“, und der Administrator hat sie nie zu Gesicht bekommen.",
+          "Jetzt merkt sich die Seite, was beim Öffnen dastand, und der Server trägt alles nach, was seither dazugekommen ist. Ein bewusst gelöschter Eintrag bleibt gelöscht.",
+          "Dasselbe gilt für gleichzeitige Einreichungen und für eine Antwort, die geschrieben wird, während jemand anders speichert."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.6",
     groups: [
       {

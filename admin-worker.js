@@ -7290,19 +7290,30 @@ async function handleSubmitFeedback(request, body, env, authHeader, corsHeaders)
   };
   if (toolId) entry.toolId = toolId;
 
-  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
-  doc.version = doc.version || 1;
-  doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-  doc.entries.push(entry);
-  if (doc.entries.length > 500) doc.entries = doc.entries.slice(doc.entries.length - 500);
+  // ⚠️ If-Match mit drei Versuchen -- wie bei den Ideen, und aus demselben
+  // Grund: feedback.json hat ZWEI Sorten Schreiber (jeder Angemeldete haengt
+  // hier an, der Admin ersetzt in save-feedback das ganze Array). Ohne rev
+  // schrieb ein gleichzeitiger Admin-Klick diese Einreichung wieder weg --
+  // lautlos, denn niemand hat sie je gesehen.
+  for (let versuch = 0; versuch < 3; versuch++) {
+    jsonCache.delete(FEEDBACK_URL);
+    const { data: roh, rev } = await readJsonWithRev(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+    jsonCache.delete(FEEDBACK_URL);
+    const doc = (roh && typeof roh === "object") ? roh : { version: 1, entries: [] };
+    doc.version = doc.version || 1;
+    doc.entries = Array.isArray(doc.entries) ? doc.entries.slice() : [];
+    doc.entries.push(entry);
+    if (doc.entries.length > 500) doc.entries = doc.entries.slice(doc.entries.length - 500);
 
-  try {
-    await writeJson(FEEDBACK_URL, authHeader, doc);
-  } catch (e) {
-    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    try {
+      await writeJson(FEEDBACK_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
   }
-
-  return json({ ok: true }, 200, corsHeaders);
+  return json({ error: "Rückmeldung konnte nicht gespeichert werden" }, 502, corsHeaders);
 }
 
 async function handleListFeedback(request, env, authHeader, corsHeaders) {
@@ -7326,6 +7337,15 @@ async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
   if (!Array.isArray(body.entries)) {
     return json({ error: "Ungültige Daten" }, 400, corsHeaders);
   }
+
+  // ⚠️ `bekannt` ist die Liste der Ids, die der Client beim Laden gesehen hat.
+  // Sie ist die einzige Angabe, mit der sich "vom Admin geloescht" von
+  // "waehrenddessen neu eingegangen" unterscheiden laesst -- beide fehlen im
+  // zurueckgeschickten Array. Ohne sie (alter Browser-Tab) bleibt es beim
+  // bisherigen Vollersatz; das ist der Stand von vorher, nicht schlechter.
+  const bekannt = Array.isArray(body.bekannt)
+    ? new Set(body.bekannt.map((x) => String(x || "")))
+    : null;
 
   const clean = [];
   for (const f of body.entries.slice(0, 500)) {
@@ -7358,14 +7378,41 @@ async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
     clean.push(item);
   }
 
-  const doc = { version: 1, entries: clean };
-  try {
-    await writeJson(FEEDBACK_URL, authHeader, doc);
-  } catch (e) {
-    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
-  }
+  // ⚠️ Diese Aktion ERSETZT das ganze Array mit dem Stand, den der Browser des
+  // Admins beim Oeffnen des Tabs geladen hat. Bis zum 05.09.2026 geschah das
+  // ohne If-Match: wer den Tab offen liegen liess, telefonierte und danach
+  // einen alten Eintrag abhakte, loeschte damit jede Rueckmeldung, die
+  // inzwischen eingegangen war -- lautlos. Der Einreicher sah sie in "Meine
+  // Einreichungen" bis dahin und danach nie wieder, der Admin nie.
+  //
+  // Zwei Schichten dagegen: If-Match mit drei Versuchen, und beim erneuten
+  // Lesen werden die Eintraege, die der Client GAR NICHT KANNTE, aus dem
+  // frischen Stand uebernommen. Sie stehen hinten, in ihrer eigenen
+  // Reihenfolge -- sortiert wird ohnehin im Client.
+  for (let versuch = 0; versuch < 3; versuch++) {
+    jsonCache.delete(FEEDBACK_URL);
+    const { data: frisch, rev } = await readJsonWithRev(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+    jsonCache.delete(FEEDBACK_URL);
 
-  return json({ entries: doc.entries }, 200, corsHeaders);
+    let eintraege = clean;
+    if (bekannt) {
+      const gesendet = new Set(clean.map((f) => String(f.id)));
+      const dazwischen = (frisch && Array.isArray(frisch.entries) ? frisch.entries : [])
+        .filter((f) => f && !bekannt.has(String(f.id)) && !gesendet.has(String(f.id)));
+      eintraege = clean.concat(dazwischen);
+    }
+    if (eintraege.length > 500) eintraege = eintraege.slice(eintraege.length - 500);
+
+    const doc = { version: 1, entries: eintraege };
+    try {
+      await writeJson(FEEDBACK_URL, authHeader, doc, rev || undefined);
+      return json({ entries: doc.entries }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Rückmeldungen konnten nicht gespeichert werden" }, 502, corsHeaders);
 }
 
 // Antwort an GENAU einen Eintrag (Admin) plus Push an den Einreicher.
@@ -7388,31 +7435,51 @@ async function handleFeedbackAntwort(request, body, env, authHeader, corsHeaders
   if (!/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
   const text = String(body.text || "").trim().slice(0, 2000);
 
-  const doc = await datei();
-  doc.version = doc.version || 1;
-  doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-
-  const eintrag = doc.entries.find((f) => f && String(f.id) === id);
-  if (!eintrag) return json({ error: "Eintrag nicht gefunden" }, 404, corsHeaders);
+  // Der vorab gestartete Read dient nur noch dazu, frueh 404 zu erkennen; der
+  // Schreibweg liest gleich noch einmal MIT rev (siehe unten).
+  const vorab = await datei();
+  if (!(vorab && Array.isArray(vorab.entries) && vorab.entries.some((f) => f && String(f.id) === id))) {
+    return json({ error: "Eintrag nicht gefunden" }, 404, corsHeaders);
+  }
 
   const antworter = getOwn(session.usersDoc.users, session.username) || {};
-  if (text) {
-    eintrag.antwort = text;
-    eintrag.antwortVon = (antworter.vorname && antworter.nachname)
-      ? `${antworter.vorname} ${antworter.nachname}`
-      : session.username;
-    eintrag.antwortAm = new Date().toISOString();
-  } else {
-    delete eintrag.antwort;
-    delete eintrag.antwortVon;
-    delete eintrag.antwortAm;
-  }
+  // ⚠️ If-Match mit drei Versuchen -- bis zum 05.09.2026 stand hier bewusst ein
+  // unbedingtes writeJson ("akzeptiertes Race-Risiko"). Das Risiko war groesser
+  // als der Kommentar sagte: der Gegner ist nicht eine zweite Antwort, sondern
+  // save-feedback, das dieselbe Datei VOLLSTAENDIG ersetzt.
+  let eintrag = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    jsonCache.delete(FEEDBACK_URL);
+    const { data: roh, rev } = await readJsonWithRev(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+    jsonCache.delete(FEEDBACK_URL);
+    const doc = (roh && typeof roh === "object") ? roh : { version: 1, entries: [] };
+    doc.version = doc.version || 1;
+    doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
 
-  try {
-    await writeJson(FEEDBACK_URL, authHeader, doc); // unconditional, wie handleSubmitFeedback -- akzeptiertes Race-Risiko
-  } catch (e) {
-    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    eintrag = doc.entries.find((f) => f && String(f.id) === id);
+    if (!eintrag) return json({ error: "Eintrag nicht gefunden" }, 404, corsHeaders);
+
+    if (text) {
+      eintrag.antwort = text;
+      eintrag.antwortVon = (antworter.vorname && antworter.nachname)
+        ? `${antworter.vorname} ${antworter.nachname}`
+        : session.username;
+      eintrag.antwortAm = new Date().toISOString();
+    } else {
+      delete eintrag.antwort;
+      delete eintrag.antwortVon;
+      delete eintrag.antwortAm;
+    }
+
+    try {
+      await writeJson(FEEDBACK_URL, authHeader, doc, rev || undefined);
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) { eintrag = null; continue; }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
   }
+  if (!eintrag) return json({ error: "Antwort konnte nicht gespeichert werden" }, 502, corsHeaders);
 
   // ⚠️ Der Empfaenger kommt aus dem EINTRAG, nie aus dem Request -- sonst
   // koennte ein Admin die Aktion als beliebigen Nachrichtenversand benutzen.

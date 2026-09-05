@@ -125,6 +125,12 @@ let _ansichtSaveLaeuft = false;  // In-Flight-Guard: waehrend ein Speichern laeu
 let _ansichtSaveNachholen = false; // waehrend des laufenden Speicherns kam eine weitere Aenderung
 let ansichtVomServer = false;    // hat meine-ansicht geantwortet? sonst greift der Zwischenspeicher
 let feedbackState = []; // Feedback-/Wunsch-Einträge, nur für eingeloggte Admins geladen (siehe loadAndRenderFeedback)
+// ⚠️ Die Ids, die beim Laden dastanden. `save-feedback` ersetzt serverseitig das
+// GANZE Array — ohne diese Liste kann der Worker „vom Admin gelöscht" nicht von
+// „inzwischen neu eingegangen" unterscheiden, beide fehlen im zurückgeschickten
+// Stand. Wer den Tab offen liegen lässt und danach einen Haken setzt, löschte
+// sonst jede Rückmeldung, die in der Zwischenzeit ankam (siehe persistFeedback).
+let feedbackBekannteIds = [];
 
 function defaultVisibility() {
   const map = {};
@@ -7030,6 +7036,7 @@ async function loadAndRenderFeedback(vorabP) {
   try {
     const data = await (vorabP || callWorker("list-feedback", {}));
     feedbackState = Array.isArray(data.entries) ? data.entries : [];
+    feedbackBekannteIds = feedbackState.map((f) => String(f && f.id));
     renderFeedbackAdmin();
   } catch (e) {
     errorEl.textContent = e.message;
@@ -7141,8 +7148,16 @@ async function persistFeedback(prevOnError) {
   errorEl.style.display = "none";
   successEl.style.display = "none";
   try {
-    const res = await callWorker("save-feedback", { entries: feedbackState });
+    // ⚠️ `bekannt` MUSS mit. Der Worker übernimmt daran alles, was seit dem
+    // Laden dazugekommen ist, in den neuen Stand — sonst wirft dieser
+    // Vollersatz jede zwischenzeitliche Einreichung weg.
+    const res = await callWorker("save-feedback", { entries: feedbackState, bekannt: feedbackBekannteIds });
     if (res && Array.isArray(res.entries)) feedbackState = res.entries;
+    // Der Server hat gerade geantwortet, was jetzt dasteht — das ist der neue
+    // Stand des Wissens. Ohne diese Zeile gälte beim nächsten Speichern noch
+    // die Liste vom Öffnen des Tabs, und ein eben gelöschter Eintrag käme
+    // zurück.
+    feedbackBekannteIds = feedbackState.map((f) => String(f && f.id));
     renderFeedbackAdmin();
     successEl.style.display = "block";
   } catch (err) {
