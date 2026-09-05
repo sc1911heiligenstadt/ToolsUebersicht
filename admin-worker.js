@@ -13362,7 +13362,12 @@ function rundAuswahlDaten(abosDoc, usersDoc) {
 // uebrigen Push-Aktionen melden nur die in Frage Kommenden zurueck -- hier
 // waere das irrefuehrend, weil vor dem Absenden gerade die echte Reichweite die
 // Frage ist ("gehen jetzt 60 Handys an oder 3?").
-function rundErreichbar(doc, empfaenger) {
+// ⚠️ `anlass` ist seit dem 05.09.2026 ein Parameter, kein fest verdrahteter
+// Wert mehr. Die Rundnachricht laeuft weiter unter "mitteilung" (Vorgabe); die
+// Spieltagscrew fragt mit ihrem eigenen Anlass, sonst zaehlte sie Leute mit,
+// die genau DIESEN Schalter ausgeschaltet haben.
+function rundErreichbar(doc, empfaenger, anlass) {
+  const anl = anlass || "mitteilung";
   let personen = 0;
   let geraete = 0;
   const wer = [];
@@ -13380,7 +13385,7 @@ function rundErreichbar(doc, empfaenger) {
     // fuer den Absender ist beides derselbe Fall -- diese Person erreicht er
     // nicht. Die Unterscheidung waere zudem eine Aussage darueber, wer die
     // Benachrichtigungen absichtlich abgestellt hat, und das geht niemanden an.
-    const abos = pushAnlaesseFuer(doc, u).mitteilung ? pushAbosFuer(doc, u) : [];
+    const abos = pushAnlaesseFuer(doc, u)[anl] ? pushAbosFuer(doc, u) : [];
     if (!abos.length) { ohne.push(u); continue; }
     personen++;
     geraete += abos.length;
@@ -16221,8 +16226,26 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
     ? await scAdminEmpfaenger(env, authHeader, usersDoc, opt.ausloeser || "")
     : [];
 
+  // ⚠️ Die Abos EINMAL lesen, nicht je Spieltag. Ohne sie zaehlte `gesendet`
+  // die ANGESCHRIEBENEN, nicht die Erreichten: wer kein Geraet angemeldet oder
+  // den Schalter "Spieltagscrew" ausgeschaltet hat, faellt erst spaeter in
+  // pushSenden heraus -- und das laeuft in waitUntil und meldet nichts zurueck.
+  // Der Admin las "14 Nachricht(en) verschickt", auch wenn null Handys
+  // angegangen sind. Der Client hat den Gegenzaehler `ohneAbo` seit jeher
+  // eingebaut; der Worker lieferte ihn nie, die Zeile war also tot.
+  const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
   let gesendet = 0;
+  let angeschrieben = 0;
+  const ohneAbo = new Set();
   let mitLuecke = 0;
+
+  // Die echte Reichweite EINER Empfaengerliste, mit demselben Baustein, den die
+  // Rundnachricht dafuer benutzt.
+  const zaehle = (liste) => {
+    const r = rundErreichbar(abosDoc, liste, "spieltagscrew");
+    r.ohne.forEach((u) => ohneAbo.add(u));
+    return r.personen;
+  };
 
   for (const s of kandidaten) {
     const frei = (s.jobs || []).reduce((n, j) => n + Math.max(0, (Number(j.anzahl) || 0) - (j.besetzung || []).length), 0);
@@ -16240,7 +16263,8 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
     if (offen.length) {
       pushSenden(env, authHeader, execCtx, offen, "spieltagscrew",
         "Beim nächsten Heimspiel sind noch " + frei + " Posten unbesetzt. In der Spieltagscrew kannst du dich für einen davon eintragen.");
-      gesendet += offen.length;
+      angeschrieben += offen.length;
+      gesendet += zaehle(offen);
     }
   }
 
@@ -16256,7 +16280,8 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
         freiGesamt > 0
           ? "In " + tage + " Tagen ist Heimspiel und " + freiGesamt + " Posten sind noch frei. In der Spieltagscrew siehst du, welche das sind."
           : "In " + tage + " Tagen ist Heimspiel und alle Posten sind besetzt. Es ist nichts weiter zu tun.");
-      gesendet += admins.length;
+      angeschrieben += admins.length;
+      gesendet += zaehle(admins);
     }
   }
 
@@ -16277,7 +16302,13 @@ async function scAufrufVerschicken(env, authHeader, execCtx, optionen) {
     }
   }
 
-  return { spieltage: mitLuecke, gesendet, erinnert, geprueft: kandidaten.length };
+  // `gesendet` sind jetzt die ERREICHTEN Personen (Geraet angemeldet UND
+  // Schalter an), `angeschrieben` die in Frage Kommenden, `ohneAbo` die
+  // Differenz -- fuer die Zeile, die der Client seit jeher zeigen wollte.
+  return {
+    spieltage: mitLuecke, gesendet, angeschrieben, ohneAbo: ohneAbo.size,
+    erinnert, geprueft: kandidaten.length
+  };
 }
 
 // Schreibt fest, dass und mit welchem Ergebnis der Lauf gearbeitet hat. Ohne
