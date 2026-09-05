@@ -12673,6 +12673,37 @@ const PUSH_MAX_GERAETE_PRO_NUTZER = 10;
 // Verschluesselungen in einem Budget. Nach einer echten Messung anpassbar.
 const PUSH_HAEPPCHEN = 10;
 
+// Dasselbe fuer Mail-Laeufe: hoechstens so viele gleichzeitig, dann der
+// naechste Block.
+//
+// ⚠️ Ein Cron-Lauf hat EIN waitUntil-Budget. Wer streng nacheinander verschickt,
+// zahlt die volle Antwortzeit des Mailversenders je Empfaenger -- gemessen 5475
+// statt 510 ms fuer 120 Mails. Und weil der Merker in allen drei Laeufen VOR dem
+// Versand steht, geht das, was der Lauf nicht mehr schafft, NIE raus.
+//
+// Der Helfer entstand am 03.09.2026 im Fussballcamp-Block; die beiden Laeufe
+// daneben, die am selben Cron haengen, sind damals nicht mitgezogen worden.
+// Jetzt steht er hier oben und wird von allen benutzt. `was` geht nur in die
+// Fehlerzeile -- damit im Log steht, welcher Lauf gestolpert ist.
+const MAIL_HAEPPCHEN = 10;
+
+async function mailsHaeppchenweise(liste, sende, was) {
+  let gesendet = 0;
+  for (let i = 0; i < liste.length; i += MAIL_HAEPPCHEN) {
+    const teil = liste.slice(i, i + MAIL_HAEPPCHEN);
+    // ⚠️ Das `await` vor Promise.all muss stehen bleiben -- ohne das laufen
+    // alle Bloecke gleichzeitig los und die Drosselung ist wirkungslos.
+    const ergebnisse = await Promise.all(teil.map(async (f) => {
+      try { return await sende(f); } catch (e) {
+        console.error((was || "Mail") + " fehlgeschlagen: " + (e && e.message ? e.message : e));
+        return false;
+      }
+    }));
+    ergebnisse.forEach((ok) => { if (ok) gesendet++; });
+  }
+  return gesendet;
+}
+
 // Titel und Ziel stehen in PUSH_ANLAESSE oben, nicht beim Aufrufer. Der Aufrufer
 // liefert nur den kurzen Satz -- und der enthaelt keine Namen, keine Titel und
 // keine Anzahl: eine Push-Nachricht steht auf dem Sperrbildschirm, den auch
@@ -18578,6 +18609,15 @@ async function busplanErinnerungslauf(env, authHeader, execCtx) {
     return { gesendet: 0, fehler: "merker" };
   }
 
+  // ⚠️ Erst ALLE Mails einsammeln, dann haeppchenweise verschicken. Vorher lief
+  // hier eine verschachtelte Schleife mit `await` je Empfaenger: bei 40 Fahrten
+  // × 3 Trainern sind das 120 Roundtrips nacheinander in EINEM naechtlichen
+  // waitUntil -- gemessen 5475 statt 510 ms. Und weil der Merker oben schon
+  // steht, geht das, was der Lauf nicht mehr schafft, NIE raus.
+  //
+  // Das Haeppchen muss ueber ALLE Mails gehen, nicht je Fahrt neu anfangen --
+  // sonst bleibt es bei drei gleichzeitigen und der Gewinn ist weg.
+  const mailListe = [];
   for (const { f, empfaenger } of zuSenden) {
     bericht.fahrten++;
 
@@ -18594,9 +18634,11 @@ async function busplanErinnerungslauf(env, authHeader, execCtx) {
         if (bericht.ohneAdresse.indexOf(f.team.name) < 0) bericht.ohneAdresse.push(f.team.name);
         continue;
       }
-      if (await busplanMailSenden(env, adresse, betreff, text)) bericht.mails++;
+      mailListe.push({ adresse, betreff, text });
     }
   }
+  bericht.mails = await mailsHaeppchenweise(mailListe,
+    (m) => busplanMailSenden(env, m.adresse, m.betreff, m.text), "Busplan-Mail");
 
   await busplanLaufVermerken(authHeader, merker, ids, jetzt, bericht, null);
   return { gesendet: bericht.push, mails: bericht.mails };
@@ -19691,7 +19733,13 @@ const FC_FEEDBACK_NOTEN = [1, 2, 3, 4, 5, 6];
 // dieselbe Datei es beim Push und bei der Privatnachricht laengst richtig macht.
 // Bei FC_MAX_ANMELDUNGEN = 500 je Camp sind das sonst 500 Roundtrips
 // nacheinander in EINEM naechtlichen waitUntil -- gemessen 5,7 s je 120 Mails.
-const FC_MAIL_HAEPPCHEN = 10;
+//
+// ⚠️ Seit dem 05.09.2026 steht die Zahl oben als MAIL_HAEPPCHEN, gemeinsam mit
+// Busplan und Vereinskalender; die frueher hier stehende eigene Konstante ist
+// ersatzlos entfallen. Sie durfte auch kein blosser Verweis bleiben: die
+// pruef-camp-*.mjs schneiden diesen Block heraus und fuehren ihn allein aus --
+// eine Zeile, die auf etwas ausserhalb zeigt, laesst sie beim Einlesen
+// abbrechen. (Genau so passiert und hier festgehalten.)
 
 // Verschickt eine Liste haeppchenweise und zaehlt, was wirklich ankam.
 //
@@ -19702,19 +19750,11 @@ const FC_MAIL_HAEPPCHEN = 10;
 // aber ein Fehler beim BAUEN des Textes (kaputte Vorlage) wuerde sonst das
 // ganze Haeppchen mitreissen -- neun Familien bekaemen wegen einer zehnten
 // keine Post.
+// Nur noch ein Weiterleiter auf den gemeinsamen Helfer (siehe
+// mailsHaeppchenweise oben). Der Name bleibt, damit die beiden Aufrufstellen im
+// Camp-Block und ihre Kommentare unveraendert lesbar sind.
 async function fcMailsHaeppchenweise(liste, sende) {
-  let gesendet = 0;
-  for (let i = 0; i < liste.length; i += FC_MAIL_HAEPPCHEN) {
-    const teil = liste.slice(i, i + FC_MAIL_HAEPPCHEN);
-    const ergebnisse = await Promise.all(teil.map(async (f) => {
-      try { return await sende(f); } catch (e) {
-        console.error("Fussballcamp-Mail fehlgeschlagen: " + (e && e.message ? e.message : e));
-        return false;
-      }
-    }));
-    ergebnisse.forEach((ok) => { if (ok) gesendet++; });
-  }
-  return gesendet;
+  return mailsHaeppchenweise(liste, sende, "Fussballcamp-Mail");
 }
 
 // Haelt im Lauf-Eintrag fest, dass Mails NICHT rausgingen.
@@ -26560,27 +26600,33 @@ async function vkPostEintragVerschicken(eintrag, kalender, usersDoc, trainerdate
   // NICHT. Ein Sperrbildschirm ist kein Postfach.
   const pushText = "Ein geteilter Termin wurde angelegt oder geändert. Öffne den Vereinskalender, dort stehen Tag, Uhrzeit und Ort.";
 
-  const zustellen = async (username, betreff, text) => {
-    // ⚠️ Push VOR der Adressaufloesung -- wer keine Adresse in den
-    // Trainerdaten stehen hat, bekaeme sonst auch keine Push-Nachricht,
-    // obwohl sein Handy angemeldet ist. Gleiche Reihenfolge wie in
-    // handleNotifyUser.
+  // ⚠️ Push VOR der Adressaufloesung -- wer keine Adresse in den Trainerdaten
+  // stehen hat, bekaeme sonst auch keine Push-Nachricht, obwohl sein Handy
+  // angemeldet ist. Gleiche Reihenfolge wie in handleNotifyUser. Push bleibt
+  // deshalb hier in der Schleife; nur die Mails gehen danach haeppchenweise.
+  const vormerken = (username, betreff, text) => {
     pushSenden(env, authHeader, execCtx, [username], "kalender", pushText);
     const adresse = vkPostAdresse(username, usersDoc, trainerdatenDoc);
-    if (!adresse) return;
-    if (await vkPostMailSenden(env, adresse, betreff, text)) mails++;
+    if (adresse) mailListe.push({ adresse, betreff, text });
   };
 
+  const mailListe = [];
   for (const u of neu) {
-    await zustellen(u, "Neuer privater Termin im Vereinskalender", vkPostBrief(t,
+    vormerken(u, "Neuer privater Termin im Vereinskalender", vkPostBrief(t,
       von + " hat einen privaten Termin mit dir geteilt.",
       "Weitere Einzelheiten und eventuelle Anhänge findest du im Vereinskalender."));
   }
   for (const u of bestehend) {
-    await zustellen(u, "Privater Termin geändert: " + titel, vkPostBrief(t,
+    vormerken(u, "Privater Termin geändert: " + titel, vkPostBrief(t,
       von + " hat einen mit dir geteilten privaten Termin geändert. Hier der neue Stand:",
       "Bitte prüfe im Vereinskalender, ob der Termin so für dich passt."));
   }
+  // ⚠️ Haeppchenweise statt eine nach der anderen. Der Postausgang deckelt bei
+  // VK_POST_MAX_JE_LAUF Eintraegen mit je bis zu 200 Namen, und die
+  // Warteschlange wird VOR dem Versand gekuerzt -- was der Lauf nicht mehr
+  // schafft, geht nie raus. Siehe mailsHaeppchenweise.
+  mails = await mailsHaeppchenweise(mailListe,
+    (m) => vkPostMailSenden(env, m.adresse, m.betreff, m.text), "Vereinskalender-Mail");
   return { mails, empfaenger: neu.length + bestehend.length };
 }
 

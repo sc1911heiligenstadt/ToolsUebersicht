@@ -50,6 +50,11 @@ function schneide(vonMarke, bisMarke, name) {
 const capStrQ = schneide("function capStr(v, max) {", "\n}\n", "capStr") + "\n}\n";
 const kboQ    = schneide("function kboBremse(map, max, request) {", "function kboNormalize(", "kboBremse/kboHexToken");
 const fcQ     = schneide("const FUSSBALLCAMP_URL =", null, "Fussballcamp-Abschnitt");
+// ⚠️ Der Mail-Drossler steht seit dem 05.09.2026 OBERHALB des
+// Fussballcamp-Abschnitts, weil Busplan und Vereinskalender ihn mitbenutzen.
+// Er wird deshalb eigens dazugeschnitten -- nicht abgeschrieben.
+const haeppchenQ = schneide("const MAIL_HAEPPCHEN =", "// Titel und Ziel stehen in PUSH_ANLAESSE", "mailsHaeppchenweise");
+
 
 // ⚠️ Diese Marken nageln die VERDRAHTUNG fest, nicht das Verhalten. Ohne sie
 // liefen die Zusagen unten gruen durch, waehrend der Lauf gar nicht mehr an der
@@ -62,7 +67,13 @@ for (const marke of [
   "async function fcBezahltMail(env, camp, a, einst) {",
   "const FC_FEEDBACK_FENSTER_TAGE",
   "const FC_FEEDBACK_TEXTE_AB",
-  "const FC_MAIL_HAEPPCHEN",
+  // ⚠️ Seit dem 05.09.2026 steht der Drossler gemeinsam oben (MAIL_HAEPPCHEN,
+  // mailsHaeppchenweise) -- Busplan und Vereinskalender benutzen ihn mit.
+  // fcMailsHaeppchenweise ist nur noch ein Weiterleiter; die eigene Konstante
+  // ist entfallen. Beide Marken bleiben festgenagelt, damit ein Umbau nicht
+  // stillschweigend wieder auf eine Schleife zurueckfaellt.
+  "const MAIL_HAEPPCHEN",
+  "async function mailsHaeppchenweise(liste, sende, was) {",
   "async function fcMailsHaeppchenweise(liste, sende) {",
   "async function fcLaufFehlschlagVermerken(authHeader, text) {",
   "case \"fussballcamp-feedback-info\":",
@@ -126,12 +137,12 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
          fcMailBauen, fcMailVorlage, fcMailVorlagenPruefen, fcMailVorlagenFuerAdmin,
          FC_BETREUER_FELDER, FC_FEEDBACK_FRAGEN, FC_FEEDBACK_NOTEN,
          FC_FEEDBACK_FENSTER_TAGE, FC_FEEDBACK_TAGE_VORGABE, FC_ROLLEN,
-         FC_FEEDBACK_TEXTE_AB, FC_MAIL_HAEPPCHEN, fcMailsHaeppchenweise, fcErinnerungslauf,
+         FC_FEEDBACK_TEXTE_AB, MAIL_HAEPPCHEN, mailsHaeppchenweise, fcMailsHaeppchenweise, fcErinnerungslauf,
          FC_MAIL_VORLAGEN, FC_MAIL_PLATZHALTER, FC_MAIL_BETREFF_FELDER };
 `;
 
 const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
-  kopf + capStrQ + "\n" + kboQ + "\n" + fcQ + "\n" + fuss
+  kopf + capStrQ + "\n" + kboQ + "\n" + haeppchenQ + "\n" + fcQ + "\n" + fuss
 )(
   () => DOC, (d) => { DOC = d; }, () => RECHT,
   async (url, opt) => {
@@ -1409,12 +1420,21 @@ abschnitt("15. Naechtliche Mails gehen haeppchenweise raus (Bugjagd 03.09.2026)"
 // ${T}for ... await${T}-Schleife. Bei FC_MAX_ANMELDUNGEN = 500 je Camp sind das 500
 // Roundtrips nacheinander in EINEM naechtlichen waitUntil.
 
-zusage("FC_MAIL_HAEPPCHEN steht als Konstante da", bau.FC_MAIL_HAEPPCHEN >= 2,
-  String(bau.FC_MAIL_HAEPPCHEN));
+// ⚠️ Seit dem 05.09.2026 heisst die Konstante MAIL_HAEPPCHEN und steht
+// gemeinsam oben -- Busplan und Vereinskalender benutzen denselben Drossler.
+// fcMailsHaeppchenweise ist nur noch ein Weiterleiter, die eigene Camp-Konstante
+// ist entfallen (sie durfte auch kein blosser Verweis bleiben: dieser Pruefstand
+// schneidet den Camp-Block heraus und fuehrt ihn allein aus).
+zusage("MAIL_HAEPPCHEN steht als Konstante da", bau.MAIL_HAEPPCHEN >= 2,
+  String(bau.MAIL_HAEPPCHEN));
 // Gegenprobe zur Nachbarschaft: dieselbe Zahl wie die beiden Zwillinge.
 zusage("...mit derselben Zahl wie PUSH_HAEPPCHEN und PN_MAIL_HAEPPCHEN",
   /const PUSH_HAEPPCHEN = 10;/.test(QUELLE) && /const PN_MAIL_HAEPPCHEN = 10;/.test(QUELLE) &&
-  bau.FC_MAIL_HAEPPCHEN === 10, String(bau.FC_MAIL_HAEPPCHEN));
+  bau.MAIL_HAEPPCHEN === 10, String(bau.MAIL_HAEPPCHEN));
+// ...und die beiden Nachbarlaeufe benutzen ihn wirklich mit.
+zusage("Busplan- und Vereinskalender-Lauf haeppchen ebenfalls",
+  /bericht\.mails = await mailsHaeppchenweise\(mailListe,/.test(QUELLE)
+  && /mails = await mailsHaeppchenweise\(mailListe,/.test(QUELLE));
 
 // ---- Der Helfer allein ---------------------------------------------------
 mailZaehlerZuruecksetzen();
@@ -1428,8 +1448,8 @@ let g = await bau.fcMailsHaeppchenweise(liste, async () => {
 zusage("25 Mails: alle gezaehlt", g === 25, String(g));
 // ⚠️ Ohne das ${T}await${T} vor Promise.all liefen ALLE Haeppchen gleichzeitig los und
 // die Drosselung waere wirkungslos -- dann stuende hier 25 statt 10.
-zusage("...hoechstens FC_MAIL_HAEPPCHEN gleichzeitig",
-  MAIL.gleichzeitigMax > 1 && MAIL.gleichzeitigMax <= bau.FC_MAIL_HAEPPCHEN,
+zusage("...hoechstens MAIL_HAEPPCHEN gleichzeitig",
+  MAIL.gleichzeitigMax > 1 && MAIL.gleichzeitigMax <= bau.MAIL_HAEPPCHEN,
   "gemessen: " + MAIL.gleichzeitigMax);
 
 // ⚠️ Ein Fehler beim BAUEN des Textes darf nicht neun andere Familien
@@ -1463,7 +1483,7 @@ MAILS = [];
 r = await bau.fcFeedbackLauf(ENV, AUTH, null);
 zusage("Der Feedbacklauf verschickt alle 35", r.gesendet === 35 && r.gefunden === 35, JSON.stringify(r));
 zusage("...und zwar haeppchenweise",
-  MAIL.gleichzeitigMax > 1 && MAIL.gleichzeitigMax <= bau.FC_MAIL_HAEPPCHEN,
+  MAIL.gleichzeitigMax > 1 && MAIL.gleichzeitigMax <= bau.MAIL_HAEPPCHEN,
   "hoechste Gleichzeitigkeit: " + MAIL.gleichzeitigMax);
 // ⚠️ Gegenprobe: eine geglueckte Nacht darf KEINEN zweiten Schreibvorgang
 // kosten. Sonst laeuft jede Nacht ein Extra-Schreiben ins Nextcloud.

@@ -36,6 +36,11 @@ function schneide(vonMarke, bisMarke, name) {
 const capStrQ = schneide("function capStr(v, max) {", "\n}\n", "capStr") + "\n}\n";
 const kboQ    = schneide("function kboBremse(map, max, request) {", "function kboNormalize(", "kboBremse/kboHexToken");
 const fcQ     = schneide("const FUSSBALLCAMP_URL =", null, "Fussballcamp-Abschnitt");
+// ⚠️ Der Mail-Drossler steht seit dem 05.09.2026 OBERHALB des
+// Fussballcamp-Abschnitts, weil Busplan und Vereinskalender ihn mitbenutzen.
+// Er wird deshalb eigens dazugeschnitten -- nicht abgeschrieben.
+const haeppchenQ = schneide("const MAIL_HAEPPCHEN =", "// Titel und Ziel stehen in PUSH_ANLAESSE", "mailsHaeppchenweise");
+
 
 for (const marke of [
   "anmeldung.elternAenderungFelder = geaendert;",
@@ -83,7 +88,7 @@ return { fcLeer, fcNormalisiere, handleFcMeineSpeichern, handleFcMeineAbsagen,
 `;
 
 const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
-  kopf + capStrQ + "\n" + kboQ + "\n" + fcQ + "\n" + fuss
+  kopf + capStrQ + "\n" + kboQ + "\n" + haeppchenQ + "\n" + fcQ + "\n" + fuss
 )(
   () => DOC, (d) => { DOC = d; }, () => RECHT,
   async () => ({ ok: true }), globalThis.crypto
