@@ -3399,6 +3399,29 @@ async function handleLivekitMute(request, body, env, authHeader, corsHeaders) {
 // öffentlicher Anlass fürs Dashboard, das Geburtsjahr bleibt trotzdem exklusiv
 // der Personalakte vorbehalten. Trainerdaten selbst bleibt PROVISION_ONLY
 // (IBAN etc.) -- hier wird nur serverseitig gelesen und stark gefiltert.
+// Welche Trainerdaten-Saetze gehoeren zu einem ARCHIVIERTEN Konto?
+//
+// ⚠️ Gebraucht wird die Richtung Datensatz -> Konto; die gibt es nicht, es gibt
+// nur findTrainerdatenRecord (Konto -> Datensatz) mit seiner Rangfolge
+// username > linkedUsername > Namensabgleich. Deshalb wird sie hier
+// rueckwaerts aufgebaut: ueber die archivierten Konten laufen und deren Satz
+// einsammeln. Bewusst DIESELBE Kaskade -- eine eigene Zuordnung liefe
+// unweigerlich auseinander, und "wer ist ausgeschieden" darf nicht davon
+// abhaengen, welche der drei Regeln gerade greift.
+//
+// Kostet keinen zusaetzlichen Nextcloud-Read: usersDoc steckt in der Sitzung.
+function archivierteTrainerdatensaetze(usersDoc, trainerdatenDoc) {
+  const raus = new Set();
+  const users = (usersDoc && usersDoc.users) || {};
+  Object.keys(users).forEach((k) => {
+    const u = users[k];
+    if (!u || !u.archiviert) return;
+    const satz = findTrainerdatenRecord(trainerdatenDoc, u);
+    if (satz) raus.add(satz);
+  });
+  return raus;
+}
+
 async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
   // Trainerdaten parallel zur Sitzung (sessionMitDatei, seit 2026-09-02).
   const { session, datei } = await sessionMitDatei(request, env, authHeader, PROVISION_ONLY_PATHS.trainerdaten, { version: 1, trainer: [] });
@@ -3410,7 +3433,12 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
   // Mitternacht MESZ/MEZ (UTC-Tageswechsel liegt davor) um bis zu zwei Stunden
   // verschoben.
   const heuteMD = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" }).slice(5, 10);
+  // ⚠️ Ausgeschiedene bleiben draussen. Das Dashboard hob sonst den Geburtstag
+  // von jemandem hervor, der nicht mehr im Verein ist -- und der Datensatz in
+  // den Trainerdaten bleibt beim Archivieren bewusst stehen.
+  const archiviert = archivierteTrainerdatensaetze(session.usersDoc, trainerdatenDoc);
   const namen = (trainerdatenDoc.trainer || [])
+    .filter((t) => !archiviert.has(t))
     .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.geburtsdatum || "") && t.geburtsdatum.slice(5, 10) === heuteMD)
     .map((t) => `${t.vorname || ""} ${t.nachname || ""}`.trim())
     .filter(Boolean);
@@ -3460,8 +3488,16 @@ async function handleKontakteListe(request, env, authHeader, corsHeaders) {
   }
 
   const trainerdatenDoc = await (docP || readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }));
+  // ⚠️ Ausgeschiedene gehoeren nicht ins Telefonbuch. Ein zum Saisonende
+  // archivierter Trainer stand hier unveraendert mit Mobilnummer, E-Mail und
+  // Privatanschrift samt Anruf-, WhatsApp- und Mail-Knopf -- und konnte seine
+  // Freigabe nicht einmal selbst zuruecknehmen, weil sein Login gesperrt ist.
+  // Der Trainerdaten-Satz bleibt beim Archivieren bewusst stehen (Nachweise),
+  // die Freigabe war also weiter auf "ja".
+  const archiviert = archivierteTrainerdatensaetze(session.usersDoc, trainerdatenDoc);
   const kontakte = [];
   for (const t of trainerdatenDoc.trainer || []) {
+    if (archiviert.has(t)) continue;
     const f = t && t.kontaktFreigabe;
     if (!f || f.name !== true) continue;
     const vorname = String(t.vorname || "").trim();
