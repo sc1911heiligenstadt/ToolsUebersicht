@@ -24058,7 +24058,14 @@ function ksAnzeigeNamen(doc, usersDoc) {
   return (doc.beauftragteUsernames || []).map((n) => {
     const key = normalizeUsername(String(n || ""));
     const u = getOwn(users, key);
-    return (u && (u.name || u.displayName)) || key;
+    // ⚠️ vorname/nachname. nutzer.json kennt WEDER `name` NOCH `displayName` --
+    // bis zum 05.09.2026 stand hier `u.name || u.displayName`, der Rueckfall
+    // griff also immer, und auf der offenen Seite las ein Melder Login-Kennungen
+    // statt Klarnamen. Genau das schliesst der Kommentar an der Anzeigestelle
+    // aus. Derselbe Ausdruck wie in aufgabenAnzeigeName; die vier
+    // displayName-Treffer weiter oben BAUEN das Feld fuer eine Antwort und
+    // schreiben es nie zurueck.
+    return (u && u.vorname && u.nachname ? (u.vorname + " " + u.nachname) : "") || key;
   }).filter(Boolean);
 }
 
@@ -24071,7 +24078,12 @@ function ksKlarname(users, konto) {
   const key = normalizeUsername(String(konto || ""));
   if (!key) return "(unbekannt)";
   const u = getOwn(users || {}, key);
-  return (u && (u.name || u.displayName)) || "(unbekannt)";
+  // Siehe ksAnzeigeNamen: nutzer.json fuehrt vorname/nachname. Der Rueckfall
+  // "(unbekannt)" bleibt -- er ist fuer das GELOESCHTE Konto da, nicht fuer
+  // jedes. Bis zum 05.09.2026 traf er jedes, und der Verlauf, der laut Kommentar
+  // "auch gegen den technischen Administrator wirkt", sagte damit nicht mehr,
+  // wer sich eingetragen hat.
+  return (u && u.vorname && u.nachname ? (u.vorname + " " + u.nachname) : "") || "(unbekannt)";
 }
 
 // ⚠️ Datenschutz-Fix 2026-08-29. Der Änderungsverlauf der Beauftragten-Liste geht
@@ -24104,7 +24116,11 @@ function ksVerlaufOeffentlich(verlauf, usersDoc) {
     for (const k of konten) {
       if (s.indexOf(k) === -1) continue;
       const u = getOwn(users, k);
-      const klar = (u && (u.name || u.displayName)) || "";
+      // Siehe ksAnzeigeNamen. Vorher war `klar` immer leer, die
+      // Ersetzungsschleife brach an `if (!klar || klar === k) continue;` ab --
+      // der "Datenschutz-Fix 2026-08-29" war damit wirkungslos, und Altbestand
+      // behielt seine Kontonamen.
+      const klar = (u && u.vorname && u.nachname ? (u.vorname + " " + u.nachname) : "") || "";
       if (!klar || klar === k) continue;
       const re = new RegExp("(^|[^A-Za-z0-9._-])" + ksRegexEscape(k) + "(?![A-Za-z0-9._-])", "g");
       s = s.replace(re, (_treffer, davor) => davor + klar);
@@ -24872,7 +24888,10 @@ async function handleKsSchulungStand(request, env, authHeader, corsHeaders) {
         const haken = s.kapitel || {};
         return {
           username: k,
-          name: users[k].name || users[k].displayName || k,
+          // Siehe ksAnzeigeNamen -- sonst steht in der Nachweisliste der
+          // Schulung neben der Kennung noch einmal dieselbe Kennung.
+          name: (users[k].vorname && users[k].nachname
+            ? (users[k].vorname + " " + users[k].nachname) : "") || k,
           noetig: !!s.noetig,
           bestandenAm: s.bestandenAm || "",
           erinnertAm: s.erinnertAm || "",
