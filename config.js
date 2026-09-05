@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.9",
+    groups: [
+      {
+        title: "Eine gelöschte Gruppe hinterlässt kein Recht mehr",
+        items: [
+          "Beim Löschen einer Gruppe wurden ihre Rechte an den Werkzeugen aufgeräumt, das Recht „Unterschriften anfordern“ und „Aufgaben zuweisen“ aber nicht. Legt man später eine Gruppe mit demselben Namen an, bekommt sie dieselbe interne Kennung — und jedes Mitglied durfte sofort Verträge und Personalunterlagen verschicken, ohne dass jemand den Haken gesetzt hat.",
+          "Beide Rechte werden jetzt mit aufgeräumt.",
+          "Klappt das Aufräumen ausnahmsweise nicht, steht es jetzt auf dem Bildschirm. Vorher blieb es still — und man hätte es erst gemerkt, wenn jemand die Gruppenliste mit dem Unterschriften-Bereich vergleicht."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.8",
     groups: [
       {

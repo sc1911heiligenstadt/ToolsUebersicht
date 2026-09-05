@@ -4163,32 +4163,62 @@ async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
   }
 
   // Verwaiste Gruppenreferenz aus sichtbarkeit.json entfernen (best effort,
-  // die Gruppe selbst ist zu diesem Zeitpunkt bereits gelöscht)
+  // die Gruppe selbst ist zu diesem Zeitpunkt bereits gelöscht).
+  //
+  // ⚠️ `sichtbarkeit.json` führt Gruppen-Ids an ZWEI Stellen: in
+  // `config.tools[*]` und in `config.aufgaben`. Bis zum 05.09.2026 räumte
+  // dieser Block nur die erste. Der verwaiste Eintrag ist zunächst folgenlos --
+  // aber `uniqueGroupId` vergibt eine freigewordene Id sofort wieder. Legt
+  // jemand später eine Gruppe mit demselben Namen neu an (der übliche Weg,
+  // wenn eine Gruppe versehentlich gelöscht oder neu zugeschnitten wurde),
+  // bekommt sie dieselbe Id und JEDES ihrer Mitglieder darf sofort
+  // Unterschriften anfordern, ohne dass jemand das Häkchen gesetzt hat. Das
+  // Panel zeigt den Haken korrekt an -- vergeben hat ihn niemand. Betroffen
+  // ist der Schreibweg für Verträge und Personalunterlagen.
+  //
+  // Wer hier eine weitere Gruppenliste in dieser Datei anlegt, trägt sie in
+  // AUFGABEN_LISTEN bzw. TOOL_LISTEN ein.
+  const TOOL_LISTEN = ["groupIds", "editGroupIds", "adminGroupIds", "provisionGroupIds"];
+  const AUFGABEN_LISTEN = ["assignGroupIds", "dokumentGroupIds"];
+  let aufgeraeumt = false;
   try {
-    const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
-    let changed = false;
-    Object.values(config.tools || {}).forEach((entry) => {
-      if (Array.isArray(entry.groupIds) && entry.groupIds.includes(groupId)) {
-        entry.groupIds = entry.groupIds.filter((id) => id !== groupId);
-        changed = true;
-      }
-      if (Array.isArray(entry.editGroupIds) && entry.editGroupIds.includes(groupId)) {
-        entry.editGroupIds = entry.editGroupIds.filter((id) => id !== groupId);
-        changed = true;
-      }
-      if (Array.isArray(entry.adminGroupIds) && entry.adminGroupIds.includes(groupId)) {
-        entry.adminGroupIds = entry.adminGroupIds.filter((id) => id !== groupId);
-        changed = true;
-      }
-      if (Array.isArray(entry.provisionGroupIds) && entry.provisionGroupIds.includes(groupId)) {
-        entry.provisionGroupIds = entry.provisionGroupIds.filter((id) => id !== groupId);
-        changed = true;
-      }
-    });
-    if (changed) await writeJson(env.NEXTCLOUD_URL, authHeader, config);
-  } catch (_) { /* Aufräumen ist best-effort */ }
+    // ⚠️ If-Match mit drei Versuchen statt eines unbedingten Schreibens: ein
+    // gleichzeitiges Speichern im Sichtbarkeits-Panel überschriebe die
+    // Aufräumung sonst mit dem alten Stand -- und genau dann bleibt das Recht
+    // stehen, das hier weg soll.
+    for (let versuch = 0; versuch < 3; versuch++) {
+      jsonCache.delete(env.NEXTCLOUD_URL);
+      const { data: config, rev } = await readJsonWithRev(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+      jsonCache.delete(env.NEXTCLOUD_URL);
+      let changed = false;
+      const raeumen = (obj, felder) => {
+        if (!obj || typeof obj !== "object") return;
+        felder.forEach((feld) => {
+          if (Array.isArray(obj[feld]) && obj[feld].includes(groupId)) {
+            obj[feld] = obj[feld].filter((id) => id !== groupId);
+            changed = true;
+          }
+        });
+      };
+      Object.values(config.tools || {}).forEach((entry) => raeumen(entry, TOOL_LISTEN));
+      raeumen(config.aufgaben, AUFGABEN_LISTEN);
 
-  return json({ deleted: groupId }, 200, corsHeaders);
+      if (!changed) { aufgeraeumt = true; break; }
+      try {
+        await writeJson(env.NEXTCLOUD_URL, authHeader, config, rev || undefined);
+        aufgeraeumt = true;
+        break;
+      } catch (e) {
+        if (e instanceof ConflictError && versuch < 2) continue;
+        throw e;
+      }
+    }
+  } catch (_) { /* Aufräumen ist best-effort -- die Gruppe ist bereits gelöscht */ }
+
+  // ⚠️ Das Ergebnis geht mit zurück. Bleibt es bei best-effort UND still, sieht
+  // niemand, dass ein Recht stehen geblieben ist -- und die neu angelegte
+  // Gruppe gleichen Namens erbt es. Ein älterer Client ignoriert das Feld.
+  return json({ deleted: groupId, aufgeraeumt }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Sichtbarkeit ----------

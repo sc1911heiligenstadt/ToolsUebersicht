@@ -1171,10 +1171,22 @@ function renderGroupsList() {
       const errorEl = document.getElementById("groups-error");
       errorEl.style.display = "none";
       try {
-        await callWorker("delete-group", { groupId: btn.dataset.deleteGroup });
+        const res = await callWorker("delete-group", { groupId: btn.dataset.deleteGroup });
         await loadAndRenderGroups();
         await loadAndRenderUsers();
         renderVisibilityList();
+        // ⚠️ Das Aufräumen der Rechte ist bewusst best-effort — die Gruppe ist
+        // da schon weg. Still darf es aber nicht bleiben: bleibt eine Referenz
+        // stehen und legt jemand später eine Gruppe mit demselben Namen an,
+        // bekommt sie dieselbe Id und erbt das Recht, ohne dass es je jemand
+        // vergeben hat. Ein älterer Worker liefert das Feld nicht — dann sagen
+        // wir wie bisher nichts.
+        if (res && res.aufgeraeumt === false) {
+          errorEl.textContent = "Die Gruppe ist gelöscht, aber ihre Rechte konnten nicht aufgeräumt werden. "
+            + "Bitte unter Einstellungen prüfen, ob sie noch irgendwo eingetragen ist — "
+            + "eine neue Gruppe mit demselben Namen würde die Rechte sonst erben.";
+          errorEl.style.display = "block";
+        }
       } catch (e) {
         errorEl.textContent = e.message;
         errorEl.style.display = "block";
