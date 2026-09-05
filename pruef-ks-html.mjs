@@ -132,6 +132,18 @@ function quelltext() {
       && W.includes('doc.konzept = ksKonzeptSicher(daten && typeof daten === "object" ? daten : {});')],
     ["F4 Die alte ungereinigte Auslieferung ist weg", !W.includes("konzept: doc.konzept || null,")
       && !W.includes('datenschutzHtml: String(e.datenschutzHtml || "")')],
+
+    // --- Bugjagd 2026-09-05. Der Schulungstext ging roh an jeden Besucher.
+    // Der Client zeichnet k.html mit innerHTML; Titel, Dauer und Quiz sind dort
+    // escaped, ausgerechnet der Fliesstext nicht.
+    ["F4a Die Schulungskapitel werden beim AUSLIEFERN gereinigt",
+      W.includes("schulung: ksSchulungSicher(doc.schulung),")],
+    ["F4b ...und beim SPEICHERN",
+      W.includes("doc.schulung = ksSchulungSicher(Array.isArray(daten) ? daten : []);")],
+    ["F4c Die alte ungereinigte Auslieferung ist weg",
+      !W.includes("schulung: doc.schulung || null,")],
+    ["F4d Der Client zeichnet k.html wirklich roh (sonst waere die Zusage blind)",
+      APP.includes('\'<div class="ks-kapitel-inhalt">\' + (k.html || "")')],
     ["F5 Der Bild-Pfad setzt nosniff und filtert den Typ",
       /handleKsBildGet[\s\S]*?X-Content-Type-Options[\s\S]*?nosniff/.test(W)
       && /handleKsBildGet[\s\S]*?\["image\/jpeg", "image\/png", "image\/webp"\]/.test(W)],

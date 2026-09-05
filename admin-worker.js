@@ -24096,6 +24096,22 @@ function ksKonzeptSicher(k) {
   return Object.assign({}, k, { html: ksHtmlSicher(k.html) });
 }
 
+// Dieselbe Behandlung fuer die Schulungskapitel.
+//
+// ⚠️ Bis zum 05.09.2026 ging `schulung` roh durch handleKsInfo -- also an JEDEN
+// Besucher ohne Anmeldung -- und der Client zeichnet `k.html` mit innerHTML.
+// Titel, Dauer und das Quiz sind dort escaped, ausgerechnet der Fliesstext
+// nicht. Dieselbe Datei kennt den Reiniger, sie hat ihn nur an dieser einen
+// Stelle nicht benutzt. Gereinigt wird beim Ausliefern UND beim Speichern:
+// beim Ausliefern deckt es Altbestand und Handarbeit an der Nextcloud-Datei ab,
+// beim Speichern verhindert es, dass das Skript ueberhaupt in der Datei steht
+// und wirkt, sobald irgendwo ein zweiter Leseweg entsteht.
+function ksSchulungSicher(kapitel) {
+  if (!Array.isArray(kapitel)) return kapitel || null;
+  return kapitel.map((k) =>
+    (k && typeof k === "object") ? Object.assign({}, k, { html: ksHtmlSicher(k.html) }) : k);
+}
+
 // ---------- Aktion: Info (offen für jeden) ----------
 
 // ⚠️ Die Antwort wird FELDWEISE zusammengebaut, nicht durch Filtern eines
@@ -24144,7 +24160,8 @@ async function handleKsInfo(request, env, authHeader, corsHeaders) {
       zusammenfassung: doc.zusammenfassung || null,
       meldeweg: doc.meldeweg || null,
       rolle: doc.rolle || null,
-      schulung: doc.schulung || null,
+      // Gereinigt beim AUSLIEFERN wie das Konzept -- siehe ksSchulungSicher.
+      schulung: ksSchulungSicher(doc.schulung),
       faq: doc.faq || null,
       externe: doc.externe || null,
       kindertext: doc.kindertext || null,
@@ -24842,6 +24859,10 @@ async function handleKsInhaltSpeichern(request, body, env, authHeader, corsHeade
             "rueckmeldeTage", "loeschfristWochen", "datenschutzHtml"
           ].indexOf(k) === -1).reduce((acc, k) => { acc[k] = e[k]; return acc; }, {})
         };
+      } else if (teil === "schulung") {
+        // Wie beim Konzept: auch beim Speichern reinigen, nicht nur beim
+        // Ausliefern.
+        doc.schulung = ksSchulungSicher(Array.isArray(daten) ? daten : []);
       } else if (teil === "konzept") {
         // ⚠️ Auch hier reinigen und nicht nur beim Ausliefern: sonst steht
         // das Skript weiter in der Datei und wirkt, sobald irgendwo ein zweiter
