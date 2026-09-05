@@ -22558,8 +22558,8 @@ async function handleFcFeedbackInfo(request, body, env, authHeader, corsHeaders)
     }
     // ⚠️ Vor dem letzten Camptag gibt es nichts zu bewerten. Der Link aus der
     // Mail kommt danach -- wer ihn frueher aufruft, hat ihn geraten.
-    if (!camp.bisDatum || camp.bisDatum >= fcHeuteBerlin()) {
-      return json({ error: "Dieses Camp läuft noch. Der Bogen öffnet nach dem letzten Camptag." }, 410, corsHeaders);
+    if (!fcFeedbackOffen(camp)) {
+      return json({ error: "Dieses Camp läuft noch. Der Bogen öffnet am letzten Camptag." }, 410, corsHeaders);
     }
     if (anmeldung.status !== "angemeldet") {
       return json({ error: "Diese Anmeldung war beim Camp nicht dabei." }, 410, corsHeaders);
@@ -22607,7 +22607,7 @@ async function handleFcFeedbackSenden(request, body, env, authHeader, corsHeader
       if (!treffer) throw new FcFehler("Diesen Bogen gibt es nicht.", 404);
       const { camp, anmeldung } = treffer;
       if (camp.aufgeraeumtAm) throw new FcFehler("Dieses Camp ist abgeschlossen.", 410);
-      if (!camp.bisDatum || camp.bisDatum >= fcHeuteBerlin()) {
+      if (!fcFeedbackOffen(camp)) {
         throw new FcFehler("Dieses Camp läuft noch.", 410);
       }
       if (anmeldung.status !== "angemeldet") throw new FcFehler("Diese Anmeldung war beim Camp nicht dabei.", 410);
@@ -23394,6 +23394,27 @@ async function fcErinnerungslauf(env, authHeader, art, nurCampId) {
 
 // Wer bekommt einen Feedbackbogen? Laeuft nachts mit und laesst sich von Hand
 // ausloesen.
+// Ist der Feedbackbogen dieses Camps offen?
+//
+// ⚠️ Die EINE Stelle fuer diese Frage. Bis zum 05.09.2026 stand der Vergleich
+// dreimal da und lief auseinander: die Einstellung "Tage nach dem letzten
+// Camptag" laesst ausdruecklich 0 zu (fcZahl(..., 0, 60), min="0" im Formular,
+// und der Kommentar daneben nennt "am letzten Camptag selbst" als gueltigen
+// Fall), der naechtliche Lauf fand das Camp dann am letzten Camptag faellig --
+// die beiden Bogen-Aktionen wiesen mit `bisDatum >= heute` aber genau an diesem
+// Tag ab. Die Eltern bekamen eine Mail mit einem Link, der sagt, das Camp laufe
+// noch.
+//
+// Und es blieb dabei: feedbackGebetenAm wird fuer alle Faelligen gesetzt, bevor
+// die Mails rausgehen -- wer den toten Link bekommen hat, wurde nie wieder
+// gefragt. Der Lauf meldete dabei Erfolg, die Mail ging ja raus.
+//
+// Jetzt gilt ueberall dieselbe Grenze: der Bogen ist ab dem letzten Camptag
+// offen. Bei der Vorgabe 2 aendert sich nichts.
+function fcFeedbackOffen(camp) {
+  return !!(camp && camp.bisDatum) && camp.bisDatum <= fcHeuteBerlin();
+}
+
 async function fcFeedbackLauf(env, authHeader, nurCampId) {
   const doc = fcNormalisiere(await readJson(FUSSBALLCAMP_URL, authHeader, fcLeer()));
   const einst = doc.einstellungen || fcEinstellungenLeer();
@@ -23419,6 +23440,12 @@ async function fcFeedbackLauf(env, authHeader, nurCampId) {
     const ab = fcTagPlusUtc(camp.bisDatum, tage);
     const bis = fcTagPlusUtc(camp.bisDatum, tage + FC_FEEDBACK_FENSTER_TAGE);
     if (!ab || !bis || heute < ab || heute > bis) return;
+    // ⚠️ Zweiter Riegel, und zwar derselbe, den die beiden Bogen-Aktionen
+    // benutzen: keine Mail zu einem Bogen, der noch zu ist. Bis zum 05.09.2026
+    // konnten die beiden Vergleiche auseinanderlaufen -- und weil
+    // feedbackGebetenAm gleich darauf fuer alle gesetzt wird, war die Familie
+    // danach fuer immer aus der Liste.
+    if (!fcFeedbackOffen(camp)) return;
 
     (camp.anmeldungen || []).forEach((a) => {
       if (a.status !== "angemeldet" || !a.elternEmail) return;
