@@ -150,7 +150,12 @@ const b1 = await bau.handleFcAnmelden(anfrage("198.51.100.5"), anmeldeKoerper(CA
   daten: {
     kindVorname: "LENA", kindNachname: "muster",
     elternName: "Wer auch immer", elternEmail: "Anja.Muster@Example.ORG",
-    allergien: "egal"
+    // ⚠️ allergienHat gehoert dazu -- dieser Block ersetzt "daten" ganz und
+    // erbt den Vorgabewert nicht. Ohne den Schalter wies fcFelderPruefen die
+    // Anfrage mit "Pflichtangaben fehlen" ab, BEVOR die Doppel-Erkennung dran war.
+    // B1 lief rot -- und B2 bis B7 wurden gruen, weil ein 400er-Fehlerkoerper die
+    // abgefragten Felder ohnehin nicht hat. Falsches Gruen ist schlimmer als Rot.
+    allergienHat: "ja", allergien: "egal"
   }
 }), ENV, "auth", {}, null);
 
@@ -227,7 +232,10 @@ const f3 = await bau.handleFcAnmelden(anfrage("203.0.113.11"), anmeldeKoerper(CA
   daten: {
     kindVorname: "Jonas", kindNachname: "Muster",
     elternName: "Anja Muster", elternEmail: "anja.muster@example.org",
-    allergien: "keine"
+    // "keine Allergien" heisst beim Typ janein_text: Schalter auf "nein", kein
+    // Text. Der Worker raeumt den Text bei "nein" ohnehin weg -- damit prueft
+    // dieser Fall nebenbei auch den Nein-Zweig von fcFelderPruefen mit.
+    allergienHat: "nein"
   }
 }), ENV, "auth", {}, null);
 zusage("F3", "Ein Geschwisterkind wird normal angemeldet",
