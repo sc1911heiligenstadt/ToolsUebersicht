@@ -14893,7 +14893,13 @@ async function handleKbExternAnmelden(request, body, env, authHeader, corsHeader
   const pw = vorhanden.pw;
   const hatPasswort = !!(pw && pw.hash && pw.salt);
   if (!hatPasswort) {
-    return json({ status: "offen", bestellung: kbExternOeffentlicheBestellung(vorhanden) }, 200, corsHeaders);
+    // Auch hier die inzwischen inaktiven Artikel mitliefern -- dieser Zweig
+    // laedt dieselbe Bestellung, nur ohne Passwort.
+    return json({
+      status: "offen",
+      bestellung: kbExternOeffentlicheBestellung(vorhanden),
+      zusatzArtikel: kbExternZusatzArtikel(geladen.aktion, vorhanden)
+    }, 200, corsHeaders);
   }
 
   const passwort = typeof (body && body.passwort) === "string" ? body.passwort : "";
@@ -14904,7 +14910,48 @@ async function handleKbExternAnmelden(request, body, env, authHeader, corsHeader
     await kbExternBremse();
     return json({ error: "Falsches Passwort." }, 403, corsHeaders);
   }
-  return json({ status: "ok", bestellung: kbExternOeffentlicheBestellung(vorhanden) }, 200, corsHeaders);
+  // ⚠️ Zusaetzlich die Artikel, die inzwischen inaktiv sind, auf die diese
+  // Bestellung aber eine Position hat. Ohne sie sieht der Besteller seinen
+  // laengst bestellten Pullover gar nicht -- und schickt beim naechsten
+  // Speichern eine Liste ohne ihn zurueck. Der interne Weg zeigt genau solche
+  // Zeilen mit dem Zusatz "(nicht mehr bestellbar)"; hier fehlte er.
+  return json({
+    status: "ok",
+    bestellung: kbExternOeffentlicheBestellung(vorhanden),
+    zusatzArtikel: kbExternZusatzArtikel(geladen.aktion, vorhanden)
+  }, 200, corsHeaders);
+}
+
+// Artikel, die der Katalog nicht mehr anbietet, auf die diese Bestellung aber
+// eine Position hat. `nichtMehrBestellbar` sagt dem Client, dass er sie zeigen,
+// aber nicht zur Auswahl stellen soll.
+//
+// ⚠️ Die Groesse aus der Bestellung wird der Groessenliste zugefuegt, falls sie
+// aus dem Katalog gefallen ist -- sonst haette der Artikel im Client eine
+// Auswahl ohne den Wert, der tatsaechlich bestellt wurde.
+function kbExternZusatzArtikel(aktion, bestellung) {
+  const artikel = Array.isArray(aktion.artikel) ? aktion.artikel : [];
+  const positionen = (bestellung && Array.isArray(bestellung.positionen)) ? bestellung.positionen : [];
+  const raus = [];
+  for (const p of positionen) {
+    const id = String((p && p.artikelId) || "");
+    const a = artikel.find((x) => x && x.id === id);
+    if (!a) continue;
+    const groesse = String((p && p.groesse) || "");
+    const groessen = (Array.isArray(a.groessen) ? a.groessen : []).slice(0, 60).map((g) => String(g));
+    const inaktiv = a.aktiv === false;
+    const groesseWeg = !!groesse && !groessen.includes(groesse);
+    if (!inaktiv && !groesseWeg) continue;   // steht ohnehin im normalen Katalog
+    if (groesseWeg) groessen.push(groesse);
+    raus.push({
+      id: String(a.id || ""),
+      name: String(a.name || ""),
+      groessen,
+      menge: kbExternKatalogMenge(a),
+      nichtMehrBestellbar: true
+    });
+  }
+  return raus;
 }
 
 // Die im Katalog vorgegebene Menge eines Artikels. 0 ist seit 08/2026 ein
@@ -14933,21 +14980,37 @@ function kbExternKatalogMenge(a) {
 // erfundener Artikel, einer aus einer ANDEREN Bestellaktion oder eine Groesse,
 // die es nicht gibt, faellt heraus -- sonst stuende eine Geisterposition in der
 // Liste, die an den Lieferanten geht.
-function kbExternPositionen(aktion, roh) {
+//
+// ⚠️ `bestand` sind die BEREITS GESPEICHERTEN Positionen dieser Bestellung. Sie
+// sind der Grund, warum die beiden Pruefungen oben nicht hart sein duerfen:
+// nimmt die Verwaltung eine Groesse aus dem Katalog oder schaltet einen Artikel
+// inaktiv, faellt eine laengst abgegebene Bestellung sonst beim naechsten
+// Speichern lautlos heraus -- und der Besteller aendert nur seinen Kommentar
+// und verliert dabei seinen Pullover. Neu waehlen kann man den Wert nach wie
+// vor nicht: nur die exakte Kombination, die schon dasteht, kommt durch.
+function kbExternPositionen(aktion, roh, bestand) {
   const liste = Array.isArray(roh) ? roh.slice(0, KB_EXTERN_MAX_POSITIONEN) : [];
   const artikel = Array.isArray(aktion.artikel) ? aktion.artikel : [];
+  // artikelId -> bereits gespeicherte Groesse dieser Bestellung
+  const schonBestellt = new Map();
+  (Array.isArray(bestand) ? bestand : []).forEach((p) => {
+    if (p && p.artikelId) schonBestellt.set(String(p.artikelId), String(p.groesse || ""));
+  });
   const positionen = [];
   const gesehen = new Set();
   for (const p of liste) {
     if (!p || typeof p !== "object") continue;
     const artikelId = String(p.artikelId || "");
     const a = artikel.find((x) => x && x.id === artikelId);
-    if (!a || a.aktiv === false) continue;
+    if (!a) continue;
+    const altGroesse = schonBestellt.has(artikelId) ? schonBestellt.get(artikelId) : null;
+    if (a.aktiv === false && altGroesse === null) continue;
     // Je Artikel hoechstens eine Zeile -- zwei Groessen desselben Hoodies waeren
     // in der Lieferantenliste zwei Stueck, obwohl eines vorgesehen ist.
     if (gesehen.has(artikelId)) continue;
     const groesse = String(p.groesse || "");
-    if (!Array.isArray(a.groessen) || !a.groessen.includes(groesse)) continue;
+    const imKatalog = Array.isArray(a.groessen) && a.groessen.includes(groesse);
+    if (!imKatalog && groesse !== altGroesse) continue;
     const katalogMenge = kbExternKatalogMenge(a);
     let menge = katalogMenge;
     if (katalogMenge === 0) {
@@ -15002,7 +15065,8 @@ async function handleKbExternSpeichern(request, body, env, authHeader, corsHeade
     pwFeld = await hashNewPassword(neu);
   }
 
-  const positionen = kbExternPositionen(geladen.aktion, body && body.positionen);
+  const positionen = kbExternPositionen(geladen.aktion, body && body.positionen,
+    vorhanden && vorhanden.positionen);
   const kommentar = capStr(body && body.kommentar, KB_EXTERN_KOMMENTAR_MAX);
   if (!positionen.length && !kommentar) {
     return json({ error: "Bitte mindestens eine Größe auswählen." }, 400, corsHeaders);
