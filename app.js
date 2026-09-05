@@ -548,9 +548,12 @@ function renderUsersList(users) {
         errorEl.style.display = "none";
         try {
           const result = await callWorker("update-user", { username, art, vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt });
-          // Bei Namensänderung zieht der Worker den Login-Nutzernamen automatisch mit
-          // (usernameRename.applied) — die Gruppenmitgliedschaft muss dann unter dem
-          // NEUEN Nutzernamen gepflegt werden, sonst fällt der Nutzer beim folgenden
+          // ⚠️ Seit dem 06.09.2026 benennt der Worker NICHT mehr um (applied ist
+          // immer false) — der Nutzername ist der Schlüssel für Push-Abos, Aufgaben,
+          // Dokumente, Punkte und mehr, und mitgezogen wurden davon nur zwei Stellen.
+          // Die Abfrage auf applied bleibt trotzdem stehen: käme die Umbenennung je als
+          // eigene Aktion zurück, muss die Gruppenmitgliedschaft unter dem NEUEN Namen
+          // gepflegt werden, sonst fällt der Nutzer beim folgenden
           // update-group-members-Aufruf aus jeder Gruppe raus (unbekannter alter Key,
           // siehe handleUpdateGroupMembers-Filter im Worker).
           const rename = result.usernameRename;
@@ -559,10 +562,12 @@ function renderUsersList(users) {
           await loadAndRenderGroups();
           await loadAndRenderUsers();
           if (rename) {
-            errorEl.style.color = rename.applied ? "#2c5e2e" : "#c0392b";
+            errorEl.style.color = rename.applied ? "#2c5e2e" : "#8a6d1f";
             errorEl.textContent = rename.applied
               ? `Hinweis: Login-Nutzername wurde von „${rename.from}“ zu „${rename.to}“ angepasst (Namensänderung).`
-              : `Name gespeichert, aber der Login-Nutzername „${rename.to}“ ist bereits durch ein anderes Konto belegt und konnte nicht automatisch angepasst werden — bitte das andere Konto prüfen.`;
+              : rename.grund === "belegt"
+                ? `Name gespeichert. Der Login-Nutzername bleibt „${rename.from}“ — „${rename.to}“ gehört bereits einem anderen Konto. Anmelden geht weiterhin mit dem vollen Namen.`
+                : `Name gespeichert. Der Login-Nutzername bleibt „${rename.from}“ und wird bewusst NICHT geändert — an ihm hängen Push-Abos, Aufgaben, Dokumente und Punkte. Anmelden geht auch mit dem vollen Namen „${vorname} ${nachname}“.`;
             errorEl.style.display = "block";
           } else if (result.mannschaftenGesperrt) {
             // Der Worker hat das Mannschaftsfeld ignoriert. Das muss dastehen —

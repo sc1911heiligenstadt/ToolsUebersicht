@@ -125,7 +125,7 @@
 //     Aendert das EIGENE Passwort; der Nutzer kommt aus dem Token, nie aus dem Body. Setzt passwordSetAt neu und
 //     entwertet damit jede aeltere Session (siehe getVerifiedSession) — das zurueckgegebene Token muss der Client
 //     speichern, sonst sperrt sich der Aendernde selbst aus.
-//   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden); zieht bei Namensänderung den Login-Nutzernamen automatisch mit um (Response-Feld usernameRename), außer die Zielkennung ist durch ein anderes Konto belegt
+//   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden); lässt den Login-Nutzernamen UNVERÄNDERT (er ist der Schlüssel für Push-Abos, Aufgaben, Dokumente, Punkte …) und meldet eine passendere Kennung nur als Vorschlag zurück (Response-Feld usernameRename, applied immer false)
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
@@ -2424,54 +2424,32 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   }
 
   // Der Login-Nutzername wird beim Anlegen einmalig aus Vorname/Nachname generiert
-  // (generateUsername) und danach nie mehr angefasst. Ohne diesen Abgleich bleibt
-  // eine spätere Namenskorrektur (z. B. Tippfehler im Vornamen) rein kosmetisch: die
-  // Liste zeigt den neuen Namen, aber das Konto ist weiterhin nur unter dem alten
-  // Nutzernamen erreichbar, und der Nutzer kann sich mit seinem (jetzt korrekten)
-  // Namen nicht mehr anmelden. Nur bei freier Ziel-Kennung umbenennen; kollidiert sie
-  // mit einem ANDEREN Konto, lieber gar nicht anfassen und den Konflikt zurückmelden,
-  // statt eine "-2"-Variante zu erzeugen, die der Nutzer beim Anmelden nie eingeben würde.
+  // (generateUsername) und danach NIE mehr angefasst.
+  //
+  // ⚠️ Bis zum 06.09.2026 wurde hier automatisch umbenannt, sobald jemand einen
+  // Tippfehler im Namen korrigierte. Der Nutzername ist aber der SCHLÜSSEL, an dem
+  // Push-Abos, das Kalender-Abo, Aufgaben, Dokumente und Unterschriften, Ansicht,
+  // Reaktionen, Vereinsaufgaben, Privatnachrichten, Punkte, linkedUsername im
+  // Kadermanager und erstelltVon in den Owner-Apps hängen. Mitgezogen wurden davon
+  // genau zwei: Gruppenmitgliedschaft und Nutzerfoto. Alles andere fiel lautlos aus,
+  // ausgelöst von einer reinen Schreibkorrektur.
+  //
+  // Anmelden kann sich der Mensch trotzdem unter seinem korrigierten Namen:
+  // resolveLoginUser Stufe 2 vergleicht slugifyNamePart(vorname)+slugifyNamePart(
+  // nachname) gegen die Eingabe und findet das Konto OHNE jede Umbenennung -- und
+  // Stufe 1 findet weiterhin die alte Kennung. Die Umbenennung war also reiner
+  // Schaden ohne Gegenwert.
+  //
+  // Gemeldet wird sie weiterhin, aber als Vorschlag statt als Vollzug (applied bleibt
+  // false, `grund` sagt warum). Wird sie je wieder eingebaut, dann als EIGENE
+  // Admin-Aktion, die alle oben genannten Schlüsselstellen mitzieht -- das Nutzerfoto
+  // eingeschlossen, es liegt unter NUTZERFOTOS_DIR mit dem Nutzernamen als Dateinamen.
   const desiredUsername = baseUsernameFor(vorname, nachname);
-  let usernameRename = null;
-  if (desiredUsername !== username) {
-    if (getOwn(usersDoc.users, desiredUsername)) {
-      usernameRename = { from: username, to: desiredUsername, applied: false };
-    } else {
-      delete usersDoc.users[username];
-      user.username = desiredUsername;
-      usersDoc.users[desiredUsername] = user;
-      Object.values(usersDoc.groups || {}).forEach((g) => {
-        if (!Array.isArray(g.memberUsernames)) return;
-        const idx = g.memberUsernames.indexOf(username);
-        if (idx !== -1) g.memberUsernames[idx] = desiredUsername;
-      });
-      usernameRename = { from: username, to: desiredUsername, applied: true };
-    }
-  }
-  const finalUsername = (usernameRename && usernameRename.applied) ? desiredUsername : username;
-
-  // ⚠️ Das Nutzerfoto liegt unter dem Nutzernamen ALS DATEINAME (siehe
-  // NUTZERFOTOS_DIR) -- bei einer Umbenennung muss es mitwandern, sonst ist das
-  // Bild nach einer bloßen Tippfehler-Korrektur im Vornamen verschwunden. Das ist
-  // kein Randfall: umbenannt wird hier automatisch, sobald jemand einen Namen
-  // korrigiert. Scheitert der Umzug, wird fotoVersion geräumt -- lieber gar kein
-  // Bild als ein Verweis ins Leere, dem jeder Client mit einem 404 hinterherläuft.
-  if (usernameRename && usernameRename.applied && user.fotoVersion &&
-      USERNAME_RE.test(username) && USERNAME_RE.test(desiredUsername)) {
-    let bewegt = false;
-    try {
-      const mv = await fetch(nutzerfotoUrl(username), {
-        method: "MOVE",
-        headers: {
-          Authorization: authHeader,
-          Destination: nutzerfotoUrl(desiredUsername),
-          Overwrite: "T"
-        }
-      });
-      bewegt = mv.ok;
-    } catch (_) { /* bewegt bleibt false */ }
-    if (!bewegt) delete user.fotoVersion;
-  }
+  const usernameRename = desiredUsername === username ? null : {
+    from: username, to: desiredUsername, applied: false,
+    grund: getOwn(usersDoc.users, desiredUsername) ? "belegt" : "schluessel"
+  };
+  const finalUsername = username;
 
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);

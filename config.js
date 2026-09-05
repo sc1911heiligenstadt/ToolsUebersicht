@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.11",
+    groups: [
+      {
+        title: "Ein korrigierter Name benennt das Konto nicht mehr um",
+        items: [
+          "Wer bei einer Person einen Tippfehler im Vor- oder Nachnamen ausbesserte, benannte damit ohne Nachfrage die Login-Kennung mit um. An dieser Kennung hängt aber fast alles: Handy-Nachrichten, das Kalender-Abo, Aufgaben, Dokumente und Unterschriften, wer was angelegt hat, die Verknüpfung zum Kadermanager, Reaktionen, Vereinsaufgaben, Privatnachrichten und Punkte.",
+          "Mitgezogen wurden davon genau zwei Stellen — Gruppenmitgliedschaft und Nutzerfoto. Alles andere fiel lautlos aus, und die alte Kennung funktionierte danach zum Anmelden nicht mehr.",
+          "Die Kennung bleibt jetzt stehen. Angemeldet wird trotzdem mit dem korrigierten Namen — die Anmeldung findet das Konto über Vor- und Nachnamen, dafür war die Umbenennung nie nötig. Eine passendere Kennung wird nur noch als Hinweis angezeigt."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.10",
     groups: [
       {
