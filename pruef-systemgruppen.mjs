@@ -21,7 +21,11 @@ const DATEI = process.env.WORKER_DATEI
   || process.argv.find((a) => !a.startsWith("--") && a.endsWith(".js"))
   || "E:/ToolsUebersicht/admin-worker.js";
 
-const Q = readFileSync(DATEI, "utf8");
+// Zeilenenden vereinheitlichen: die Schnittmarken unten enthalten Zeilenumbrueche,
+// und bei core.autocrlf=true kommt die Datei mit CRLF aus dem Auschecken. Ohne das
+// griffen sie ins Leere und der Pruefstand brach mit "Endmarke fehlt" ab, statt zu
+// pruefen -- gemessen am 06.09.2026, derselbe Fehler wie in test-fussballcamp.mjs.
+const Q = readFileSync(DATEI, "utf8").replace(/\r\n/g, "\n");
 const MUTATION = process.argv.includes("--mutation");
 
 function schneide(von, bis, name) {
