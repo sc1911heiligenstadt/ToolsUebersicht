@@ -7592,7 +7592,13 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   // buildTrainerRecord/Personalakte (findTrainerdatenRecord) plus dieselbe
   // Status-Ableitung wie Trainerdatens eigene _trainerStatus()/statusLabel
   // (buildTrainerdatenSummary liefert exakt "unvollstaendig"|"ausstehend"|"generiert").
-  const trainervertragStatusCounts = { unvollstaendig: 0, ausstehend: 0, generiert: 0 };
+  //
+  // ⚠️ VIER Faecher, nicht drei. Ein Fach zu wenig heisst nicht "wird nicht
+  // gezaehlt", sondern "die gemeldeten Zahlen ergeben weniger als total, und
+  // nirgends steht, wo der Rest geblieben ist" -- die Zeile darunter legt naemlich
+  // stillschweigend ein weiteres Fach an, das die Antwort gar nicht ausliefert.
+  // Wer die Kaskade in buildTrainerdatenSummary erweitert, erweitert hier mit.
+  const trainervertragStatusCounts = { unvollstaendig: 0, ausstehend: 0, generiert: 0, kontaktdaten: 0 };
   vertragspflichtigeUsernames.forEach((uname) => {
     const user = getOwn(usersDoc.users, uname);
     const record = findTrainerdatenRecord(trainerdatenDoc, user);
@@ -7677,7 +7683,11 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
       total: vertragspflichtigeUsernames.length,
       generiert: trainervertragStatusCounts.generiert,
       ausstehend: trainervertragStatusCounts.ausstehend,
-      unvollstaendig: trainervertragStatusCounts.unvollstaendig
+      unvollstaendig: trainervertragStatusCounts.unvollstaendig,
+      // Additiv. Ein aelterer Client kennt das Feld nicht und rechnet wie
+      // bisher -- er zeigt dann dieselbe Quote wie vorher, nur eben ohne
+      // diesen vierten Wert.
+      kontaktdaten: trainervertragStatusCounts.kontaktdaten
     },
     trainerkodex: { confirmed: trainerkodexBestaetigt, total: trainerUsernames.length },
     jugendschutz: { confirmed: jugendschutzBestaetigt, total: trainerUsernames.length },
@@ -7772,7 +7782,25 @@ function buildTrainerdatenSummary(td) {
     vertragUnterschriebenAm: td.vertragUnterschriebenAm || null,
     // vertragUnterschriebenAm zaehlt hier wie vertragsGeneriert als "generiert" --
     // zwei gleichwertige Wege zum selben Ziel (unterschriebener Vertrag).
-    status: td.status || ((td.vertragsGeneriert || td.vertragUnterschriebenAm) ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig")),
+    //
+    // ⚠️ Die Kaskade MUSS Zweig fuer Zweig zu _trainerStatus in
+    // E:\Trainerdaten\app.js passen -- dort steht die Wahrheit, hier nur die
+    // Sicht darauf. Bis zum 05.09.2026 fehlte der zweite Zweig
+    // (vertragspflichtig === false -> "kontaktdaten") komplett: die
+    // Personalakte zeigte "Vertrag ausstehend" fuer Geschaeftsstelle, Vorstand
+    // und Helfer, die nie einen Vertrag bekommen, und das Admin-Dashboard
+    // zaehlte sie in ein Fach, das es nicht ausliefert. Seit a91eb72 schreibt
+    // provisionProfile vertragspflichtig in JEDEN Eintrag und traegt es im
+    // Altbestand nach -- der Fall ist damit kein Sonderfall mehr.
+    //
+    // Die Reihenfolge ist bindend: die Handauswahl des Admins (td.status)
+    // schlaegt alles, dann kommt die fehlende Vertragspflicht, erst dann der
+    // erzeugte Vertrag. Andersherum bekaeme jemand ohne Vertragspflicht, dem
+    // frueher einmal ein Vertrag erzeugt wurde, weiter "generiert".
+    status: td.status
+      || (td.vertragspflichtig === false ? "kontaktdaten"
+        : ((td.vertragsGeneriert || td.vertragUnterschriebenAm) ? "generiert"
+          : (td.username ? "ausstehend" : "unvollstaendig"))),
     fuehrerscheinHochgeladenAm: td.fuehrerscheinHochgeladenAm || null,
     fuehrerscheinGueltigBis, fuehrerscheinGueltig,
     fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null,
