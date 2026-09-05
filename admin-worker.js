@@ -16070,17 +16070,25 @@ const ABLAUFPLAN_MERKER_TAGE = 3;
 // denselben Zeitpunkt legt.
 const ABLAUFPLAN_MAX_JE_LAUF = 40;
 
-// ⚠️ ZWEITE KOPIE von normMannschaft aus E:\ablaufplan\zeitlogik.js.
-// Der Worker kann die Datei des App-Repos nicht laden. Wer die eine aendert,
-// muss die andere mitziehen -- sonst bekommt ein Trainer mit "D1-Jugend" im
-// Profil keine Erinnerung fuer einen Punkt, der "D1" sagt, waehrend ihn die App
-// weiterhin als seinen markiert. Gleiche Lage wie NEWS_REACTION_EMOJIS.
-function ablaufplanNormTeam(name) {
-  return String(name || "")
-    .toLowerCase()
-    .replace(/[\s._-]+/g, "")
-    .replace(/(jugend|junioren|juniorinnen|mannschaft)$/, "");
-}
+// ⚠️ Das Gegenstueck im Client ist normMannschaft in E:\ablaufplan\zeitlogik.js.
+// Der Worker kann die Datei des App-Repos nicht laden, es bleiben also zwei
+// Kopien -- wer die eine aendert, muss die andere mitziehen. Sonst bekommt ein
+// Trainer mit "D1-Jugend" im Profil keine Erinnerung fuer einen Punkt, der "D1"
+// sagt, waehrend ihn die App weiterhin als seinen markiert. Beide Fassungen
+// sind seit dem 05.09.2026 wieder gleich (Stand: mannschaftNorm).
+// Gleiche Lage wie NEWS_REACTION_EMOJIS.
+// ⚠️ Seit dem 05.09.2026 IST das mannschaftNorm -- keine eigene Fassung mehr.
+// Die frühere schnitt "junioren"/"jugend" nur am ENDE ab (`$`) und ließ bei
+// "B-Junioren 1" das `bjunioren1` stehen: der Trainer der B1 bekam nie eine
+// Erinnerung, weil die Ankreuzliste des Punkt-Dialogs seit dem 12.08.2026 die
+// KURZNAMEN aus der zentralen Mannschaftsliste liefert, im Trainerprofil aber
+// weiter der alte Freitext steht (`abgleichAktiv` ist per Vorgabe aus).
+// Der Fotoauftrag-Push hat genau diesen Fehler am 19.08. abgelegt und den
+// Grund bei :12930 aufgeschrieben -- hier stand er noch. Es gab keinen
+// Ersatzweg: der Lauf setzt den Merker VOR dem Versand, die Erinnerung war
+// damit endgültig verbraucht, ohne dass sie je jemanden erreicht hat.
+// busplanNormTeam hängt daran und zieht mit; dort ist die Lage dieselbe.
+const ablaufplanNormTeam = mannschaftNorm;
 
 // Absoluter Zeitpunkt eines Punktes. ⚠️ Ueber vkBerlinWandzeitZuMs, damit
 // Sommer- und Winterzeit stimmen -- der Lauf tickt in UTC, die Uhrzeit im
