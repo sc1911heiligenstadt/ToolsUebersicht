@@ -483,12 +483,25 @@ function pruefeTrainerdaten(mutation) {
   const rumpf = rumpfVon(appJs, "function raeumeAdminBildschirm() {");
   if (!rumpf) { if (!mutation) abbruch("raeumeAdminBildschirm nicht ausschneidbar"); return true; }
 
+  // ⚠️ Seit dem 06.09.2026 ruft raeumeAdminBildschirm auch _snapshotBase(), damit
+  // der Drei-Wege-Abgleich in _saveMerged nach dem Raeumen keine alte Basis behaelt.
+  // Dieser Pruefstand schneidet die Funktion heraus und fuehrt sie ALLEIN aus -- ein
+  // Bezug nach draussen laesst ihn beim Bauen mit einem ReferenceError sterben, und
+  // ein Pruefstand, der beim Einlesen stirbt, meldet keinen Fehlschlag, sondern gar
+  // nichts. Also wird der Helfer ECHT mitgeschnitten (kein Nachbau), samt der
+  // Variablen, auf der er arbeitet.
+  const snapRumpf = rumpfVon(appJs, "function _snapshotBase() {");
+  if (!snapRumpf) { if (!mutation) abbruch("_snapshotBase nicht ausschneidbar"); return true; }
+  const baseZeile = (appJs.match(/^let _baseTrainer = .*$/m) || [])[0];
+  if (!baseZeile) { if (!mutation) abbruch("_baseTrainer nicht gefunden"); return true; }
+
   let api;
   try {
     api = new Function("document", "zustand",
       "let bildschirmGeraeumt = false;\nlet davConfig = { url: 'x' };\nlet appData = { version: 1, trainer: [{ iban: 'DE00' }] };\n" +
+      baseZeile + "\n" + snapRumpf + "\n" +
       rumpf +
-      "\nreturn { raeumeAdminBildschirm, stand: () => ({ bildschirmGeraeumt, davConfig, appData }) };")(dom.document, {});
+      "\nreturn { raeumeAdminBildschirm, stand: () => ({ bildschirmGeraeumt, davConfig, appData, basis: _baseTrainer }) };")(dom.document, {});
   } catch (e) {
     if (!mutation) abbruch("Trainerdaten-Quelle nicht ausfuehrbar: " + e.message);
     return true;
@@ -505,6 +518,10 @@ function pruefeTrainerdaten(mutation) {
   zusage("T6", "die Zwischenspeicher sind geleert",
     api.stand().davConfig === null && (api.stand().appData.trainer || []).length === 0);
   zusage("T7", "der Merker steht", api.stand().bildschirmGeraeumt === true);
+  // Der Abgleichs-Schnappschuss ist ein Zwischenspeicher wie davConfig: bleibt er
+  // nach dem Raeumen stehen, misst der naechste _saveMerged gegen eine Basis aus
+  // einer Sitzung, die es nicht mehr gibt.
+  zusage("T7b", "die Basis des Drei-Wege-Abgleichs ist leer", api.stand().basis.size === 0);
 
   // ---- Quelltext ------------------------------------------------------------
   const rs = rumpfVon(appJs, "function raeumeBeiSitzungsverlust() {");
@@ -513,8 +530,15 @@ function pruefeTrainerdaten(mutation) {
 
   const wuerfe = (dbJs.match(/new NotLoggedInError/g) || []).length;
   const haken = (dbJs.match(/typeof raeumeBeiSitzungsverlust === "function"/g) || []).length;
+  // ⚠️ Hier stand bis zum 06.09.2026 `wuerfe === 30 && haken === 30`. Die
+  // geschuetzte Eigenschaft ist aber nicht die Zahl 30, sondern das PAAR: jede
+  // Stelle, die einen Sitzungsfehler wirft, muss den Raeum-Haken tragen. db.js hat
+  // 28 solche Stellen, alle 28 mit Haken -- der Pruefstand lief trotzdem rot und
+  // zeigte damit ueber Laeufe hinweg einen Fehler an, den es nicht gab.
+  // Die Untergrenze > 0 bleibt: greift der Regex einmal ins Leere, waere 0 === 0
+  // sonst still gruen, und der Pruefstand pruefte gar nichts mehr.
   zusage("T10", `db.js: alle ${wuerfe} Sitzungs-Fehler tragen den Haken (gefunden ${haken})`,
-    wuerfe === 30 && haken === 30);
+    wuerfe > 0 && wuerfe === haken);
 
   // ⚠️ Die Falle aus dem Durchgang vom 25.08.: wer einen SECHSTEN Trainer-Bildschirm
   // ergaenzt, muss ihn in die Raeum-Liste eintragen -- sonst wird er versteckt,
