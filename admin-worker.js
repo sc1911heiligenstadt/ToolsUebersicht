@@ -2410,7 +2410,18 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   if (!mannschaftenGesperrt) {
     user.mannschaften = normalizeMannschaften(body.mannschaften);
   }
-  user.vertragBenoetigt = !!body.vertragBenoetigt;
+  // vertragBenoetigt ist OPTIONAL -- gleiche Schonung wie oben bei "art".
+  // ⚠️ Bis zum 06.09.2026 stand hier ohne Ruecksicht
+  //   user.vertragBenoetigt = !!body.vertragBenoetigt;
+  // Der Knopf "Lizenz & Mannschaft aus Personalkosten uebernehmen" (app.js:768)
+  // schickt das Feld gar nicht mit; !!undefined ist false, und damit verlor jedes
+  // uebernommene Konto in einer Massenschleife lautlos seine Vertragspflicht.
+  // Betroffen sind genau die Leute, die NICHT in der Gruppe "Trainer" stehen
+  // (Helfer, Betreuer) -- bei ihnen haengt isVertragspflichtig() allein an diesem
+  // von Hand gesetzten Haken.
+  if (body.vertragBenoetigt !== undefined) {
+    user.vertragBenoetigt = !!body.vertragBenoetigt;
+  }
 
   // Der Login-Nutzername wird beim Anlegen einmalig aus Vorname/Nachname generiert
   // (generateUsername) und danach nie mehr angefasst. Ohne diesen Abgleich bleibt
