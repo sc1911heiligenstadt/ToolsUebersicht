@@ -24270,6 +24270,36 @@ function ksKonzeptSicher(k) {
 // beim Ausliefern deckt es Altbestand und Handarbeit an der Nextcloud-Datei ab,
 // beim Speichern verhindert es, dass das Skript ueberhaupt in der Datei steht
 // und wirkt, sobald irgendwo ein zweiter Leseweg entsteht.
+// Die Kapitelliste der Schulung -- mit Rueckfall auf die Vorgabe.
+//
+// ⚠️ kinderschutz.json fuehrt die Kapitel erst, wenn jemand im
+// Verwaltungsbereich einmal auf "Speichern" gedrueckt hat. Bis dahin liefert
+// handleKsInfo `schulung: null`, und NUR der Client hatte dafuer einen
+// Rueckfall (feld("schulung", VORGABE_SCHULUNG)). Der Worker rechnete gegen
+// eine leere Liste -- mit drei Folgen:
+//   * handleKsSchulungSchritt setzte bestandenAm NIE und loeschte bei jedem
+//     Klick sogar einen Altbestand,
+//   * die Nachweisliste zeigte "0 von 0" und niemanden als durch,
+//   * die Schulungs-Erinnerung des Nachtlaufs fiel ganz aus.
+// Der Teilnehmer sah dabei "✅ Schulung abgeschlossen" -- er rechnet gegen die
+// eingebaute Liste. Genau der Nachweis, den der Verein braucht, fehlte.
+//
+// ⚠️ KS_SCHULUNG_VORGABE_IDS ist eine ZWEITE KOPIE der Ids aus
+// E:\kinderschutz\inhalte-vorgabe.js (VORGABE_SCHULUNG) -- der Worker kann die
+// Datei des App-Repos nicht laden. Gleiche Lage wie ZERT_KRIT_RE bei der
+// Klubzertifizierung und NEWS_REACTION_EMOJIS: die Id-Form ist Teil des
+// Vertrags zwischen beiden Repos. Wer dort ein Kapitel ergaenzt oder umbenennt,
+// zieht diese Liste mit -- sonst gilt eine abgeschlossene Schulung wieder als
+// unvollstaendig. Nur die IDS stehen hier, nicht die Texte: gebraucht wird die
+// Vollstaendigkeitspruefung, nicht der Inhalt.
+const KS_SCHULUNG_VORGABE_IDS = ["k1", "k2", "k3", "k4", "k5", "k6"];
+
+function ksSchulungKapitelIds(doc) {
+  const gespeichert = (doc && Array.isArray(doc.schulung)) ? doc.schulung : [];
+  const ids = gespeichert.map((k) => String((k && k.id) || "")).filter(Boolean);
+  return ids.length ? ids : KS_SCHULUNG_VORGABE_IDS.slice();
+}
+
 function ksSchulungSicher(kapitel) {
   if (!Array.isArray(kapitel)) return kapitel || null;
   return kapitel.map((k) =>
@@ -24880,7 +24910,7 @@ async function handleKsSchulungSchritt(request, body, env, authHeader, corsHeade
     if (!kapitelId) throw new KsFehler("Fehlendes Kapitel.", 400);
 
     const doc = ksNormalisiere(await datei());
-    const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
+    const kapitelIds = ksSchulungKapitelIds(doc);
     const mich = normalizeUsername(String(session.username || ""));
     let fertig = false;
     let mein = null;
@@ -24894,9 +24924,12 @@ async function handleKsSchulungSchritt(request, body, env, authHeader, corsHeade
       // später ein Kapitel dazu, ist ein früher erteilter Abschluss nicht mehr
       // vollständig — dann verschwindet er wieder. Das ist gewollt: ein
       // Nachweis soll den geltenden Stand belegen, nicht einen alten.
-      const alleDa = kapitel.length > 0 && kapitel.every((k) => alt.kapitel[k.id]);
+      const alleDa = kapitelIds.length > 0 && kapitelIds.every((id) => alt.kapitel[id]);
       if (alleDa && !alt.bestandenAm) { alt.bestandenAm = new Date().toISOString(); fertig = true; }
-      if (!alleDa) alt.bestandenAm = "";
+      // ⚠️ Nur zuruecknehmen, wenn es ueberhaupt eine Liste gibt. Eine leere
+      // Liste ist kein "unvollstaendig", sondern "unbekannt" -- sie darf keinen
+      // bereits erteilten Nachweis loeschen.
+      if (!alleDa && kapitelIds.length > 0) alt.bestandenAm = "";
 
       sdoc.stand[mich] = alt;
       mein = { kapitel: alt.kapitel, bestandenAm: alt.bestandenAm };
@@ -24921,7 +24954,9 @@ async function handleKsSchulungStand(request, env, authHeader, corsHeaders) {
       readJson(KS_SCHULUNG_URL, authHeader, ksSchulungLeer()),
       readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
     ]);
-    const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
+    // Siehe ksSchulungKapitelIds: ohne den Rueckfall stand hier fuer jeden
+    // "0 von 0", und niemand galt als durch.
+    const kapitelIds = ksSchulungKapitelIds(doc);
     const users = usersDoc.users || {};
 
     // ⚠️ Datenschutz-Fix 2026-08-29: SPIELERKONTEN bleiben draußen. Die Kachel ist
@@ -24948,8 +24983,8 @@ async function handleKsSchulungStand(request, env, authHeader, corsHeaders) {
           noetig: !!s.noetig,
           bestandenAm: s.bestandenAm || "",
           erinnertAm: s.erinnertAm || "",
-          kapitelFertig: kapitel.filter((x) => haken[x.id]).length,
-          kapitelGesamt: kapitel.length
+          kapitelFertig: kapitelIds.filter((id) => haken[id]).length,
+          kapitelGesamt: kapitelIds.length
         };
       });
     return json({ ok: true, personen }, 200, corsHeaders);
@@ -25284,8 +25319,10 @@ async function ksTaeglicherLauf(env, authHeader, execCtx) {
     }
 
     // Schulungs-Erinnerung. Alle vier Wochen, bis erledigt.
-    const kapitel = Array.isArray(doc.schulung) ? doc.schulung : [];
-    if (kapitel.length) {
+    // Siehe ksSchulungKapitelIds: ohne den Rueckfall fiel dieser ganze Block
+    // aus, und die Schulungs-Erinnerung ging nie raus.
+    const kapitelIds = ksSchulungKapitelIds(doc);
+    if (kapitelIds.length) {
       const faellig = [];
       for (const [name, s] of Object.entries(sdoc.stand || {})) {
         if (!s || !s.noetig || s.bestandenAm) continue;
