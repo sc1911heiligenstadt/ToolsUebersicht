@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.10",
+    groups: [
+      {
+        title: "„Apps“ einer Gruppe speichern löscht nichts mehr",
+        items: [
+          "Wer bei einer Gruppe den Bereich „Apps“ öffnete und speicherte, löschte damit zwei Dinge: die Freigabe des Vereinswikis und alle von Hand gesetzten „Sensibel“-Haken. Beides stillschweigend.",
+          "Die Folge: die Frage-Box „Toolbox Wiki“ unter „Feedback & Hilfe“ war für alle außer Administratoren weg — und Administratoren sehen ohnehin alles, der Auslöser hat seinen eigenen Schaden also nie bemerkt.",
+          "Beides bleibt jetzt stehen. Die Einstellung des Wikis wird in diesem Bereich gar nicht angeboten und deshalb auch nicht angefasst."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.9",
     groups: [
       {

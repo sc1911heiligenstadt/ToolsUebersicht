@@ -871,6 +871,23 @@ function summarizeProvisionReport(report) {
 // Modus zu verändern (z.B. bei einem Tool, das ohnehin für "Alle eingeloggten Nutzer"
 // sichtbar ist) — sonst würde das Vergeben eines Bearbeiten-Rechts die Sichtbarkeit
 // ungewollt auf "Nur bestimmte Gruppen" verengen.
+// ⚠️ Die Antwort dieser Funktion ERSETZT serverseitig den ganzen tools-Block
+// (`config.tools = body.tools;` in save-visibility). Was sie nicht mitbaut, ist
+// danach weg -- lautlos, denn ein fehlender Eintrag gilt auf beiden Seiten als
+// "versteckt". Bis zum 05.09.2026 fehlten zwei Dinge:
+//
+//   * der Eintrag `vereinswiki`. Er hat seit 1.3 keine Kachel und steht nur in
+//     VIRTUAL_VISIBILITY_ENTRIES. Ein Speichern hier loeschte ihn, danach
+//     antwortete das Gateway dem Wiki-Worker mit 403 und die Frage-Box in
+//     "Feedback & Hilfe" war fuer alle Nicht-Admins fort.
+//   * jedes von Hand gesetzte `kritisch`-Flag aller 40 Werkzeuge. Danach fiel
+//     die Sensibel-Zuordnung wieder auf die Vorgabe KRITISCHE_TOOLS zurueck.
+//
+// Fuer Admins bleibt alles sichtbar (`if (session.isAdmin) return true`) -- wer
+// den Schaden ausloest, sieht ihn also nicht.
+//
+// Wer hier ein weiteres Feld im Sichtbarkeits-Panel pflegt, traegt es unten
+// genauso durch.
 function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedAdminToolIds, selectedProvisionToolIds) {
   const updated = {};
   TOOLS.forEach((t) => {
@@ -914,6 +931,24 @@ function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolId
       adminGroupIds: Array.from(adminGroupIds),
       provisionGroupIds: Array.from(provisionGroupIds)
     };
+    // Das Sensibel-Flag wird in diesem Panel gar nicht angeboten -- also
+    // unveraendert durchreichen statt es wegfallen zu lassen. Nur setzen, wenn
+    // es gespeichert war: ein `kritisch: undefined` waere im JSON zwar
+    // harmlos, aber die gespeicherte Datei soll nicht mit leeren Feldern
+    // zuwachsen.
+    if (entry.kritisch !== undefined) updated[t.id].kritisch = !!entry.kritisch;
+  });
+
+  // ⚠️ Eintraege ohne Kachel (VIRTUAL_VISIBILITY_ENTRIES, heute nur das
+  // Vereinswiki) gehen UNVERAENDERT mit -- nicht durch die Schleife oben.
+  // Der Gruppen-Picker bietet sie gar nicht an, der Admin kann zu ihnen also
+  // keine Absicht aeussern. Liefe der virtuelle Eintrag durch die Schleife,
+  // waere er nie in selectedToolIds, die Gruppe fiele aus seinen groupIds und
+  // beim letzten verbliebenen Zugriff wuerde er auf "versteckt" gesetzt --
+  // derselbe Schaden wie vorher, nur auf dem Umweg.
+  VIRTUAL_VISIBILITY_ENTRIES.forEach((t) => {
+    const entry = visibilityState[t.id];
+    if (entry) updated[t.id] = entry;
   });
   return updated;
 }
