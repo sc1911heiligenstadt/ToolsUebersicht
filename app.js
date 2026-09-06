@@ -8567,8 +8567,8 @@ function renderMannschaftenListe() {
     const trainerZeilen = t.trainer.map(function (p, j) {
       return '' +
         '<div class="mannschaft-person" data-team="' + i + '" data-person="' + j + '">' +
-          '<select class="mannschaft-person-name">' + mannschaftPersonenOptionen(p.username) + '</select>' +
-          '<select class="mannschaft-person-rolle">' +
+          '<select class="mannschaft-person-name" aria-label="Person">' + mannschaftPersonenOptionen(p.username) + '</select>' +
+          '<select class="mannschaft-person-rolle" aria-label="Aufgabe">' +
             rollen.map(function (r) {
               return '<option value="' + escapeHtml(r.id) + '"' +
                 (r.id === p.rolle ? " selected" : "") + ">" + escapeHtml(r.label) + "</option>";
@@ -8592,26 +8592,26 @@ function renderMannschaftenListe() {
           ? '<p class="mannschaft-warnung">' + escapeHtml(t.grund) + "</p>"
           : "") +
         '<div class="form-grid">' +
-          '<div class="form-field"><label>Kurz (steht in den Daten)</label>' +
-            '<input type="text" class="m-kurz" maxlength="20" value="' + escapeHtml(t.kurz) + '" /></div>' +
-          '<div class="form-field"><label>Langer Name</label>' +
-            '<input type="text" class="m-lang" maxlength="80" value="' + escapeHtml(t.lang) + '" /></div>' +
-          '<div class="form-field"><label>Liga</label>' +
-            '<input type="text" class="m-liga" maxlength="60" value="' + escapeHtml(t.liga) + '" /></div>' +
-          '<div class="form-field"><label>Altersstufe</label><select class="m-stufe">' +
+          '<div class="form-field"><label for="m-kurz-' + i + '">Kurz (steht in den Daten)</label>' +
+            '<input id="m-kurz-' + i + '" type="text" class="m-kurz" maxlength="20" value="' + escapeHtml(t.kurz) + '" /></div>' +
+          '<div class="form-field"><label for="m-lang-' + i + '">Langer Name</label>' +
+            '<input id="m-lang-' + i + '" type="text" class="m-lang" maxlength="80" value="' + escapeHtml(t.lang) + '" /></div>' +
+          '<div class="form-field"><label for="m-liga-' + i + '">Liga</label>' +
+            '<input id="m-liga-' + i + '" type="text" class="m-liga" maxlength="60" value="' + escapeHtml(t.liga) + '" /></div>' +
+          '<div class="form-field"><label for="m-stufe-' + i + '">Altersstufe</label><select id="m-stufe-' + i + '" class="m-stufe">' +
             stufen.map(function (s) {
               return '<option value="' + escapeHtml(s) + '"' + (s === t.stufe ? " selected" : "") + ">" +
                 escapeHtml(MANNSCHAFT_STUFEN_LABEL[s] || s) + "</option>";
             }).join("") +
           "</select></div>" +
-          '<div class="form-field"><label>Nummer (1, 2, 3 …)</label>' +
-            '<input type="number" class="m-nummer" min="0" max="99" value="' + (t.nummer || 0) + '" /></div>' +
+          '<div class="form-field"><label for="m-nummer-' + i + '">Nummer (1, 2, 3 …)</label>' +
+            '<input id="m-nummer-' + i + '" type="number" class="m-nummer" min="0" max="99" value="' + (t.nummer || 0) + '" /></div>' +
           // Leer lassen ist der Normalfall: dann rechnet der Server den Jahrgang
           // aus Saison und Altersstufe, und niemand muss ihn jede Saison
           // nachziehen. Das Feld ist nur für die Fälle, die sich nicht rechnen
           // lassen — Herren, Mädchen, ein dreijähriger Bambini-Kader.
-          '<div class="form-field"><label>Jahrgänge (leer = automatisch)</label>' +
-            '<input type="text" class="m-jahrgaenge" maxlength="40" value="' + escapeHtml(t.jahrgaenge || "") +
+          '<div class="form-field"><label for="m-jahrgaenge-' + i + '">Jahrgänge (leer = automatisch)</label>' +
+            '<input id="m-jahrgaenge-' + i + '" type="text" class="m-jahrgaenge" maxlength="40" value="' + escapeHtml(t.jahrgaenge || "") +
             '" placeholder="' + escapeHtml(mannschaftJahrgangPlatzhalter(t.kurz, t.stufe)) + '" /></div>' +
         "</div>" +
         '<div class="mannschaft-schalter">' +

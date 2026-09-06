@@ -519,6 +519,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.12",
+    groups: [
+      {
+        title: "Mannschaften-Verwaltung: jedes Feld hat jetzt einen Namen",
+        items: [
+          "Die Maske unter Einstellungen → Mannschaften wird beim Öffnen zusammengebaut. Die Beschriftungen standen dabei zwar sichtbar neben den Feldern, waren mit ihnen aber technisch nicht verbunden — ein Vorleseprogramm sagte zu „Kurz“, „Liga“ oder „Nummer“ nur „Eingabefeld“.",
+          "Die beiden Auswahlfelder in der Trainerzeile hatten überhaupt keine Beschriftung; sie heißen jetzt „Person“ und „Aufgabe“.",
+          "Sichtbar ändert sich nichts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.11",
     groups: [
       {
