@@ -727,6 +727,10 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   vertical-align: middle;
   margin-left: 4px;
 }
+/* ⚠️ `.version-badge` oben ist für den BLAUEN Kopf gebaut: weiße Schrift auf
+   18 % Weiß. Auf einer hellen Karte ist es damit unsichtbar — steht im DOM,
+   hat Text, sieht man nicht. Jede helle Umgebung braucht diese Umkehrung. */
+.card .version-badge { background: var(--blue-light); border-color: var(--blue-light); color: var(--blue); }
 
 #changelog-list { display: flex; flex-direction: column; gap: 8px; }
 .changelog-entry { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
