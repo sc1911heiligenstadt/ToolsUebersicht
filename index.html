@@ -543,8 +543,8 @@
           <!-- Zwei getrennte Eingaben: capture="user" springt direkt in die
                Frontkamera, ohne Umweg über die Mediathek. Ein einzelnes Feld
                könnte nur eines von beidem. -->
-          <input type="file" id="foto-datei" accept="image/*" style="display:none;" />
-          <input type="file" id="foto-kamera-datei" accept="image/*" capture="user" style="display:none;" />
+          <input type="file" id="foto-datei" aria-label="Eigenes Foto als Datei auswählen" accept="image/*" style="display:none;" />
+          <input type="file" id="foto-kamera-datei" aria-label="Eigenes Foto aufnehmen" accept="image/*" capture="user" style="display:none;" />
           <p class="muted foto-status" id="foto-status" style="display:none;"></p>
         </div>
       </div>
@@ -910,7 +910,7 @@
             <button type="button" class="btn secondary small" id="btn-news-medien-add">📎 Bild oder Video hinzufügen</button>
             <button type="button" class="btn secondary small" id="btn-news-video-aufnehmen">🎥 Bildschirmvideo aufnehmen</button>
           </div>
-          <input type="file" id="news-medien-datei" style="display:none;" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" />
+          <input type="file" id="news-medien-datei" aria-label="Bild oder Video für die Meldung auswählen" style="display:none;" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" />
           <p class="muted" style="font-size:12px; margin-top:6px;">JPEG, PNG, GIF, WebP, MP4 oder WebM. Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar.</p>
         </div>
         <div class="form-field" style="grid-column:1 / -1;">
@@ -1182,7 +1182,7 @@
         <summary>Nutzerliste (<span id="users-count">0</span>)</summary>
         <div class="users-filter">
           <input type="search" id="users-filter-text" placeholder="Name suchen …" />
-          <select id="users-filter-group">
+          <select id="users-filter-group" aria-label="Nutzer nach Gruppe filtern">
             <option value="">Alle Gruppen</option>
           </select>
           <button type="button" class="btn secondary small" id="users-filter-reset">Filter zurücksetzen</button>
@@ -1373,7 +1373,7 @@
         <div class="btn-row" style="justify-content:flex-start; gap:8px;">
           <button type="button" class="btn small" id="btn-rechte-sichern">Rechte sichern</button>
           <button type="button" class="btn small secondary" id="btn-rechte-einspielen">Sicherung einspielen</button>
-          <input type="file" id="rechte-einspielen-datei" accept="application/json,.json" style="display:none;" />
+          <input type="file" id="rechte-einspielen-datei" aria-label="Sicherung der Rechte auswählen" accept="application/json,.json" style="display:none;" />
         </div>
         <p class="muted" id="rechte-sicherung-hinweis" style="display:none; margin-top:8px;"></p>
       </div>
@@ -1850,7 +1850,7 @@
 <!-- Dateiauswahl für den Admin-Weg (fremdes Foto setzen). Bewusst eine eigene,
      globale Eingabe statt einer je Nutzerzeile: die Zeilen werden bei jedem
      Neu-Rendern verworfen, ein Listener daran wäre danach verwaist. -->
-<input type="file" id="admin-foto-datei" accept="image/*" style="display:none;" />
+<input type="file" id="admin-foto-datei" aria-label="Foto für dieses Konto auswählen" accept="image/*" style="display:none;" />
 
 <!-- Zuschnitt des Nutzerfotos. Steht bewusst als LETZTES Overlay im Markup: bei
      gleichem z-index entscheidet die DOM-Reihenfolge, und dieser Dialog geht immer
