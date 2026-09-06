@@ -2493,6 +2493,38 @@ async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
+  // ⚠️ Der Personalakten-Schnappschuss muss mit. handleArchiveTrainer legt ihn in
+  // personalakte.json ab (buildTrainerRecord: Vor- und Nachname, Lizenz,
+  // Mannschaften, Gruppenrechte, letzter Login, Vertrags- und
+  // Führungszeugnis-Stand, Kodex, Checkliste, Personalkosten mit AE und
+  // Besonderheit, Kaderzuordnung). Bis zum 06.09.2026 fasste diese Aktion die
+  // Datei nicht an: wer archiviert und danach gelöscht wurde, hinterliess einen
+  // vollstaendigen Personendatensatz, den anschliessend NIEMAND mehr sieht (die
+  // Anzeige baut aus nutzer.json) und den kein Bedienweg mehr entfernt --
+  // eine schreibende Sackgasse.
+  //
+  // Ergebnis wird GEMELDET, nicht verschluckt: scheitert das Raeumen, ist das
+  // Konto trotzdem weg (das ist die Hauptsache der Aktion), aber der Aufrufer
+  // muss erfahren, dass eine Kopie zurueckblieb.
+  let personalakteGeraeumt = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    try {
+      const { data: paDoc, rev } = await readJsonWithRev(
+        DAV_APPS.personalakte, authHeader, { version: 1, archiv: [] });
+      if (!paDoc || !Array.isArray(paDoc.archiv)) { personalakteGeraeumt = 0; break; }
+      const vorher = paDoc.archiv.length;
+      paDoc.archiv = paDoc.archiv.filter((e) => e && e.username !== username);
+      if (paDoc.archiv.length === vorher) { personalakteGeraeumt = 0; break; }
+      await writeJson(DAV_APPS.personalakte, authHeader, paDoc, rev || undefined);
+      personalakteGeraeumt = vorher - paDoc.archiv.length;
+      break;
+    } catch (e) {
+      // Nur ein Schreibkonflikt lohnt den zweiten Anlauf -- bei allem anderen
+      // waere die Wiederholung nur eine Verzoegerung mit demselben Ergebnis.
+      if (!(e instanceof ConflictError) || versuch === 2) { personalakteGeraeumt = false; break; }
+    }
+  }
+
   // Ein Foto ist ein Personenbezug und darf ein gelöschtes Konto nicht überleben.
   // Bewusst NACH dem Schreiben und ohne Fehlerbehandlung: das Konto ist die
   // Wahrheit, und wenn der DELETE hier scheitert, ist eine zurückbleibende Datei
@@ -2503,7 +2535,7 @@ async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
     } catch (_) { /* best effort */ }
   }
 
-  return json({ deleted: username }, 200, corsHeaders);
+  return json({ deleted: username, personalakteGeraeumt }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Gruppen ----------
