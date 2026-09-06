@@ -115,9 +115,39 @@ export default {
 // ---------------------------------------------------------------------------
 // Versand an ein einzelnes Geraet
 // ---------------------------------------------------------------------------
+// Die echten Push-Dienste der Browser. Ein Endpunkt gehoert genau einem von
+// ihnen -- alles andere ist kein Geraet, sondern ein selbstgewaehltes Ziel.
+//
+// ⚠️ Wird diese Liste zu eng, hoert Push fuer die betroffenen Leute LAUTLOS auf
+// zu wirken. Kommt ein Browser mit einem neuen Host dazu, gehoert er hier dazu
+// -- und zwar in BEIDEN Workern (admin-worker.js und push-worker.js sind
+// getrennte Bundles, sie koennen sich nichts teilen).
+//   Chrome/Edge/Opera : fcm.googleapis.com, android.googleapis.com
+//   Firefox           : updates.push.services.mozilla.com
+//   Safari/iOS        : web.push.apple.com
+//   Edge (alt)        : *.notify.windows.com
+const PUSH_DIENSTE = [".googleapis.com", ".push.apple.com",
+                      ".push.services.mozilla.com", ".notify.windows.com"];
+function pushEndpunktErlaubt(endpoint) {
+  let u;
+  try { u = new URL(String(endpoint || "")); } catch (_) { return false; }
+  // Das Schema gehoert MIT hier herein, obwohl beide Aufrufer es daneben schon
+  // pruefen: die Funktion laeuft in zwei getrennten Workern, und ein dritter
+  // Aufrufer soll sie nicht vergessen koennen.
+  if (u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  // Suffix-Vergleich MIT fuehrendem Punkt: sonst liesse "boesegoogleapis.com"
+  // sich als googleapis.com ausgeben.
+  return PUSH_DIENSTE.some((d) => host === d.slice(1) || host.endsWith(d));
+}
+
 async function sendeAnEinGeraet(abo, klartext, vapidKey, vapidPublicB64, subject) {
   const endpoint = String(abo.endpoint || "");
   if (!/^https:\/\//i.test(endpoint)) throw new Error("Endpunkt ist keine https-Adresse");
+  // Zweiter Riegel: das Gateway laesst seit dem 06.09.2026 nur noch echte
+  // Push-Dienste herein -- aber ALT gespeicherte Abos liegen weiter in der Datei.
+  // Ein Fix nur am Eingang liesse die vorhandenen unveraendert wirken.
+  if (!pushEndpunktErlaubt(endpoint)) throw new Error("Endpunkt gehoert zu keinem bekannten Push-Dienst");
 
   const koerper = await verschluessle(klartext, abo.p256dh, abo.auth);
   const jwt = await baueVapidJwt(new URL(endpoint).origin, subject, vapidKey);

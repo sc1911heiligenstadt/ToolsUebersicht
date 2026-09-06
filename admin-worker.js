@@ -12862,6 +12862,32 @@ async function handlePushStatus(request, env, authHeader, corsHeaders) {
   }, 200, corsHeaders);
 }
 
+// Die echten Push-Dienste der Browser. Ein Endpunkt gehoert genau einem von
+// ihnen -- alles andere ist kein Geraet, sondern ein selbstgewaehltes Ziel.
+//
+// ⚠️ Wird diese Liste zu eng, hoert Push fuer die betroffenen Leute LAUTLOS auf
+// zu wirken. Kommt ein Browser mit einem neuen Host dazu, gehoert er hier dazu
+// -- und zwar in BEIDEN Workern (admin-worker.js und push-worker.js sind
+// getrennte Bundles, sie koennen sich nichts teilen).
+//   Chrome/Edge/Opera : fcm.googleapis.com, android.googleapis.com
+//   Firefox           : updates.push.services.mozilla.com
+//   Safari/iOS        : web.push.apple.com
+//   Edge (alt)        : *.notify.windows.com
+const PUSH_DIENSTE = [".googleapis.com", ".push.apple.com",
+                      ".push.services.mozilla.com", ".notify.windows.com"];
+function pushEndpunktErlaubt(endpoint) {
+  let u;
+  try { u = new URL(String(endpoint || "")); } catch (_) { return false; }
+  // Das Schema gehoert MIT hier herein, obwohl beide Aufrufer es daneben schon
+  // pruefen: die Funktion laeuft in zwei getrennten Workern, und ein dritter
+  // Aufrufer soll sie nicht vergessen koennen.
+  if (u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  // Suffix-Vergleich MIT fuehrendem Punkt: sonst liesse "boesegoogleapis.com"
+  // sich als googleapis.com ausgeben.
+  return PUSH_DIENSTE.some((d) => host === d.slice(1) || host.endsWith(d));
+}
+
 async function handlePushAboAnlegen(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -12875,6 +12901,16 @@ async function handlePushAboAnlegen(request, body, env, authHeader, corsHeaders)
     return json({ error: "Unvollstaendiges Abo" }, 400, corsHeaders);
   }
   if (endpoint.length > 800) return json({ error: "Endpunkt zu lang" }, 400, corsHeaders);
+  // ⚠️ Bis zum 06.09.2026 genuegte "faengt mit https:// an". Ein angemeldetes
+  // Konto konnte damit https://eigener-server.tld/x als "Geraet" anmelden; jede
+  // an dieses Konto gerichtete Nachricht liess den Vereins-Worker anschliessend
+  // dorthin POSTen -- mit einem fuer diese Herkunft gueltigen, vom
+  // Vereinsschluessel signierten VAPID-JWT. Kein Fremdmissbrauch (der
+  // push-worker ist per PUSH_SHARED_SECRET geschlossen), aber ein
+  // selbstgewaehlter Abflusskanal fuer Zustellungs-Metadaten.
+  if (!pushEndpunktErlaubt(endpoint)) {
+    return json({ error: "Dieser Endpunkt gehoert zu keinem bekannten Push-Dienst" }, 400, corsHeaders);
+  }
 
   // Der Nutzer kommt IMMER aus dem Token, nie aus dem Body -- sonst meldet ein
   // Eingeloggter fremde Geraete an. Gleiche Regel wie bei change-password.
