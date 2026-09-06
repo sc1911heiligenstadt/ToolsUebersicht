@@ -519,6 +519,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.13",
+    groups: [
+      {
+        title: "Die Versionsnummer im Info-Reiter ist wieder zu sehen",
+        items: [
+          "Die kleine Pille mit der Fassungsnummer stand im Info-Reiter weiß auf weiß — sie ist für die dunkle Kopfzeile gemacht, saß hier aber auf einer hellen Karte.",
+          "Auf einer Karte bekommt sie jetzt den hellblauen Grund, den sie in den anderen Werkzeugen auch hat. In der Kopfzeile ändert sich nichts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.12",
     groups: [
       {
