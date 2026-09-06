@@ -8285,6 +8285,35 @@ async function staticPasswordEquals(given, expected) {
 
 // ---------- Aktion: Benachrichtigung bei neuer Beleg-Einreichung ----------
 
+// Mengen-Deckel fuer den Mailversand dieser Aktion.
+//
+// ⚠️ GLOBAL statt je IP -- anders als KBO_SCHREIB_ZAEHLER, kboBremse und
+// pwBremseOffen. Der Aufrufer ist der Beleg-Upload-Worker, also ein
+// Worker-zu-Worker-Aufruf ohne CF-Connecting-IP. Alle vier IP-Bremsen des Hauses
+// sind dort bewusst fail-open; eine davon hier einzusetzen waere reine Zierde und
+// wuerde genau nichts bremsen.
+//
+// Der Deckel steht bewusst hoch: eingereicht werden ein paar Belege am Tag, 60 in
+// der Stunde erreicht der Normalbetrieb nie. Er faengt den Fall ab, dass jemand
+// mit dem Zugriffscode -- "den kennen alle Helfer" -- in einer Schleife anfragt
+// und das Postfach der Geschaeftsstelle flutet. Dass die Flotte diese Grenze
+// kennt, steht im eigenen Code: KBO_SCHREIB_MAX_PRO_STUNDE ist genau dafuer da.
+//
+// Isolate-lokal wie alle anderen Zaehlwerke hier: ein kalter Isolate faengt bei
+// null an. Das ist eine Bremse, keine Sperre.
+const BELEG_MAIL_FENSTER = { start: 0, n: 0 };
+const BELEG_MAIL_MAX_PRO_STUNDE = 60;
+function belegMailKontingentOffen() {
+  const jetzt = Date.now();
+  if (jetzt - BELEG_MAIL_FENSTER.start > 3600000) {
+    BELEG_MAIL_FENSTER.start = jetzt;
+    BELEG_MAIL_FENSTER.n = 1;
+    return true;
+  }
+  BELEG_MAIL_FENSTER.n++;
+  return BELEG_MAIL_FENSTER.n <= BELEG_MAIL_MAX_PRO_STUNDE;
+}
+
 // Ohne Intl gebaut: die Locale-Daten der Workers-Runtime sind nicht garantiert,
 // und für "1234.5 -> 1.234,50 €" lohnt die Abhängigkeit ohnehin nicht.
 function formatEuroBetrag(v) {
@@ -8337,6 +8366,21 @@ async function handleBelegEingangNotify(body, env, corsHeaders) {
   if (!env.BREVO_API_KEY) {
     console.warn("beleg-eingang-notify: BREVO_API_KEY ist nicht gesetzt — keine Mail verschickt");
     return json({ ok: true, sent: false, reason: "BREVO_API_KEY fehlt" }, 200, corsHeaders);
+  }
+
+  // ⚠️ Kontingent ERST HIER, nicht am Eingang: ein fehlender Empfaenger oder
+  // Schluessel oben meldet bereits sent:false und verbraucht dann auch nichts.
+  // Gezaehlt wird, was wirklich hinausgeht.
+  //
+  // Ueberschrittenes Kontingent ist KEIN Fehler nach aussen: wenn diese Aktion
+  // laeuft, liegt der Beleg bereits in Nextcloud. Eine ausbleibende Mail darf die
+  // Einreichung nicht nachtraeglich kippen -- gleiche Linie wie bei den beiden
+  // Faellen darueber. Der Grund steht in der Antwort und im Log, damit es kein
+  // stiller No-Op ist.
+  if (!belegMailKontingentOffen()) {
+    console.warn("beleg-eingang-notify: Stundenkontingent von " + BELEG_MAIL_MAX_PRO_STUNDE +
+                 " Mails erreicht — keine Mail verschickt");
+    return json({ ok: true, sent: false, reason: "Stundenkontingent erreicht" }, 200, corsHeaders);
   }
 
   // Zeilenumbrüche aus dem Betreff werfen: desc ist Helfer-Freitext.
