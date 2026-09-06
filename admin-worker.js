@@ -1770,11 +1770,11 @@ export default {
       case "dav-restricted-delete":
         return handleDavRestrictedDelete(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-submit":
-        return handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders, ctx);
+        return handleFahrtenbuchExternSubmit(request, body, env, authHeader, corsHeaders, ctx);
       case "fahrtenbuch-extern-file-put":
-        return handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders);
+        return handleFahrtenbuchExternFilePut(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-fuehrerschein-put":
-        return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
+        return handleFahrtenbuchExternFuehrerscheinPut(request, body, env, authHeader, corsHeaders);
       // Kleiderbörse: der komplette Eltern-Weg laeuft OHNE Login -- Eltern haben
       // kein Vereinskonto. Ausweis ist der geheime Schluessel aus meta.externToken
       // (kbo-extern-*) bzw. der angebotseigene wegToken (kbo-extern-weg*). Jeder
@@ -8188,6 +8188,11 @@ const LOGIN_FEHL_MAX_PRO_STUNDE = 30;
 // danach in sessionStorage gemerkt wird. Zwanzig Fehlversuche je Stunde deckt
 // jeden Vertipper ab und macht systematisches Raten aussichtslos.
 const AKTIONS_PW_FEHL_MAX_PRO_STUNDE = 20;
+// Der Zugriffscode des Fahrtenbuchs fuer Externe. Eigener Zaehler statt des
+// Aktions-Zaehlers: es ist ein anderes Geheimnis, und ein falsch getippter
+// Fahrtenbuch-Code darf nicht die Aktions-Passwoerter mit aussperren.
+const FB_EXTERN_FEHL_ZAEHLER = new Map();
+const FB_EXTERN_FEHL_MAX_PRO_STUNDE = 20;
 
 function bremseIp(request) {
   return String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
@@ -10966,12 +10971,25 @@ function capStr(v, max) {
 // Secret für Fahrt-Eintrag + Mängelfoto + Führerschein (kein separater Vorab-
 // Verify-Call nötig — jeder der drei Handler ruft dies selbst auf, ist also für
 // sich vollständig authentifiziert, exakt wie handleVerifyActionPassword selbst).
-async function requireFahrtenbuchExternCode(body, env, corsHeaders) {
+//
+// ⚠️ Der Satz oben stimmte bis zum 06.09.2026 NICHT. Hier stand allein die
+// 800-ms-Verzoegerung; handleVerifyActionPassword hat zusaetzlich ein Zaehlwerk
+// und antwortet nach zu vielen Fehlversuchen mit 429. Eine reine Verzoegerung
+// bremst nur sequenzielles Raten -- wer parallel anfragt, merkt von ihr nichts.
+// Dahinter liegen ein Schreibweg mit Push an alle Berechtigten und zweimal 10 MB
+// in die Nextcloud, davon einmal in den abgeschotteten Fuehrerschein-Bereich.
+async function requireFahrtenbuchExternCode(request, body, env, corsHeaders) {
   if (!env.PW_FAHRTENBUCH_EXTERN) {
     return { error: json({ error: "Zugriffscode ist serverseitig nicht konfiguriert" }, 500, corsHeaders) };
   }
+  if (!pwBremseOffen(FB_EXTERN_FEHL_ZAEHLER, FB_EXTERN_FEHL_MAX_PRO_STUNDE, request)) {
+    return { error: json({ error: "Zu viele Fehlversuche. Bitte spaeter erneut versuchen." }, 429, corsHeaders) };
+  }
   const ok = await staticPasswordEquals(String(body.code || ""), env.PW_FAHRTENBUCH_EXTERN);
   if (!ok) {
+    // Gezaehlt werden AUSSCHLIESSLICH Fehlversuche: wer den Code kennt, merkt nie
+    // etwas von der Bremse.
+    pwBremseFehlschlag(FB_EXTERN_FEHL_ZAEHLER, request);
     // Bremse gegen Durchprobieren — die Aktion ist ohne Login erreichbar.
     await new Promise((resolve) => setTimeout(resolve, 800));
     return { error: json({ error: "Falscher Zugriffscode" }, 403, corsHeaders) };
@@ -10979,8 +10997,8 @@ async function requireFahrtenbuchExternCode(body, env, corsHeaders) {
   return { ok: true };
 }
 
-async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders, execCtx) {
-  const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
+async function handleFahrtenbuchExternSubmit(request, body, env, authHeader, corsHeaders, execCtx) {
+  const codeCheck = await requireFahrtenbuchExternCode(request, body, env, corsHeaders);
   if (codeCheck.error) return codeCheck.error;
 
   const f = body.fahrt && typeof body.fahrt === "object" ? body.fahrt : {};
@@ -11083,8 +11101,8 @@ async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders,
   return json({ ok: true, id }, 200, corsHeaders);
 }
 
-async function handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders) {
-  const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
+async function handleFahrtenbuchExternFilePut(request, body, env, authHeader, corsHeaders) {
+  const codeCheck = await requireFahrtenbuchExternCode(request, body, env, corsHeaders);
   if (codeCheck.error) return codeCheck.error;
 
   const dir = davFileDir("fahrtenbuch");
@@ -11114,8 +11132,8 @@ async function handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders
   return json({ ok: true }, 200, corsHeaders);
 }
 
-async function handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders) {
-  const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
+async function handleFahrtenbuchExternFuehrerscheinPut(request, body, env, authHeader, corsHeaders) {
+  const codeCheck = await requireFahrtenbuchExternCode(request, body, env, corsHeaders);
   if (codeCheck.error) return codeCheck.error;
 
   const rf = restrictedFileDir("fahrtenbuch");
