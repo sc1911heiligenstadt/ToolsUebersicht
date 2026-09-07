@@ -1912,6 +1912,12 @@ function renderToolGrid() {
       // ein echtes <a href>, damit sie mit der Tastatur erreichbar und fokussierbar
       // bleibt wie jede andere Karte -- der Klick-Handler weiter unten faengt sie ab.
       card.href = t.intern ? "#" : t.url;
+      // ⚠️ Eine interne Kachel ist der SACHE nach ein Knopf, kein Link (Abnahme
+      // 2026-09-07). Das <a href="#"> bleibt — es traegt die Fokussierbarkeit, siehe
+      // oben —, aber ohne role="button" kuendigt ein Vorleseprogramm sie als "Link"
+      // an: der Nutzer erwartet einen Seitenwechsel und bekommt ein Fenster. Und
+      // "#" fuehrt ohnehin nirgendwohin.
+      if (t.intern) card.setAttribute("role", "button");
       // Optionales newTab-Flag (config.js): Tool in neuem Tab öffnen, Dashboard
       // bleibt offen — z.B. für die Besprechung (Sprach-/Videoraum).
       if (t.newTab) { card.target = "_blank"; card.rel = "noopener"; }
