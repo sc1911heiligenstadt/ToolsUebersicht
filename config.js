@@ -561,6 +561,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.20",
+    groups: [
+      {
+        title: "Im Info-Reiter stehen jetzt nur noch die Funktionen",
+        items: [
+          "Über der Liste der Änderungen standen Versionsnummern wie „v1.19“. Für die Bedienung sagen sie nichts — sie haben nur die Übersicht zerteilt.",
+          "Die Nummern sind aus der Anzeige raus. Auch das kleine Abzeichen neben „Über die Tools-Übersicht“ ist weg.",
+          "Im Hintergrund laufen die Nummern weiter mit: jeder Block trägt sie unsichtbar mit sich, damit sich Änderungen weiter zuordnen lassen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.19",
     groups: [
       {

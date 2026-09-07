@@ -2410,9 +2410,11 @@ async function rechteEinspielen(datei) {
 
 function renderChangelog() {
   const container = document.getElementById("changelog-list");
+  // Die Versionsnummer wird bewusst NICHT mehr angezeigt: im Info-Tab sollen nur
+  // die App-Funktionen stehen. Sie laeuft als data-version weiter mit, damit
+  // Eintraege weiterhin zuordenbar bleiben (Konsole, Skripte, spaetere Filter).
   container.innerHTML = APP_CHANGELOG.map((entry) => `
-    <div class="changelog-entry">
-      <span class="cv">v${entry.version}</span>
+    <div class="changelog-entry" data-version="${escapeHtml(entry.version)}">
       ${entry.groups.map((g) => `
         <div class="changelog-group">
           <div class="cg-title">${escapeHtml(g.title)}</div>
@@ -10793,7 +10795,6 @@ function escapeHtml(str) {
 }
 
 async function init() {
-  document.getElementById("version-badge-2").textContent = "v" + APP_VERSION;
   renderChangelog();
   setupTabs();
   setupSidebarWidgetPlacement();

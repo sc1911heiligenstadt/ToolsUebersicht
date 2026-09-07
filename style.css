@@ -739,9 +739,9 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
    hat Text, sieht man nicht. Jede helle Umgebung braucht diese Umkehrung. */
 .card .version-badge { background: var(--blue-light); border-color: var(--blue-light); color: var(--blue); }
 
-#changelog-list { display: flex; flex-direction: column; gap: 8px; }
+/* Ohne die v-Marke trennt nur noch der Abstand zwei Eintraege — darum groesser. */
+#changelog-list { display: flex; flex-direction: column; gap: 18px; }
 .changelog-entry { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
-.changelog-entry .cv { font-weight: 700; color: var(--blue); }
 .changelog-group { display: flex; flex-direction: column; gap: 4px; }
 .changelog-group .cg-title { font-weight: 700; font-size: 14px; color: var(--blue); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
 .changelog-group .cg-items { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; color: var(--text); }

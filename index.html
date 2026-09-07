@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.8" />
+<link rel="stylesheet" href="style.css?v=1.9" />
 </head>
 <body>
 
@@ -337,7 +337,7 @@
   <!-- ---------- Info ---------- -->
   <section class="tab-section" id="tab-info">
     <div class="card">
-      <h2>Über die Tools-Übersicht <span class="version-badge" id="version-badge-2"></span></h2>
+      <h2>Über die Tools-Übersicht</h2>
       <p class="muted">
             Zentrale Startseite aller Vereins-Tools — Anmeldung, Sichtbarkeit und Neuigkeiten.
             Hier meldet man sich einmal an, danach sind alle Werkzeuge offen, für die das eigene Konto
@@ -355,11 +355,11 @@
   
     <div class="card" id="ds-info-karte">
       <h2>Datenschutz</h2>
-      <p>Diese Übersicht und die von hier verlinkten Werkzeuge gehören zu den
+      <p class="ds-intro">Diese Übersicht und die von hier verlinkten Werkzeuge gehören zu den
       internen Anwendungen des 1. SC 1911 Heiligenstadt. Die dort erfassten Daten
       werden ausschließlich für die Vereinsarbeit verwendet und liegen auf Servern
       in Deutschland, die ein Auftragsverarbeiter für den Verein betreibt.</p>
-      <p>Verantwortlich ist der 1. SC 1911 Heiligenstadt, Leineberg 2,
+      <p class="ds-verantwortlich">Verantwortlich ist der 1. SC 1911 Heiligenstadt, Leineberg 2,
       37308 Heilbad Heiligenstadt, Telefon 03606 612206,
       <a href="mailto:info@sc1911-heiligenstadt.de">info@sc1911-heiligenstadt.de</a>.
       Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
@@ -369,7 +369,9 @@
       <!-- Push-Benachrichtigungen (seit 2026-08-03): neuer Empfaenger, deshalb
            auskunftspflichtig. Steht bewusst NUR hier -- eingeschaltet wird der
            Dienst ausschliesslich in dieser App, nicht in den 34 anderen. -->
-      <p><strong>Benachrichtigungen auf dem Gerät.</strong> Wer im Tab „Mein Konto“
+      <div class="ds-block">
+      <h3>Benachrichtigungen auf dem Gerät</h3>
+      <p>Wer im Tab „Mein Konto“
       Benachrichtigungen einschaltet, meldet damit sein Gerät beim Zustelldienst
       seines Browser-Herstellers an — auf dem iPhone bei Apple, auf Android und in
       Chrome bei Google. Dabei entsteht eine Geräteadresse, die der Verein
@@ -379,6 +381,7 @@
       verschlüsselt und erst auf dem Gerät wieder entschlüsselt. Die Nachrichten
       selbst nennen weder Namen noch Termin- oder Dokumenttitel. Das Abmelden ist
       jederzeit an derselben Stelle möglich und löscht die Geräteadresse.</p>
+      </div>
       <!-- Aktivitätspunkte (seit 2026-08-04). Muss stehen, BEVOR das erste
            Ereignis geschrieben wird -- es ist eine Verhaltensdatenverarbeitung,
            und ein Teil der Betroffenen ist beim Verein angestellt oder bekommt
@@ -393,7 +396,9 @@
            Michel-Entscheidung: die Auswertung bleibt (sie beantwortet "welches
            Tool nutzt eigentlich niemand"), dafür sagt der Text jetzt, was sie
            zeigt. Wer die Auswertung je enger zieht, zieht diesen Satz mit. -->
-      <p><strong>Aktivitätspunkte.</strong> Für Konten des Vereinspersonals (nicht für
+      <div class="ds-block">
+      <h3>Aktivitätspunkte</h3>
+      <p>Für Konten des Vereinspersonals (nicht für
       Spielerkonten) hält der Verein fest, <strong>wann welches Werkzeug benutzt wurde</strong> —
       Zeitpunkt auf fünf Minuten genau, das betroffene Werkzeug und die Art des Vorgangs,
       nicht dessen Inhalt. Daraus entsteht ein Punktestand, den außer dir nur die
@@ -406,6 +411,7 @@
       Tab „Mein Konto“ lässt sich einsehen, was gespeichert ist, und die Erfassung mit dem
       Schalter <em>Nicht mitzählen</em> jederzeit beenden — die bis dahin gespeicherten
       Aufzeichnungen werden dabei gelöscht.</p>
+      </div>
       <!-- Ideen (seit 2026-08-16). Auskunftspflichtig, weil hier zum ersten Mal
            ein frei geschriebener Beitrag samt Namen für die ganze Belegschaft
            sichtbar wird -- Feedback und Wünsche liest bis heute nur der Admin.
@@ -413,7 +419,9 @@
            (der Name wird gespeichert und dem Admin gezeigt) und dass umgekehrt
            bei der Zustimmung NIEMAND die Namen sieht, auch kein Admin. Wer eines
            von beidem je ändert, zieht diesen Absatz mit. -->
-      <p><strong>Ideen.</strong> Wer im Tab „💡 Ideen“ eine Idee einreicht, dessen
+      <div class="ds-block">
+      <h3>Ideen</h3>
+      <p>Wer im Tab „💡 Ideen“ eine Idee einreicht, dessen
       <strong>Name steht für alle angemeldeten Mitarbeiter dabei</strong>, zusammen mit dem
       geschriebenen Text und dem Datum. Wird beim Einreichen <em>Anonym</em> angekreuzt,
       wird der Name den anderen nicht angezeigt — <strong>gespeichert wird er trotzdem</strong>
@@ -425,6 +433,7 @@
       des Vereins.
       Eine eigene Idee lässt sich selbst löschen, solange noch nicht an ihr gearbeitet wird;
       danach und für die Zustimmung genügt eine Nachricht an die oben genannte Anschrift.</p>
+      </div>
       <!-- Privatnachrichten (seit 2026-08-30). Auskunftspflichtig aus drei
            Gründen, die alle in den Absatz gehören: der geschriebene Text verlässt
            den Verein Richtung Mailversender und liegt dort im Versandprotokoll;
@@ -1894,7 +1903,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.20"></script>
-<script src="app.js?v=1.16"></script>
+<script src="config.js?v=1.21"></script>
+<script src="app.js?v=1.17"></script>
 </body>
 </html>
