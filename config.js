@@ -551,6 +551,46 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.18",
+    groups: [
+      {
+        title: "Eine wartende Unterschrift bleibt sichtbar, auch wenn du die Kachel ausgeblendet hast",
+        items: [
+          "Die Kachel „✍️ Unterschriften anfordern“ ließ sich wie jedes andere Werkzeug mit dem Auge 👁 von der Startseite nehmen — und nahm dabei das rote Abzeichen mit, das meldet, dass ein Dokument auf deine Unterschrift wartet.",
+          "Das war die einzige Stelle, an der du das beim Aufrufen der Seite gesehen hättest: Dokumente stehen bewusst nicht in „Meine ToDos“. Danach hätte dich nichts mehr daran erinnert.",
+          "Jetzt kommt die Kachel zurück, solange etwas offen ist. Dein Ausblenden bleibt gespeichert und greift wieder, sobald du alles unterschrieben hast.",
+          "Bis zum 07.09. war der Zugang ein Knopf oben in der Kopfzeile — den konnte man gar nicht ausblenden. Mit dem Umzug auf eine Kachel war die Lücke entstanden."
+        ]
+      }
+    ]
+  },
+  {
+    version: "1.17",
+    groups: [
+      {
+        title: "Am Handy stehen Name und „Abmelden“ wieder rechts",
+        items: [
+          "Der Nutzer-Chip und der Knopf „Abmelden“ klebten am Handy am linken Rand, obwohl sie oben rechts hingehören. Jetzt sitzen sie wieder bündig rechts.",
+          "Am Rechner ändert sich nichts."
+        ]
+      }
+    ]
+  },
+  {
+    version: "1.16",
+    groups: [
+      {
+        title: "„Materialcontainercode“ ist jetzt eine Kachel",
+        items: [
+          "Der Knopf „🔐 Materialcontainercode“ oben in der Kopfzeile ist verschwunden. Den Code gibt es weiterhin, er steht jetzt als eigene Kachel „Materialcontainercode“ bei den Werkzeugen — gleiche Linie wie „Unterschriften anfordern“.",
+          "Wer ihn sehen darf, ändert sich nicht: jede:r Angemeldete außer Spielerkonten. Der Code wird weiterhin erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert.",
+          "Gepflegt wird er unverändert von Administratoren im Reiter „Einstellungen“.",
+          "Die Kopfzeile trägt damit nur noch „📲 Als App ablegen“ — und den auch nur, solange die App noch nicht auf dem Startbildschirm liegt."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.15",
     groups: [
       {
@@ -560,31 +600,6 @@ const APP_CHANGELOG = [
           "Der Zähler ist mitgewandert: Was offen ist, steht weiter am Knopf, und der Knopf bekommt einen roten Ring, wenn etwas heute fällig oder überfällig ist.",
           "Am Handy rückt die Terminkarte samt Knopf wie bisher über die Kacheln — der Knopf bleibt dort, wo die Termine sind.",
           "Hast du gerade keine Termine, bleibt die linke Spalte trotzdem stehen: sonst wäre die persönliche Liste genau dann weg, wenn nichts anderes ansteht."
-        ]
-      },
-      {
-        title: "„Materialcontainercode“ ist jetzt eine Kachel",
-        items: [
-          "Der Knopf „🔐 Materialcontainercode“ oben in der Kopfzeile ist verschwunden. Den Code gibt es weiterhin, er steht jetzt als eigene Kachel „Materialcontainercode“ bei den Werkzeugen — gleiche Linie wie „Unterschriften anfordern“.",
-          "Wer ihn sehen darf, ändert sich nicht: jede:r Angemeldete außer Spielerkonten. Der Code wird weiterhin erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert.",
-          "Gepflegt wird er unverändert von Administratoren im Reiter „Einstellungen“.",
-          "Die Kopfzeile trägt damit nur noch „📲 Als App ablegen“ — und den auch nur, solange die App noch nicht auf dem Startbildschirm liegt."
-        ]
-      },
-      {
-        title: "Am Handy stehen Name und „Abmelden“ wieder rechts",
-        items: [
-          "Der Nutzer-Chip und der Knopf „Abmelden“ klebten am Handy am linken Rand, obwohl sie oben rechts hingehören. Jetzt sitzen sie wieder bündig rechts.",
-          "Am Rechner ändert sich nichts."
-        ]
-      },
-      {
-        title: "Eine wartende Unterschrift bleibt sichtbar, auch wenn du die Kachel ausgeblendet hast",
-        items: [
-          "Die Kachel „✍️ Unterschriften anfordern“ ließ sich wie jedes andere Werkzeug mit dem Auge 👁 von der Startseite nehmen — und nahm dabei das rote Abzeichen mit, das meldet, dass ein Dokument auf deine Unterschrift wartet.",
-          "Das war die einzige Stelle, an der du das beim Aufrufen der Seite gesehen hättest: Dokumente stehen bewusst nicht in „Meine ToDos“. Danach hätte dich nichts mehr daran erinnert.",
-          "Jetzt kommt die Kachel zurück, solange etwas offen ist. Dein Ausblenden bleibt gespeichert und greift wieder, sobald du alles unterschrieben hast.",
-          "Bis zum 07.09. war der Zugang ein Knopf oben in der Kopfzeile — den konnte man gar nicht ausblenden. Mit dem Umzug auf eine Kachel war die Lücke entstanden."
         ]
       }
     ]
