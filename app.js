@@ -3567,10 +3567,9 @@ function renderAufgabenWidget() {
   // steht vollständig im Unterschriften-Fenster -- mit Absender, Status und PDF.
   // Sie hier ein zweites Mal aufzuführen wäre genau die Vermischung, die das
   // Aufteilen beenden soll; abhaken ließe sie sich hier ohnehin nie (403).
-  // ⚠️ Sichtbar bleibt sie damit NUR noch drüben: der Zähler am Unterschriften-
-  // Knopf unten ist deshalb Pflicht, nicht Kür.
+  // ⚠️ Sichtbar bleibt sie damit NUR noch drüben: das Abzeichen auf der Kachel
+  // "Unterschriften anfordern" ist deshalb Pflicht, nicht Kür.
   const liste = sortiert.filter((a) => !a.dokId);
-  const mitDok = sortiert.filter((a) => a.dokId);
   const offen = liste.filter((a) => !a.erledigt && !a.zurueckgezogenAm).length;
   const sig = aufgabenSignal(liste, heute);
   const wegraeumbar = liste.some((a) => (a.erledigt && !a.von) || a.zurueckgezogenAm);
@@ -3585,12 +3584,12 @@ function renderAufgabenWidget() {
   // Aufschlüsselung deshalb im Tooltip. Bewusst kein zusätzliches Badge: das
   // kostet Layoutbreite, und die Kopfzeile hat am Handy keine mehr übrig.
   //
-  // ⚠️ Beide Zahlen kommen aus aufgabenState, NICHT aus dokumenteState: die
-  // Aufgaben werden beim Seitenstart geladen, die Dokumente erst beim Öffnen des
-  // Fensters. Jede Dokument-Zuweisung legt eine Aufgabe mit dokId an, der Zähler
-  // stimmt also -- eine zweite Quelle würde nur auseinanderlaufen.
-  const offenDok = mitDok.filter((a) => !a.erledigt && !a.zurueckgezogenAm).length;
-  const sigDok = aufgabenSignal(mitDok, heute);
+  // ⚠️ Die Zahl kommt aus aufgabenState, NICHT aus dokumenteState: die Aufgaben
+  // werden beim Seitenstart geladen, die Dokumente erst beim Öffnen des Fensters.
+  // Jede Dokument-Zuweisung legt eine Aufgabe mit dokId an, der Zähler stimmt
+  // also -- eine zweite Quelle würde nur auseinanderlaufen. Dieselbe Überlegung
+  // gilt für dokumenteKachelSignal(), das die Dokument-Seite derselben Quelle
+  // für das Kachel-Abzeichen rechnet.
   kopfKnopfSignal("btn-todos-oeffnen", "aufgaben-kopf-zaehler", offen, sig, aufgabenSignalTexte(sig),
     offen ? `${offen} offene ${offen === 1 ? "Aufgabe" : "Aufgaben"}` : "Eigene ToDos anlegen und abhaken");
   // Der Unterschriften-Zaehler sitzt seit 2026-09-07 auf der Kachel statt an einem
