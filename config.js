@@ -212,13 +212,24 @@ const TOOLS = [
     mail: true,
     push: true
   },
+  // ⚠️ KEINE eigene App und bewusst OHNE `url`: diese Kachel oeffnet das
+  // Unterschriften-Fenster dieser Uebersicht (#dokumente-overlay). Das `intern`-Feld
+  // ist das einzige Kennzeichen dafuer -- renderToolGrid() haengt daran den
+  // Klick-Handler statt eines Links, und die beiden Ziel-Auswahlen (Aufnahme,
+  // Push-Nachricht) filtern ueber `t.url` und lassen sie damit von selbst weg.
+  // Ersetzt seit 2026-09-07 den "Digitalen Stempel" (Michel-Entscheidung, vorbereitet
+  // schon 2026-07-28): dort setzte jeder ein beliebiges Bild auf ein beliebiges
+  // Dokument, hier zeichnet die unterschreibende Person selbst und der Server setzt
+  // den Zeitstempel. ⚠️ Word kann dieser Weg bewusst nicht -- nur PDF.
   {
-    id: "digitaler-stempel",
-    name: "Digitaler Stempel",
-    description: "PDF- und Word-Dokumente digital stempeln (Position, Größe, Drehung und Deckkraft frei wählbar) — jede Stempelung wird mit Nutzer und Zeitpunkt archiviert (nur für berechtigte Gruppe).",
-    url: "https://sc1911heiligenstadt.github.io/digitaler-stempel/",
-    icon: "🖋️",
-    category: "Verein"
+    id: "unterschriften",
+    name: "Unterschriften anfordern",
+    description: "Ein PDF an eine Person schicken, die es am Bildschirm unterschreibt — Freihand-Unterschrift in der eigenen Sitzung, Zeitstempel vom Server. Öffnet ein Fenster in dieser Übersicht. Nur PDF, kein Word.",
+    icon: "✍️",
+    category: "Verein",
+    intern: "dokumente",
+    // Wer ein Dokument zugewiesen bekommt, wird auf Wunsch per E-Mail benachrichtigt.
+    mail: true
   },
   {
     id: "kleiderbestellung",
@@ -421,8 +432,13 @@ const TOOLS = [
 // Schreibschutz je App separat liegt.
 const KRITISCHE_TOOLS = [
   "trainercheckliste", "sc1911-anmeldung", "vereinsbudget", "geschaeftsstelle",
-  "spielertool-test", "personalkosten", "kadermanager", "digitaler-stempel",
+  "spielertool-test", "personalkosten", "kadermanager",
   "personalakte", "dokumentenvorlagen", "vereinsverwaltung",
+  // ⚠️ "unterschriften" steht hier BEWUSST NICHT drin, obwohl Vertraege und
+  // Personalunterlagen darueber rausgehen: die Kachel ist intern und taucht im
+  // Sichtbarkeits-Panel gar nicht auf (siehe toolKachelSichtbar in app.js). Ein
+  // Eintrag hier waere wirkungslos. Wer anfordern darf, steht unter
+  // Einstellungen → "Unterschriften anfordern" (dokumentGroupIds).
   // spielstatistik: hält je Spiel fest, warum jemand fehlte — darunter „verletzt"
   // und „krank". Gesundheitsangaben über erwachsene Spieler, deshalb hier.
   "spielstatistik",
@@ -518,6 +534,21 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.14",
+    groups: [
+      {
+        title: "„Unterschriften anfordern“ ist jetzt eine Kachel — der Digitale Stempel ist weg",
+        items: [
+          "Der Knopf „✍ Unterschriften anfordern“ oben in der Kopfzeile ist verschwunden. Den Weg gibt es weiterhin, er steht jetzt als eigene Kachel „Unterschriften anfordern“ bei den Werkzeugen.",
+          "Wartet ein Dokument auf deine Unterschrift, steht die Zahl als rotes Abzeichen auf der Kachel — genau wie vorher am Knopf. Wer nichts offen hat und keine Unterschriften anfordern darf, sieht die Kachel nicht.",
+          "Das Werkzeug „Digitaler Stempel“ ist abgeschaltet und aus der Übersicht verschwunden. Es hat den Unterschriften-Weg nie ersetzt: dort durfte jeder ein beliebiges Bild auf ein beliebiges Dokument setzen, nichts verband die Unterschrift mit der Person, die sie geleistet hat.",
+          "⚠️ Was der neue Weg bewusst NICHT kann: Word-Dateien stempeln. Unterschrieben wird nur PDF — ein unterschriebenes Word-Dokument bliebe nachträglich änderbar und wäre als Nachweis wertlos. Wer bisher Word gestempelt hat, wandelt die Datei vorher in ein PDF um.",
+          "Die bisher gestempelten Dokumente sind nicht betroffen — was einmal erzeugt wurde, bleibt erhalten."
+        ]
+      }
+    ]
+  },
   {
     version: "1.13",
     groups: [
@@ -837,14 +868,14 @@ const APP_CHANGELOG = [
       {
         title: "Unterschriften anfordern",
         items: [
-          "Der Knopf „Unterschriften anfordern“ im Kopfbereich trägt den Unterschriften-Weg: ein PDF an eine Person schicken, die es am Bildschirm unterschreiben muss.",
+          "Die Kachel „Unterschriften anfordern“ trägt den Unterschriften-Weg: ein PDF an eine Person schicken, die es am Bildschirm unterschreiben muss. Sie ersetzt den früheren Digitalen Stempel — dort setzte jeder ein beliebiges Bild auf ein beliebiges Dokument, hier zeichnet die unterschreibende Person selbst.",
           "Der Absender legt fest, wo die Unterschrift stehen soll. Tut er es nicht, darf der Unterzeichner die Stelle selbst wählen; wählt niemand eine, kommt eine Nachweisseite ans Ende. Wer die Stelle schon beim Anfordern setzt, nimmt dem Unterzeichner diese Wahl ab.",
           "Ein Unterschriftsfeld ist immer breiter als hoch; ein schmales, hohes Rechteck wird abgelehnt. Die Unterschrift wird ins Feld eingepasst statt darauf gestreckt — das Blatt sieht so aus wie die Vorschau vor dem Absenden.",
           "Unterschrieben wird per Freihand-Pad in der eigenen Sitzung. Den Zeitstempel setzt der Server — dadurch ist die Unterschrift an die Person gebunden.",
           "Nur PDF, hart geprüft. Ein unterschriebenes Word-Dokument bliebe editierbar und wäre als Nachweis wertlos.",
           "Bei mehreren Empfängern unterschreibt jeder eine eigene Kopie. Ablehnen ist möglich, verlangt aber eine Begründung.",
           "Auf Wunsch wird der Empfänger zusätzlich per E-Mail benachrichtigt. Das ist ein Häkchen je Vorgang und steht bei jedem Öffnen wieder auf aus; der Betreff nennt den Dokumenttitel bewusst nicht.",
-          "Den Knopf sieht nur, wer Unterschriften anfordern darf — oder wer selbst ein offenes Dokument hat. Nach dem Unterschreiben verschwindet er wieder.",
+          "Die Kachel sieht nur, wer Unterschriften anfordern darf — oder wer selbst ein offenes Dokument hat. Nach dem Unterschreiben verschwindet sie wieder. Wartet etwas auf die eigene Unterschrift, steht die Zahl als rotes Abzeichen auf der Kachel.",
           "Das unterschriebene Dokument bleibt erhalten, auch wenn die zugehörige Erinnerung nach 14 Tagen abläuft. Einsehen dürfen es die Beteiligten und Administratoren."
         ]
       },

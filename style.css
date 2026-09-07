@@ -170,10 +170,11 @@ button.badge-view-as { font: inherit; font-size: 11px; font-weight: 600; color: 
   margin-right: auto;
   margin-left: 10px;
   min-width: 0;
-  /* Am Handy passen "Materialcontainercode" und "Unterschriften anfordern" nicht
-     mehr nebeneinander -- ohne Umbruch schiebt der zweite Knopf die ganze Seite
-     seitlich raus (gemessen: 387 px bei 375 px Fenster, damals noch mit der
-     kuerzeren Beschriftung "Meine Aufgaben"). */
+  /* Am Handy passten "Materialcontainercode" und "Unterschriften anfordern" nicht
+     mehr nebeneinander -- ohne Umbruch schob der zweite Knopf die ganze Seite
+     seitlich raus (gemessen: 387 px bei 375 px Fenster). Der Unterschriften-Knopf
+     ist am 2026-09-07 in eine Kachel gewandert, der Umbruch bleibt trotzdem: die
+     Kopfzeile traegt weiter "Materialcontainercode" und "Als App ablegen". */
   flex-wrap: wrap;
 }
 .header-code-btn {
@@ -192,12 +193,10 @@ button.badge-view-as { font: inherit; font-size: 11px; font-weight: 600; color: 
 }
 .header-code-btn:hover { background: rgba(255, 255, 255, 0.24); }
 /* Der entbehrliche Teil einer Knopfbeschriftung. Faellt unter 860px per
-   Media-Query weg (Platz) und per .aus, wenn er inhaltlich nicht stimmt --
-   "anfordern" duerfen nur die Gruppen aus dokumentGroupIds, wer bloss
-   unterschreiben soll, liest dort sonst etwas Falsches.
-   ⚠️ Als Klasse und NICHT per inline-style geschaltet: ein inline gesetztes
-   display:"" wuerde die Media-Query aushebeln und den Text am Handy zurueckholen. */
-.btn-lang.aus { display: none; }
+   Media-Query weg (Platz) -- siehe die Regel .btn-lang weiter unten.
+   (Die Zusatzregel .btn-lang.aus ist am 2026-09-07 mit ihrem einzigen Nutzer
+   entfallen: #dok-btn-lang am Knopf "✍ Unterschriften anfordern". Der Zugang
+   ist jetzt eine Kachel, die Beschriftung damit kein Platzproblem mehr.) */
 /* Signal am Kopf-Knopf, wenn etwas neu zugewiesen, heute fällig oder überfällig
    ist. Bewusst nur Hintergrund und Rahmen: ein zusätzliches Badge oder ein
    absolut gesetzter Punkt kostet Layoutbreite, und die Kopfzeile hat am Handy
@@ -1530,7 +1529,9 @@ main { flex: 1; min-width: 0; }
      Unterschriften anfordern" + "📝 Meine ToDos" zwangen die Kopfzeile bei 375px
      auf 243px Hoehe (fast ein Drittel des Bildschirms), weil jede Gruppe eine
      eigene Zeile brauchte. Gekuerzt bleibt der Sinn erhalten -- der volle Text
-     steht weiterhin im title und in der Ueberschrift des Fensters. */
+     steht weiterhin im title und in der Ueberschrift des Fensters.
+     (Der Unterschriften-Knopf ist seit 2026-09-07 eine Kachel; die Regel gilt
+     weiter fuer "📝 Meine ToDos" und "📲 Als App ablegen".) */
   .btn-lang { display: none; }
   /* Das Wappen ist am Rechner auf 56px gewachsen (siehe .header-logo oben).
      Am Handy bleibt es auf den alten 44px: dort ist die Kopfzeile mit allen

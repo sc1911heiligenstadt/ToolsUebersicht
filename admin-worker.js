@@ -496,7 +496,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8777", // Vereinskalender (Dev-Server)
   "http://localhost:8792", // Busplan (Dev-Server)
   "http://localhost:8780", // Kadermanager (Dev-Server, bis 1.3 Spielerplus-Klon)
-  "http://localhost:8794", // Digitaler Stempel (Dev-Server)
   "http://localhost:8795", // Kleiderbestellung (Dev-Server)
   "http://localhost:8796", // Fahrtenbuch (Dev-Server)
   "http://localhost:8782", // Spiele (Dev-Server)
@@ -572,7 +571,6 @@ const DAV_APPS = {
   "vereinskalender":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinskalender/vereinskalender.json",
   "busplan":           "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Busplan/busplan.json",
   "kadermanager":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielerplus/spielerplus.json",
-  "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json",
   "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json",
   "fahrtenbuch":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fahrtenbuch/fahrtenbuch.json",
   "materialbedarf":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Materialbedarf/materialbedarf.json",
@@ -635,8 +633,8 @@ const BELEGE_ERLEDIGT_ORDNER = "Erledigt";
 // Muster (jeder legt/verwaltet nur eigene Einträge, z.B. Fahrtenbuch, Materialbedarf,
 // Testspielplaner) ist das NICHT die richtige Schublade — die stehen stattdessen in
 // OWNER_FILTERED_APPS weiter unten (Nicht-Editoren schreiben weiterhin, aber nur ihre
-// eigenen Einträge). Apps, die in KEINEM der beiden Sets stehen (z.B. kleiderbestellung,
-// digitaler-stempel), behalten das alte Verhalten: wer das Tool sehen darf, darf auch
+// eigenen Einträge). Apps, die in KEINEM der beiden Sets stehen (z.B. kleiderbestellung),
+// behalten das alte Verhalten: wer das Tool sehen darf, darf auch
 // das ganze Dokument schreiben — dort ist Bearbeiten-Recht bisher nur eine UI-Blende.
 const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   "vereinswiki",
@@ -659,7 +657,7 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   // Check in handleDavSave steht VOR der OWNER_FILTERED/OWNER_WRITE-Routung, greift also
   // zuerst; materialbedarf/abwesenheitskalender bleiben in ihren Owner-Sets nur noch für
   // den LESE-Filter relevant (Editoren unberührt).
-  "materialbedarf", "kleiderbestellung", "abwesenheitskalender", "digitaler-stempel",
+  "materialbedarf", "kleiderbestellung", "abwesenheitskalender",
   // ausbildungsplan (neu 2026-07-31): Nur-Seher lesen Stufen, Schwerpunkte und
   // Uebungen, schreiben aber gar nichts -- weder den Katalog noch einen
   // Spieltag-Bogen. Beides laeuft ueber generisches dav-save, deshalb reicht hier

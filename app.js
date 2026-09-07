@@ -895,7 +895,10 @@ function summarizeProvisionReport(report) {
 // genauso durch.
 function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedAdminToolIds, selectedProvisionToolIds) {
   const updated = {};
-  TOOLS.forEach((t) => {
+  // ⚠️ Interne Kacheln (t.intern) bleiben draussen: ihre Sichtbarkeit haengt an
+  // toolKachelSichtbar(), nicht an sichtbarkeit.json. Ein Haken hier wuerde einen
+  // Eintrag schreiben, den niemand liest -- ein Schalter ohne Wirkung.
+  TOOLS.filter((t) => !t.intern).forEach((t) => {
     const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [], editGroupIds: [], adminGroupIds: [], provisionGroupIds: [] };
     const wasInGroup = (entry.groupIds || []).includes(groupId);
     const groupIds = new Set(entry.groupIds || []);
@@ -1004,7 +1007,8 @@ function renderGroupsList() {
         <p class="muted" data-provision-status style="margin-top:8px;"></p>
       `;
       const picker = panel.querySelector(".group-picker");
-      TOOLS.forEach((t) => {
+      // Gleiche Begruendung wie in computeGroupToolVisibility: keine toten Haken.
+      TOOLS.filter((t) => !t.intern).forEach((t) => {
         const entry = visibilityState[t.id] || {};
         const canSee = (entry.groupIds || []).includes(groupId);
         const canEditTool = (entry.editGroupIds || []).includes(groupId);
@@ -1465,7 +1469,7 @@ function toolIstVersteckt(id) {
 // den er nicht aufloesen kann.
 function versteckteAnzahl() {
   if (!Array.isArray(ansichtState.versteckt) || !ansichtState.versteckt.length) return 0;
-  return TOOLS.filter((t) => isVisibleToUser(t.id, currentUser) && toolIstVersteckt(t.id)).length;
+  return TOOLS.filter((t) => toolKachelSichtbar(t) && toolIstVersteckt(t.id)).length;
 }
 
 function ansichtVersteckenUmschalten(id) {
@@ -1772,6 +1776,57 @@ function setupAnsichtLeiste() {
   });
 }
 
+// Wer sieht diese Kachel? Zwei verschiedene Antworten, deshalb eine eigene Weiche.
+//
+// ⚠️ **Interne Kacheln laufen bewusst NICHT ueber `isVisibleToUser()`.** Dort gilt
+// "kein gespeicherter Eintrag = versteckt" (passend zu `userMayAccessTool()` im
+// Worker), und `visibilityState` kommt VOLLSTAENDIG aus `sichtbarkeit.json` -- dort
+// steht nur, was ein Admin dort schon einmal gespeichert hat. Eine per Code-Push neu
+// hinzugekommene Kachel ist damit fuer JEDEN unsichtbar, auch fuer Administratoren,
+// bis jemand das Sichtbarkeits-Panel oeffnet und speichert.
+// Am 2026-09-07 live nachgemessen: 41 Eintraege in `sichtbarkeit.json`,
+// "unterschriften" war keiner davon -- die Kachel war fuer niemanden da. Bei einer
+// echten App faellt so etwas auf (die App laeuft ja weiter unter ihrer URL); hier
+// waere der Unterschriften-Weg **komplett unerreichbar** gewesen, weil der Kopf-Knopf
+// zeitgleich entfallen ist.
+//
+// Das Gate ist stattdessen `dokumenteTabOffen()` -- genau das, was vorher auch den
+// Kopf-Knopf steuerte, also keine Rechte-Aenderung. **Wer anfordern darf, wird
+// weiterhin unter Einstellungen → "Unterschriften anfordern" gepflegt**
+// (`dokumentGroupIds`), nicht im Sichtbarkeits-Panel. Deshalb steht die Kachel dort
+// auch gar nicht erst -- ein Schalter, der nichts bewirkt, waere schlimmer als keiner.
+function toolKachelSichtbar(t) {
+  if (t && t.intern) return internKachelErlaubt(t);
+  return isVisibleToUser(t.id, currentUser);
+}
+
+// Interne Kacheln (heute nur "unterschriften", seit 2026-09-07) haengen am selben Gate
+// wie frueher der Kopf-Knopf: entweder man darf Unterschriften anfordern, oder es
+// liegt gerade eine eigene an.
+function internKachelErlaubt(t) {
+  if (!t || !t.intern) return true;
+  if (t.intern === "dokumente") return dokumenteTabOffen();
+  return true;
+}
+
+// Zaehler-Abzeichen auf der Unterschriften-Kachel. Es ersetzt den Zaehler, der bis
+// 2026-09-07 am Kopf-Knopf sass, und ist damit weiterhin das EINZIGE Signal beim
+// Seitenaufruf: Aufgaben mit dokId stehen bewusst nicht in der ToDo-Liste.
+// ⚠️ Quelle ist aufgabenState, NICHT dokumenteState -- die Aufgaben kommen beim
+// Seitenstart, die Dokumente erst beim Oeffnen des Fensters. Eine zweite Quelle
+// liefe auseinander.
+function dokumenteKachelSignal() {
+  const mitDok = (aufgabenState.meine || []).filter((a) => a.dokId && !a.erledigt && !a.zurueckgezogenAm);
+  const sig = aufgabenSignal(mitDok, heuteIso());
+  const texte = dokumentSignalTexte(sig);
+  return {
+    offen: mitDok.length,
+    titel: texte.length ? texte.join(" · ")
+      : (mitDok.length === 1 ? "1 Dokument wartet auf deine Unterschrift"
+                             : mitDok.length + " Dokumente warten auf deine Unterschrift")
+  };
+}
+
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   // ⚠️ Waehrend eine Karte am Finger haengt, nicht neu bauen: die Statusabfragen
@@ -1791,7 +1846,7 @@ function renderToolGrid() {
   const suchWoerter = ansichtSuchWoerter();
 
   categories.forEach((category) => {
-    const toolsUnordered = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, currentUser));
+    const toolsUnordered = TOOLS.filter((t) => t.category === category && toolKachelSichtbar(t));
     if (toolsUnordered.length === 0) return;
     anyVisible = true;
     // ⚠️ Ausgeblendete Werkzeuge fallen NUR ausserhalb des Anordnen-Modus weg — im
@@ -1820,7 +1875,11 @@ function renderToolGrid() {
       const istVersteckt = toolIstVersteckt(t.id);
       const card = document.createElement("a");
       card.className = "tool-card" + (t.wip ? " wip" : "") + (istVersteckt ? " ist-versteckt" : "");
-      card.href = t.url;
+      // Interne Kachel (kein `url` in config.js, siehe TOOLS-Eintrag "unterschriften"):
+      // sie fuehrt nirgendwohin, sondern oeffnet ein Fenster DIESER Seite. Trotzdem
+      // ein echtes <a href>, damit sie mit der Tastatur erreichbar und fokussierbar
+      // bleibt wie jede andere Karte -- der Klick-Handler weiter unten faengt sie ab.
+      card.href = t.intern ? "#" : t.url;
       // Optionales newTab-Flag (config.js): Tool in neuem Tab öffnen, Dashboard
       // bleibt offen — z.B. für die Besprechung (Sprach-/Videoraum).
       if (t.newTab) { card.target = "_blank"; card.rel = "noopener"; }
@@ -1840,6 +1899,9 @@ function renderToolGrid() {
         ) : ""}
         ${t.id === "testspielplaner" && testspielplanerStatus
           ? `<div class="badge-status-fail">✗ ${testspielplanerStatus.anstehendOhneGegner}× Gegner eintragen</div>`
+          : ""}
+        ${t.intern === "dokumente" && dokumenteKachelSignal().offen
+          ? `<div class="badge-status-fail" title="${escapeHtml(dokumenteKachelSignal().titel)}">✗ ${dokumenteKachelSignal().offen}× unterschreiben</div>`
           : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
@@ -1862,7 +1924,11 @@ function renderToolGrid() {
       // Im Anordnen-Modus fuehrt kein Klick mehr ins Werkzeug: wer gerade sortiert,
       // trifft sonst beim Danebengreifen eine Kachel und ist aus der Uebersicht raus.
       card.addEventListener("click", (ev) => {
-        if (ansichtBearbeiten || card.dataset.justDragged === "1") ev.preventDefault();
+        if (ansichtBearbeiten || card.dataset.justDragged === "1") { ev.preventDefault(); return; }
+        // Interne Kachel: kein Seitenwechsel, sondern das Fenster hier aufmachen.
+        // ⚠️ preventDefault muss AUCH laufen, wenn das Oeffnen scheitert -- sonst
+        // haengt "#" in der Adresszeile und der Zurueck-Knopf tut nichts Sichtbares.
+        if (t.intern === "dokumente") { ev.preventDefault(); oeffneDokumenteFenster(); }
       });
       const badgeRefreshBtn = card.querySelector(".badge-refresh");
       if (badgeRefreshBtn) {
@@ -2039,7 +2105,9 @@ function renderVisibilityList() {
   // inzwischen so viele Tools, dass die Reihenfolge aus config.js zum Suchen
   // taugt. localeCompare mit "de" sortiert Umlaute wie im Telefonbuch (Ä bei A)
   // und ignoriert Groß-/Kleinschreibung.
-  const alle = TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES)
+  // ⚠️ Interne Kacheln fehlen hier bewusst (siehe toolKachelSichtbar): sie lesen
+  // sichtbarkeit.json gar nicht, eine Zeile hier waere ein Schalter ohne Wirkung.
+  const alle = TOOLS.filter((t) => !t.intern).concat(VIRTUAL_VISIBILITY_ENTRIES)
     .slice()
     .sort((a, b) => (a.name || "").localeCompare(b.name || "", "de", { sensitivity: "base" }));
   const kritische = alle.filter((t) => isKritischesTool(t.id));
@@ -3440,14 +3508,14 @@ function kopfKnopfSignal(knopfId, zaehlerId, offen, sig, texte, ruheTitel) {
 // Stand -- sie müssen deshalb auch dann verschwinden, wenn gar nichts gerendert
 // wird. Beide zusammen: sie werden aus derselben Quelle gespeist.
 function aufgabenKopfZaehlerLeeren() {
-  ["aufgaben-kopf-zaehler", "dokumente-kopf-zaehler"].forEach((id) => {
+  ["aufgaben-kopf-zaehler"].forEach((id) => {
     const z = document.getElementById(id);
     if (!z) return;
     z.textContent = "";
     z.style.display = "none";
     z.classList.remove("warn");
   });
-  ["btn-todos-oeffnen", "btn-dokumente-oeffnen"].forEach((id) => {
+  ["btn-todos-oeffnen"].forEach((id) => {
     const k = document.getElementById(id);
     if (k) k.classList.remove("hat-signal");
   });
@@ -3489,10 +3557,10 @@ function renderAufgabenWidget() {
   const sigDok = aufgabenSignal(mitDok, heute);
   kopfKnopfSignal("btn-todos-oeffnen", "aufgaben-kopf-zaehler", offen, sig, aufgabenSignalTexte(sig),
     offen ? `${offen} offene ${offen === 1 ? "Aufgabe" : "Aufgaben"}` : "Eigene ToDos anlegen und abhaken");
-  kopfKnopfSignal("btn-dokumente-oeffnen", "dokumente-kopf-zaehler", offenDok, sigDok, dokumentSignalTexte(sigDok),
-    offenDok ? `${offenDok} ${offenDok === 1 ? "Dokument wartet" : "Dokumente warten"} auf deine Unterschrift`
-             : "Unterschriften anfordern und selbst unterschreiben");
-  // Erst hier steht fest, ob der Unterschriften-Knopf ueberhaupt gezeigt wird:
+  // Der Unterschriften-Zaehler sitzt seit 2026-09-07 auf der Kachel statt an einem
+  // Kopf-Knopf: dokumenteKachelSignal() rechnet ihn aus derselben Quelle
+  // (aufgabenState) noch einmal aus, renderToolGrid() zeichnet ihn.
+  // Erst hier steht fest, ob die Unterschriften-Kachel ueberhaupt gezeigt wird:
   // beim Seitenstart lief renderNavTabs() noch ohne geladene Aufgaben.
   updateKopfKnoepfe();
 
@@ -4800,7 +4868,12 @@ function setupDokumenteTab() {
 
   document.getElementById("btn-dokumente-neuladen").addEventListener("click", loadDokumente);
   document.getElementById("btn-dokument-selbst").addEventListener("click", oeffneSelbstUnterschreiben);
-  document.getElementById("btn-dokumente-oeffnen").addEventListener("click", oeffneDokumenteFenster);
+  // ⚠️ KEIN Handler mehr auf "btn-dokumente-oeffnen": den Kopf-Knopf gibt es seit
+  // 2026-09-07 nicht mehr, das Fenster oeffnet die Kachel (renderToolGrid). Ein
+  // stehengebliebener getElementById(...).addEventListener haette hier null geliefert
+  // und setupDokumenteTab() mitten in der Registrierung abgebrochen -- alle danach
+  // folgenden Handler (Escape, Unterschrift) waeren lautlos tot, genau wie beim
+  // entfernten btn-fenster-zuweisen weiter unten.
   document.getElementById("btn-dokumente-close").addEventListener("click", schliesseDokumenteFenster);
   // btn-fenster-zuweisen gibt es seit 2026-07-28 nicht mehr (Aufgaben zuweisen ist
   // in die App "Vereinsaufgaben" gewandert). Der Handler MUSS mit dem Knopf weg:
@@ -4934,7 +5007,9 @@ function newsToolOptionsOnce() {
   }
   const gruppeTools = document.createElement("optgroup");
   gruppeTools.label = "Werkzeuge";
-  TOOLS.forEach((t) => {
+  // ⚠️ Nur Werkzeuge mit Adresse: newsZielRoh() baut den Link aus t.url, eine
+  // interne Kachel ohne url ergaebe einen Link ins Nichts.
+  TOOLS.filter((t) => t.url).forEach((t) => {
     const o = document.createElement("option");
     o.value = t.id;
     o.textContent = t.name;
@@ -6256,7 +6331,7 @@ function renderFeedbackToolOptions() {
   allgemein.value = "";
   allgemein.textContent = "— Allgemein —";
   sel.appendChild(allgemein);
-  TOOLS.filter((t) => isVisibleToUser(t.id, currentUser)).forEach((t) => {
+  TOOLS.filter((t) => toolKachelSichtbar(t)).forEach((t) => {
     const o = document.createElement("option");
     o.value = t.id;
     o.textContent = t.name;
@@ -7705,17 +7780,18 @@ function dokumenteTabOffen() {
 // Seitenstart laeuft checkSession() vor loadAufgaben(), da steht canAssignDocs
 // noch auf false und der Knopf muss nachtraeglich erscheinen koennen.
 function updateKopfKnoepfe() {
-  const darfAnfordern = !!aufgabenState.canAssignDocs;
-  const dokKnopf = document.getElementById("btn-dokumente-oeffnen");
-  if (dokKnopf) dokKnopf.style.display = dokumenteTabOffen() ? "" : "none";
   const todoKnopf = document.getElementById("btn-todos-oeffnen");
   if (todoKnopf) todoKnopf.style.display = todosTabOffen() ? "" : "none";
-  // "anfordern" nur bei denen, die es duerfen -- fuer einen Unterzeichner waere
-  // die Beschriftung schlicht falsch. Als Klasse, NICHT als inline-style: unter
-  // 860px blendet die Media-Query denselben Teil aus, und ein inline gesetztes
-  // display:"" wuerde sie aushebeln.
-  const lang = document.getElementById("dok-btn-lang");
-  if (lang) lang.classList.toggle("aus", !darfAnfordern);
+  // Der Unterschriften-Zugang ist seit 2026-09-07 kein Kopf-Knopf mehr, sondern die
+  // Kachel "unterschriften" im Raster (Michel-Vorgabe; sie ersetzt zugleich den
+  // abgeschalteten Digitalen Stempel). Sie haengt am selben Gate wie frueher der
+  // Knopf -- dokumenteTabOffen(), angewandt in internKachelErlaubt().
+  // ⚠️ Deshalb muss das Raster hier mitlaufen: beim Seitenstart rennt checkSession()
+  // vor loadAufgaben(), canAssignDocs steht dann noch auf false und die Kachel muss
+  // nachtraeglich erscheinen koennen -- genau der Grund, aus dem diese Funktion aus
+  // renderNavTabs() UND aus renderAufgabenWidget() gerufen wird. renderToolGrid()
+  // ruft nichts von hier zurueck, es gibt also keine Schleife.
+  renderToolGrid();
   // Der Knopf im Fenster hat dasselbe Gate wie das Anfordern (siehe renderDokumente).
   // Dritter Kopf-Knopf, gleiche Stelle: er verschwindet, sobald die App abgelegt
   // ist, damit die enge Kopfzeile nicht dauerhaft eine Zeile mehr traegt.
@@ -7896,7 +7972,8 @@ function eigeneBearbeitenRechte() {
   const meine = new Set(currentUser.groupIds || []);
   const inMeinen = (ids) => (ids || []).some((id) => meine.has(id));
   return TOOLS
-    .filter((t) => isVisibleToUser(t.id, currentUser))
+    // Interne Kacheln raus: sie haben keine editGroupIds/adminGroupIds.
+    .filter((t) => !t.intern && isVisibleToUser(t.id, currentUser))
     .map((t) => {
       const entry = visibilityState[t.id] || {};
       if (inMeinen(entry.adminGroupIds)) return t.name + " (administrieren)";
@@ -10578,8 +10655,11 @@ function renderAktivitaetsAuswertung(nutzer, personal, monat) {
   // ⚠️ Die Werkzeuge, die NIEMAND benutzt hat, sind der eigentliche Zweck dieser
   // Auswertung — sie stehen in keiner Zeile und wären sonst genau das, was man
   // übersieht. Deshalb ausdrücklich aufzählen.
+  // ⚠️ Interne Kacheln raus: sie haben keine eigene App-Kennung, unter der Vorgaenge
+  // gezaehlt wuerden (das laeuft alles unter der Uebersicht selbst). Sie stuenden hier
+  // sonst Monat fuer Monat als "von niemandem benutzt" -- eine glatte Falschaussage.
   const ungenutzt = TOOLS
-    .filter((t) => t && t.id && !proApp.has(t.id))
+    .filter((t) => t && t.id && !t.intern && !proApp.has(t.id))
     .map((t) => t.name);
 
   const stille = gezaehlt.length - aktive.length;

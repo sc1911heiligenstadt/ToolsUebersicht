@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.5" />
+<link rel="stylesheet" href="style.css?v=1.6" />
 </head>
 <body>
 
@@ -36,11 +36,12 @@
        traegt jetzt allein, die Gruppe klebt weiter am Titel. -->
   <div class="header-btns">
     <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
-    <!-- Der Zähler ersetzt die Karte auf der Startseite: ohne ihn sähe man beim
-         Aufrufen der Seite gar nicht mehr, dass etwas offen ist. Er zählt hier
-         ausschließlich die Dokumente, die auf die eigene Unterschrift warten --
-         die persönlichen ToDos haben ihren eigenen Knopf rechts. -->
-    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Unterschriften anfordern und selbst unterschreiben">✍ Unterschriften<span class="btn-lang" id="dok-btn-lang"> anfordern</span><span class="header-zaehler" id="dokumente-kopf-zaehler" style="display:none;"></span></button>
+    <!-- Hier stand bis 2026-09-07 der Knopf "✍ Unterschriften anfordern". Der Zugang
+         ist jetzt die Kachel "unterschriften" im Raster (Michel-Vorgabe); sie ersetzt
+         zugleich den abgeschalteten Digitalen Stempel. Der Zähler ist mitgewandert und
+         sitzt als Abzeichen auf der Kachel — er bleibt Pflicht, weil Aufgaben mit dokId
+         bewusst NICHT in der ToDo-Liste stehen und er damit das einzige Signal beim
+         Seitenaufruf ist (dokumenteKachelSignal in app.js). -->
     <!-- Steht hier nur, solange die App noch NICHT auf dem Startbildschirm liegt
          (siehe appAblegenMoeglich in app.js) -- ein Knopf, den man je Geraet genau
          einmal braucht, darf die ohnehin enge Kopfzeile nicht dauerhaft belasten.
@@ -331,8 +332,8 @@
             freigeschaltet ist. Die Kacheln lassen sich als Liste anzeigen und selbst anordnen; die
             Reihenfolge hängt am Konto, nicht am Browser. Dazu: die Flotte als App auf dem
             Startbildschirm ablegen, Benachrichtigungen aufs Handy je Anlass einzeln schalten, eigene
-            ToDos, Unterschriften anfordern und das Konto-Foto, das im Kadermanager und in der
-            Besprechung erscheint.
+            ToDos, die Kachel „Unterschriften anfordern“ und das Konto-Foto, das im Kadermanager
+            und in der Besprechung erscheint.
           </p>
     </div>
     <div class="card">
@@ -1881,7 +1882,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.13"></script>
-<script src="app.js?v=1.9"></script>
+<script src="config.js?v=1.14"></script>
+<script src="app.js?v=1.10"></script>
 </body>
 </html>
