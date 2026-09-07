@@ -9021,7 +9021,17 @@ function vkIcsEvent(e) {
   const zeilen = ["BEGIN:VEVENT"];
   const add = (name, wert) => { if (wert !== "" && wert != null) zeilen.push(vkIcsFalten(name + ":" + wert)); };
 
-  add("UID", e.uid);
+  // ⚠️ Die UID MUSS durch dieselbe Entschaerfung wie die vier Textfelder weiter
+  // unten (Abnahme 2026-09-07). Sie entsteht aus t.id bzw. c.id, und handleDavSave
+  // nimmt body.data ungeprueft entgegen -- ein Bearbeiter kann ueber die Konsole
+  // eine Id mit einem Zeilenumbruch schreiben. Der landete hier roh in der Datei,
+  // und alles dahinter liest ein Kalenderprogramm als NEUE ics-Eigenschaft: so
+  // stehen in der Datei jedes Nutzers beliebige Eintraege oder Alarme, die die
+  // App nirgends zeigt.
+  // ⚠️ Die UID bleibt dabei stabil: uuid() erzeugt nur Hex und Bindestriche, und
+  // an keinem davon aendert vkIcsEscape etwas. Ein zweiter Download aktualisiert
+  // also weiterhin den vorhandenen Eintrag, statt einen zweiten anzulegen.
+  add("UID", vkIcsEscape(e.uid));
   add("DTSTAMP", e.dtstamp);
   if (e.ganztags) {
     add("DTSTART;VALUE=DATE", vkIcsDatum(e.datum));
