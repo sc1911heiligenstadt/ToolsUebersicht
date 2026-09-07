@@ -570,6 +570,13 @@ const APP_CHANGELOG = [
           "Gepflegt wird er unverändert von Administratoren im Reiter „Einstellungen“.",
           "Die Kopfzeile trägt damit nur noch „📲 Als App ablegen“ — und den auch nur, solange die App noch nicht auf dem Startbildschirm liegt."
         ]
+      },
+      {
+        title: "Am Handy stehen Name und „Abmelden“ wieder rechts",
+        items: [
+          "Der Nutzer-Chip und der Knopf „Abmelden“ klebten am Handy am linken Rand, obwohl sie oben rechts hingehören. Jetzt sitzen sie wieder bündig rechts.",
+          "Am Rechner ändert sich nichts."
+        ]
       }
     ]
   },

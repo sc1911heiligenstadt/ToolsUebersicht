@@ -37,8 +37,16 @@ header {
 header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 /* wrap + flex-end: seit der Abmelden-Button hier mit drin sitzt, wird die Gruppe
    auf schmalen Handys sonst breiter als der Schirm (header bricht zwar um, aber
-   nur als Ganzes). */
-.header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; }
+   nur als Ganzes).
+   ⚠️ margin-left:auto haelt Nutzer-Chip und "Abmelden" am Handy rechts
+   (Michel-Vorgabe 2026-09-07). Das `justify-content: space-between` am <header>
+   allein reicht dafuer NICHT: es wirkt je Flex-ZEILE, und am Handy landet
+   .header-btns noch auf der Titelzeile -- .header-right steht dann als einziges
+   Element seiner Zeile und rutscht damit an deren Anfang, also nach links.
+   Am Rechner aendert sich nichts: dort teilen sich dieses Auto-Margin und das
+   margin-right:auto an .header-btns den Freiraum, die Gruppe bleibt buendig
+   rechts und die Knopfgruppe klebt weiter am Titel. */
+.header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; margin-left: auto; }
 /* Das Wappen sitzt seit 2026-09-02 VORNE im <h1> (vorher rechts in .header-right,
    44px). flex: none, weil es sonst in der schmalen Kopfzeile des Handys als
    einziges schrumpfbares Kind der Ueberschrift zusammengedrueckt wuerde --
