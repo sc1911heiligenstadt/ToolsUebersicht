@@ -577,6 +577,15 @@ const APP_CHANGELOG = [
           "Der Nutzer-Chip und der Knopf „Abmelden“ klebten am Handy am linken Rand, obwohl sie oben rechts hingehören. Jetzt sitzen sie wieder bündig rechts.",
           "Am Rechner ändert sich nichts."
         ]
+      },
+      {
+        title: "Eine wartende Unterschrift bleibt sichtbar, auch wenn du die Kachel ausgeblendet hast",
+        items: [
+          "Die Kachel „✍️ Unterschriften anfordern“ ließ sich wie jedes andere Werkzeug mit dem Auge 👁 von der Startseite nehmen — und nahm dabei das rote Abzeichen mit, das meldet, dass ein Dokument auf deine Unterschrift wartet.",
+          "Das war die einzige Stelle, an der du das beim Aufrufen der Seite gesehen hättest: Dokumente stehen bewusst nicht in „Meine ToDos“. Danach hätte dich nichts mehr daran erinnert.",
+          "Jetzt kommt die Kachel zurück, solange etwas offen ist. Dein Ausblenden bleibt gespeichert und greift wieder, sobald du alles unterschrieben hast.",
+          "Bis zum 07.09. war der Zugang ein Knopf oben in der Kopfzeile — den konnte man gar nicht ausblenden. Mit dem Umzug auf eine Kachel war die Lücke entstanden."
+        ]
       }
     ]
   },

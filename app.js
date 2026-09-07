@@ -1832,6 +1832,30 @@ function dokumenteKachelSignal() {
   };
 }
 
+// ⚠️ Eine Kachel, auf der gerade etwas PERSÖNLICH offen ist, darf nicht
+// ausgeblendet bleiben (seit 2026-09-07). Bis zum selben Tag war der Zugang zu den
+// Unterschriften ein Kopf-Knopf -- und ein Kopf-Knopf lässt sich nicht ausblenden.
+// Als Kachel bekam er den 👁-Knopf wie jede andere, und ein Druck darauf nahm
+// zugleich das rote Abzeichen mit. Das ist mehr als ein verstecktes Werkzeug: das
+// Abzeichen ist das EINZIGE Signal beim Seitenaufruf, weil Aufgaben mit dokId
+// bewusst nicht in der ToDo-Liste stehen (siehe dokumenteKachelSignal). Danach
+// hätte niemand mehr erfahren, dass ein Vertrag auf seine Unterschrift wartet.
+//
+// Die Kachel kommt deshalb zurück, solange etwas offen ist -- das Ausblenden selbst
+// bleibt gespeichert und greift wieder, sobald nichts mehr aussteht. Bewusst so
+// herum und NICHT über ein Sperren des 👁-Knopfes: wer die Kachel ausgeblendet
+// hat, BEVOR das erste Dokument kam, wäre damit trotzdem stumm geblieben.
+//
+// ⚠️ Bewusst nur diese eine Kachel. Die Abzeichen an "trainerdaten" (Ampel) und
+// "testspielplaner" (Gegner eintragen) sind Zustandsanzeigen mit anderen Wegen
+// dorthin -- sie zurückzuholen würde das Ausblenden entwerten, statt ein stummes
+// Signal zu verhindern.
+function kachelSignalOffen(t) {
+  if (!t) return false;
+  if (t.intern === "dokumente") return dokumenteKachelSignal().offen > 0;
+  return false;
+}
+
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   // ⚠️ Waehrend eine Karte am Finger haengt, nicht neu bauen: die Statusabfragen
@@ -1859,8 +1883,11 @@ function renderToolGrid() {
     // saveToolOrder() verloere sie aus der Reihenfolge (Begruendung bei
     // toolIstVersteckt()). anyVisible haengt bewusst an toolsUnordered, also am Stand
     // VOR dieser Zeile: wer alles ausblendet, muss die Bedienleiste behalten.
+    // kachelSignalOffen() holt eine ausgeblendete Kachel zurueck, solange auf ihr
+    // etwas persoenlich offen ist -- Suche und Filter gelten fuer sie weiter, sie
+    // draengt sich also nur dort auf, wo sie ohnehin hingehoerte.
     const toolsGefunden = toolsUnordered.filter((t) =>
-      (ansichtBearbeiten || !toolIstVersteckt(t.id))
+      (ansichtBearbeiten || !toolIstVersteckt(t.id) || kachelSignalOffen(t))
       && toolPasstZumFilter(t) && toolPasstZurSuche(t, suchWoerter));
     // Eine Kategorie ohne Treffer faellt samt Ueberschrift weg -- eine leere
     // Ueberschrift sieht aus, als fehlte etwas.
