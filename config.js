@@ -221,6 +221,22 @@ const TOOLS = [
   // schon 2026-07-28): dort setzte jeder ein beliebiges Bild auf ein beliebiges
   // Dokument, hier zeichnet die unterschreibende Person selbst und der Server setzt
   // den Zeitstempel. ⚠️ Word kann dieser Weg bewusst nicht -- nur PDF.
+  // ⚠️ Zweite interne Kachel, seit 2026-09-07 (Michel-Vorgabe): sie ersetzt den
+  // Kopf-Knopf "🔐 Materialcontainercode" und oeffnet #materialcontainer-overlay.
+  // Wie "unterschriften" bewusst OHNE `url`. Ihr Gate steht in internKachelErlaubt():
+  // angemeldet und KEIN Spielerkonto -- genau das, was vorher den Knopf steuerte.
+  // Der Worker prueft dasselbe noch einmal, die Kachel ist nur der Weg dorthin.
+  // ⚠️ Bewusst KEIN Eintrag im Sichtbarkeits-Panel (renderToolGrid filtert interne
+  // Kacheln dort heraus): ein Schalter, der gegen das feste Gate nichts ausrichtet,
+  // waere schlimmer als keiner.
+  {
+    id: "materialcontainer",
+    name: "Materialcontainercode",
+    description: "Der Code des Zahlenschlosses am Materialcontainer, dazu der Hinweis zum Zuschließen. Öffnet ein Fenster in dieser Übersicht. Der Code wird erst beim Öffnen geholt und nirgends zwischengespeichert; Spielerkonten bekommen ihn nicht.",
+    icon: "🔐",
+    category: "Verein",
+    intern: "materialcontainer"
+  },
   {
     id: "unterschriften",
     name: "Unterschriften anfordern",
@@ -544,6 +560,15 @@ const APP_CHANGELOG = [
           "Der Zähler ist mitgewandert: Was offen ist, steht weiter am Knopf, und der Knopf bekommt einen roten Ring, wenn etwas heute fällig oder überfällig ist.",
           "Am Handy rückt die Terminkarte samt Knopf wie bisher über die Kacheln — der Knopf bleibt dort, wo die Termine sind.",
           "Hast du gerade keine Termine, bleibt die linke Spalte trotzdem stehen: sonst wäre die persönliche Liste genau dann weg, wenn nichts anderes ansteht."
+        ]
+      },
+      {
+        title: "„Materialcontainercode“ ist jetzt eine Kachel",
+        items: [
+          "Der Knopf „🔐 Materialcontainercode“ oben in der Kopfzeile ist verschwunden. Den Code gibt es weiterhin, er steht jetzt als eigene Kachel „Materialcontainercode“ bei den Werkzeugen — gleiche Linie wie „Unterschriften anfordern“.",
+          "Wer ihn sehen darf, ändert sich nicht: jede:r Angemeldete außer Spielerkonten. Der Code wird weiterhin erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert.",
+          "Gepflegt wird er unverändert von Administratoren im Reiter „Einstellungen“.",
+          "Die Kopfzeile trägt damit nur noch „📲 Als App ablegen“ — und den auch nur, solange die App noch nicht auf dem Startbildschirm liegt."
         ]
       }
     ]
@@ -875,7 +900,7 @@ const APP_CHANGELOG = [
           "Der Knopf „Meine ToDos“ unter der Terminkarte links auf dem Dashboard öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
           "Der Zähler am Knopf meldet, was offen ist. Er wird rot, wenn etwas überfällig ist.",
           "Hier steht nur, was man sich selbst notiert. Was einem anderen aufgetragen wird, gehört in die Vereinsaufgaben — dorthin führt ein Knopf.",
-          "Der Knopf „Materialcontainercode“ zeigt den Code des Zahlenschlosses am Materialcontainer. Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",
+          "Die Kachel „🔐 Materialcontainercode“ zeigt den Code des Zahlenschlosses am Materialcontainer. Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",
           "Der Code wird erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert. An unangemeldete Besucher geht er nie, und Spielerkonten bekommen ihn nicht — bei rund 200 Konten wäre das das Gegenteil eines Schlosses."
         ]
       },

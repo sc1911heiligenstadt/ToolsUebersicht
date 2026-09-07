@@ -1800,12 +1800,17 @@ function toolKachelSichtbar(t) {
   return isVisibleToUser(t.id, currentUser);
 }
 
-// Interne Kacheln (heute nur "unterschriften", seit 2026-09-07) haengen am selben Gate
-// wie frueher der Kopf-Knopf: entweder man darf Unterschriften anfordern, oder es
-// liegt gerade eine eigene an.
+// Interne Kacheln (seit 2026-09-07 "unterschriften" und "materialcontainer") haengen
+// jeweils an genau dem Gate, das vorher ihren Kopf-Knopf steuerte -- der Umzug in
+// das Raster ist bewusst KEINE Rechte-Aenderung.
+//   dokumente        -> darf anfordern ODER hat selbst etwas offen
+//   materialcontainer -> angemeldet und kein Spielerkonto (der Code gehoert zu einem
+//                        echten Schloss; bei rund 200 Spielerkonten waere er das
+//                        Gegenteil eines Schlosses). Der Worker prueft dasselbe.
 function internKachelErlaubt(t) {
   if (!t || !t.intern) return true;
   if (t.intern === "dokumente") return dokumenteTabOffen();
+  if (t.intern === "materialcontainer") return !!currentUser && currentUser.art !== "spieler";
   return true;
 }
 
@@ -1929,6 +1934,7 @@ function renderToolGrid() {
         // ⚠️ preventDefault muss AUCH laufen, wenn das Oeffnen scheitert -- sonst
         // haengt "#" in der Adresszeile und der Zurueck-Knopf tut nichts Sichtbares.
         if (t.intern === "dokumente") { ev.preventDefault(); oeffneDokumenteFenster(); }
+        if (t.intern === "materialcontainer") { ev.preventDefault(); oeffneMaterialcontainer(); }
       });
       const badgeRefreshBtn = card.querySelector(".badge-refresh");
       if (badgeRefreshBtn) {
@@ -7394,7 +7400,11 @@ function setupTabs() {
     if (knopf) pushGeraetAbmelden(knopf.getAttribute("data-push-ab"));
   });
 
-  document.getElementById("btn-materialcontainer").addEventListener("click", oeffneMaterialcontainer);
+  // ⚠️ Kein Handler mehr fuer btn-materialcontainer: der Knopf ist am 2026-09-07 aus
+  // index.html entfernt, das Fenster oeffnet jetzt die Kachel "materialcontainer"
+  // (renderToolGrid). Ein getElementById auf den weggefallenen Knopf haette hier null
+  // geliefert und mit dem TypeError die restliche Registrierung -- Schliessen-Knopf,
+  // Escape, Admin-Speichern -- lautlos mit abgebrochen.
   document.getElementById("btn-materialcontainer-close").addEventListener("click", schliesseMaterialcontainer);
   // Klick auf den abgedunkelten Hintergrund schliesst ebenfalls -- aber nur dort,
   // nicht bei einem Klick INNERHALB des Fensters (z.B. beim Markieren des Codes).
@@ -7709,9 +7719,10 @@ function renderNavTabs() {
   renderIdeenHinweis();
   // Unterschriften UND ToDos sind Personalsache: Spielerkonten bekommen auf allen
   // zugehoerigen Aktionen ohnehin 403, die Fenster haben fuer sie also nichts zu
-  // zeigen. Beide Zugaenge sitzen im Header, nicht in der Nav -- Unterschriften
-  // links neben dem Materialcontainercode, die ToDos rechts. Die beiden Knoepfe
-  // haben unterschiedliche Bedingungen, siehe todosTabOffen/dokumenteTabOffen.
+  // zeigen. Keiner der beiden Zugaenge sitzt noch im Header: Unterschriften und
+  // Materialcontainercode sind Kacheln im Raster, die ToDos ein Knopf unter der
+  // Terminkarte. Die Bedingungen sind unveraendert, siehe todosTabOffen bzw.
+  // internKachelErlaubt.
   const personalDa = todosTabOffen();
   updateKopfKnoepfe();
 
@@ -8437,10 +8448,13 @@ function renderAdminPanels() {
     if (el) el.open = false;
   });
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
-  // Der Knopf im Kopfbereich haengt nicht an isAdmin, sondern am Angemeldetsein --
-  // ihn sehen alle ausser Spielerkonten. Der Worker prueft dasselbe noch einmal.
-  document.getElementById("btn-materialcontainer").style.display =
-    (currentUser && currentUser.art !== "spieler") ? "inline-flex" : "none";
+  // Der Materialcontainer-Code ist seit 2026-09-07 kein Kopf-Knopf mehr, sondern die
+  // Kachel "materialcontainer" im Raster. Ihr Gate ist unveraendert -- angemeldet und
+  // kein Spielerkonto, siehe internKachelErlaubt(). Das Raster muss hier trotzdem neu
+  // gezeichnet werden: diese Funktion laeuft bei jedem Wechsel des Anmeldestatus, und
+  // ohne den Aufruf bliebe die Kachel nach dem Anmelden weg bzw. nach dem Abmelden
+  // stehen. renderToolGrid() ruft nichts von hier zurueck, es gibt keine Schleife.
+  renderToolGrid();
 
   if (currentUser) {
     renderKontoKarte();

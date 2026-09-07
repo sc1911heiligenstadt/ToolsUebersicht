@@ -35,7 +35,11 @@
        ist auch sein margin-right:auto entfallen -- das Auto-Margin an .header-btns
        traegt jetzt allein, die Gruppe klebt weiter am Titel. -->
   <div class="header-btns">
-    <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
+    <!-- Hier stand bis 2026-09-07 der Knopf "🔐 Materialcontainercode". Der Zugang
+         ist jetzt die Kachel "materialcontainer" im Raster (Michel-Vorgabe) — gleiche
+         Linie wie bei den Unterschriften darunter. Das Fenster
+         #materialcontainer-overlay ist unveraendert geblieben, nur der Weg dorthin
+         ist ein anderer (internKachelErlaubt in app.js). -->
     <!-- Hier stand bis 2026-09-07 der Knopf "✍ Unterschriften anfordern". Der Zugang
          ist jetzt die Kachel "unterschriften" im Raster (Michel-Vorgabe); sie ersetzt
          zugleich den abgeschalteten Digitalen Stempel. Der Zähler ist mitgewandert und
@@ -1086,8 +1090,8 @@
     <details class="card collapsible" id="admin-materialcontainer-panel" style="display:none;">
       <summary>Materialcontainer-Code</summary>
       <p class="muted" style="margin-bottom:14px;">
-        Code des Zahlenschlosses am Materialcontainer. Jede:r angemeldete Mitarbeiter:in sieht ihn über den
-        Knopf „🔐 Materialcontainercode“ oben im Kopfbereich — Spielerkonten nicht. Beim Ändern des Schlosses
+        Code des Zahlenschlosses am Materialcontainer. Jede:r angemeldete Mitarbeiter:in sieht ihn über die
+        Kachel „🔐 Materialcontainercode“ in der Werkzeugübersicht — Spielerkonten nicht. Beim Ändern des Schlosses
         hier den neuen Code eintragen; er gilt sofort für alle.
       </p>
       <div class="form-grid" style="align-items:flex-end;">
@@ -1890,7 +1894,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.15"></script>
-<script src="app.js?v=1.11"></script>
+<script src="config.js?v=1.16"></script>
+<script src="app.js?v=1.12"></script>
 </body>
 </html>
