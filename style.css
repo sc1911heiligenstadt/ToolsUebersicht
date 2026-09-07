@@ -767,7 +767,7 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
 
 /* Die Karte "Funktionen" im Info-Reiter teilt sich die Klassen mit der frueheren
    Aenderungsliste; nur der Abstand zwischen den Gruppen kommt von hier. */
-#funktionen-list { display: flex; flex-direction: column; gap: 18px; }
+#funktionen-list { display: flex; flex-direction: column; gap: 18px; font-size: 13px; }
 
 /* Ohne die v-Marke trennt nur noch der Abstand zwei Eintraege — darum groesser. */
 #changelog-list { display: flex; flex-direction: column; gap: 18px; }
