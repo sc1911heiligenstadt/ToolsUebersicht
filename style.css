@@ -367,6 +367,32 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 .card h2 { font-size: 17px; margin-bottom: 14px; color: var(--blue); }
 .card h3 { font-size: 15px; margin-bottom: 10px; }
 
+/* Datenschutz-Karte: die vier Auskunftsabsaetze sind lang und standen als eine
+   Textwand untereinander -- eigene Ueberschrift und Trennlinie je Thema, damit
+   man den Absatz findet, der einen betrifft. Der Text ist dabei Wort fuer Wort
+   unveraendert geblieben; die fetten Anfaenge sind zu <h3> geworden. */
+#ds-info-karte p { line-height: 1.65; }
+#ds-info-karte .ds-intro { margin-bottom: 14px; }
+#ds-info-karte .ds-verantwortlich {
+  background: var(--gray);
+  border-left: 3px solid var(--blue);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+}
+#ds-info-karte .ds-block {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+#ds-info-karte .ds-block h3 { color: var(--blue); margin-bottom: 8px; }
+#ds-info-karte .ds-links {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
 /* Karte "Mein Konto": Beschriftung/Wert paarweise. Auf schmalen Schirmen
    untereinander statt zweispaltig, sonst bricht der Wert unschoen um. */
 .konto-grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; }
