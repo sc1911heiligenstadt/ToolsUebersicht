@@ -559,7 +559,122 @@ const MITTEILUNG_EMOJIS = [
   { e: "🚑", name: "Erste Hilfe" }
 ];
 
+// Was die Uebersicht kann -- steht im Info-Reiter als Karte "Funktionen".
+// WICHTIG: Das ist NICHT der Changelog. Hier steht der ZUSTAND ("die Kacheln
+// lassen sich anordnen"), dort die Aenderung ("die Kacheln lassen sich JETZT
+// anordnen"). Wer eine Funktion umbaut oder abschaltet, zieht diesen Text mit --
+// und ebenso E:\SC1911-Tools-Anleitung.txt, wo dasselbe ausfuehrlich steht.
+const APP_FUNKTIONEN = [
+  {
+    title: "Anmelden",
+    items: [
+      "Einmal anmelden, danach sind alle Werkzeuge offen, für die das eigene Konto freigeschaltet ist — ohne zweites Passwort.",
+      "Zum Anmelden genügt der Name oder die eigene E-Mail-Adresse. Groß- und Kleinschreibung, Punkte, Striche und Umlaute spielen keine Rolle.",
+      "Die Anmeldung gilt sieben Tage. Ein Passwortwechsel meldet alle Geräte ab, auch das eigene."
+    ]
+  },
+  {
+    title: "Startseite: Kacheln, Liste, eigene Reihenfolge",
+    items: [
+      "Über den Werkzeugen steht ein Umschalter: Kacheln oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
+      "Der Knopf „Anordnen“ schaltet das Verschieben ein — erst dann erscheinen die Greifpunkte, und erst dann führt kein Klick versehentlich in ein Werkzeug.",
+      "Ansicht und Reihenfolge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich.",
+      "Mit dem Auge 👁 lässt sich jedes Werkzeug von der eigenen Startseite nehmen.",
+      "Zwei Symbole auf einer Kachel sagen, wohin eine Handlung wirkt: der Briefumschlag heißt „verschickt E-Mails nach außen“, die Glocke „meldet sich auf einem Handy“."
+    ]
+  },
+  {
+    title: "Neuigkeiten und Termine",
+    items: [
+      "Oben stehen die Meldungen zu den Werkzeugen, durchblätterbar. Unter jeder Meldung kann man mit einem Emoji reagieren; an eine Meldung können Bilder, Videos und ein Link hängen.",
+      "Daneben stehen die nächsten Vereinstermine aus dem Vereinskalender und die Geburtstage des Tages."
+    ]
+  },
+  {
+    title: "Meine ToDos",
+    items: [
+      "Die eigene Merkliste — für das, was man sich sonst auf einen Zettel schreibt. Sie steht links unter der Karte mit den Terminen.",
+      "Der Zähler am Knopf meldet, was offen ist; ein roter Ring heißt, dass etwas heute fällig oder überfällig ist.",
+      "Die Liste sieht niemand sonst. Was einem anderen aufgetragen wird, gehört dagegen in das Werkzeug „Vereinsaufgaben“."
+    ]
+  },
+  {
+    title: "Unterschriften anfordern",
+    items: [
+      "Ein PDF an eine Person schicken, die es am Bildschirm unterschreibt. Die Kachel sieht nur, wer das darf — oder wer selbst gerade ein Dokument offen hat.",
+      "Wartet ein Dokument auf dich, steht die Zahl als rotes Abzeichen auf der Kachel. Sie kommt auch dann zurück, wenn du sie ausgeblendet hast: sonst würde nichts mehr daran erinnern.",
+      "Unterschrieben wird nur PDF. Ein unterschriebenes Word-Dokument bliebe nachträglich änderbar und wäre als Nachweis wertlos."
+    ]
+  },
+  {
+    title: "Materialcontainercode",
+    items: [
+      "Der Code des Zahlenschlosses am Container steht als eigene Kachel bereit; sie öffnet ein Fenster in dieser Übersicht.",
+      "Ihn sieht jede und jeder Angemeldete außer Spielerkonten. Der Code wird erst beim Öffnen geholt und nirgends zwischengespeichert."
+    ]
+  },
+  {
+    title: "Als App auf dem Startbildschirm",
+    items: [
+      "Der Knopf „📲 Als App ablegen“ legt die Übersicht wie eine App ab. Danach startet sie ohne Adressleiste, und der Knopf verschwindet.",
+      "Auf Android übernimmt das der Systemdialog. Auf dem iPhone geht es nur über Safari von Hand — der Knopf zeigt dort die Anleitung."
+    ]
+  },
+  {
+    title: "Benachrichtigungen aufs Handy",
+    items: [
+      "Einzuschalten im Reiter „Mein Konto“, für jedes Gerät einmal. Jeder Anlass lässt sich einzeln an- und abschalten: Termin, Vereinsaufgabe, Dokument zum Unterschreiben, Testspiel, Materialbedarf, Raumnutzung, Fotoauftrag, Fahrtenbuch.",
+      "Die Nachricht nennt nie einen Namen oder Titel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können.",
+      "Die E-Mails bleiben bestehen. Benachrichtigungen kommen dazu, sie ersetzen nichts.",
+      "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt. In der Liste der Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus."
+    ]
+  },
+  {
+    title: "Mein Konto: Foto, Punkte, Nachrichten",
+    items: [
+      "Ein eigenes Foto lässt sich hinterlegen — aus den eigenen Bildern oder am Handy direkt mit der Kamera. Es erscheint dann von selbst im Kadermanager und in der Besprechung. Freiwillig und jederzeit wieder entfernbar.",
+      "Der Punktestand würdigt die Arbeit mit den Werkzeugen: am meisten bringt ein abgeschlossener Vorgang. Wer nicht mitzählen möchte, schaltet die Erfassung in derselben Karte ab.",
+      "Über das Nachrichten-Symbol lässt sich einer einzelnen Person ein kurzer Anstupser schicken. Neue Nachrichten stehen als rote Ziffer am Reiter „Mein Konto“."
+    ]
+  },
+  {
+    title: "Ideen, Feedback und Hilfe",
+    items: [
+      "Im Reiter „💡 Ideen“ lässt sich ein Vorschlag einreichen, den alle Angemeldeten sehen und mit einem Daumen unterstützen können.",
+      "Im Reiter „Feedback & Hilfe“ steht oben die Frage-Box zum Toolbox Wiki — dort erst fragen, bevor man Feedback gibt oder Hilfe anfordert."
+    ]
+  },
+  {
+    title: "Wer was sieht",
+    items: [
+      "Nicht jedes Werkzeug ist für jede Person da: manche sind öffentlich, manche für alle Angemeldeten, manche nur für bestimmte Gruppen. Wer ein Werkzeug nicht sieht, hat dafür keine Berechtigung — das ist kein Fehler.",
+      "Beim Abmelden wird der Bildschirm geräumt, nicht nur ausgeblendet. Wer sich an denselben Rechner setzt, kann nichts mehr nachlesen."
+    ]
+  },
+  {
+    title: "Für Administratoren",
+    items: [
+      "Sichtbarkeit je Werkzeug, Nutzerkonten, Gruppen und Mannschaften werden im Reiter „Einstellungen“ gepflegt.",
+      "Eine eigene Nachricht lässt sich sofort auf alle Handys schicken — für Kurzfristiges, das zu keinem Werkzeug gehört. Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden.",
+      "Zu einer Neuigkeit lässt sich am Rechner ein kurzes Bildschirmvideo aufzeichnen, statt den Weg in Worten zu beschreiben."
+    ]
+  }
+];
+
 const APP_CHANGELOG = [
+  {
+    version: "1.22",
+    groups: [
+      {
+        title: "Im Info-Reiter steht jetzt eine Karte „Funktionen“",
+        items: [
+          "Mit der Liste der Änderungen war zuletzt auch die Beschreibung verschwunden, was die Seite überhaupt kann. Das war zu viel.",
+          "Die Beschreibung ist zurück — als eigene Karte „Funktionen“, nach Themen geordnet: Anmelden, Startseite, Neuigkeiten, ToDos, Unterschriften, Materialcontainercode, App ablegen, Benachrichtigungen, Mein Konto, Ideen, wer was sieht, und ein Block für Administratoren.",
+          "Dort steht, was ist — nicht, was sich geändert hat. Was sich geändert hat, steht weiterhin in den Neuigkeiten oben auf der Startseite."
+        ]
+      }
+    ]
+  },
   {
     version: "1.21",
     groups: [

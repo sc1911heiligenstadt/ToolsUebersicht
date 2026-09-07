@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=2.0" />
+<link rel="stylesheet" href="style.css?v=2.1" />
 </head>
 <body>
 
@@ -348,6 +348,14 @@
             und in der Besprechung erscheint.
           </p>
     </div>
+    <!-- Was die Seite kann. Quelle: APP_FUNKTIONEN in config.js -- bewusst
+         getrennt von APP_CHANGELOG, das seit 07.09.2026 nicht mehr angezeigt
+         wird. Hier steht der Zustand, dort die Historie. -->
+    <div class="card">
+      <h2>Funktionen</h2>
+      <div id="funktionen-list"></div>
+    </div>
+
     <div class="card" id="ds-info-karte">
       <h2>Datenschutz</h2>
       <p class="ds-intro">Diese Übersicht und die von hier verlinkten Werkzeuge gehören zu den
@@ -1901,7 +1909,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.22"></script>
-<script src="app.js?v=1.18"></script>
+<script src="config.js?v=1.24"></script>
+<script src="app.js?v=1.19"></script>
 </body>
 </html>
