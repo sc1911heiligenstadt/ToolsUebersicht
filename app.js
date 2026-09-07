@@ -2435,15 +2435,16 @@ function toolById(id) {
 }
 
 // Das „verknüpfte Tool" einer Neuigkeit muss keine Kachel sein: die Ideen sind ein
-// Tab dieser Übersicht selbst (NEWS_INTERNE_ZIELE in config.js). Diese Funktion
-// loest BEIDES auf und liefert {name, url} fuer ein Werkzeug bzw. {name, tab} fuer
-// einen Tab hier. OHNE Rechtepruefung -- fuer die Pflegeliste im Einstellungen-Tab,
-// die zeigen muss, was gespeichert ist.
+// Tab dieser Übersicht selbst, der Materialcontainercode ein Fenster darin
+// (NEWS_INTERNE_ZIELE in config.js). Diese Funktion loest ALLE DREI Faelle auf und
+// liefert {name, url} fuer ein Werkzeug, {name, tab} fuer einen Tab hier bzw.
+// {name, overlay} fuer ein Fenster hier. OHNE Rechtepruefung -- fuer die Pflegeliste
+// im Einstellungen-Tab, die zeigen muss, was gespeichert ist.
 function newsZielRoh(id) {
   if (!id) return null;
   const liste = (typeof NEWS_INTERNE_ZIELE !== "undefined" && Array.isArray(NEWS_INTERNE_ZIELE)) ? NEWS_INTERNE_ZIELE : [];
   const intern = liste.find((z) => z.id === id);
-  if (intern) return { name: intern.name, tab: intern.tab };
+  if (intern) return { name: intern.name, tab: intern.tab, overlay: intern.overlay };
   const tool = toolById(id);
   return tool ? { name: tool.name, url: tool.url } : null;
 }
@@ -2457,9 +2458,27 @@ function newsZielTabOffen(tab) {
   return true;
 }
 
+// Dasselbe fuer die Fenster-Ziele -- hier ist es aber KEINE Kosmetik, sondern das
+// Rechte-Gate: der Materialcontainer-Code gehoert zu einem echten Schloss. Bewusst
+// ueber internKachelErlaubt(), damit Kachel und Meldung an DERSELBEN Bedingung
+// haengen und nicht auseinanderlaufen koennen. Der Worker prueft ohnehin noch einmal
+// -- wer den Link trotzdem ausloeste, bekaeme ein leeres Fenster, keinen Code.
+function newsZielOverlayOffen(overlay) {
+  if (overlay === "materialcontainer") return internKachelErlaubt({ intern: "materialcontainer" });
+  return true;
+}
+
+// ⚠️ Oeffnet das Fenster zu einem Ziel. Ein unbekannter Name tut bewusst NICHTS,
+// statt zu werfen: eine Meldung mit einem Ziel, das es nicht mehr gibt, bleibt so
+// lesbar (gleiche Linie wie ein entferntes Ziel in NEWS_INTERNE_ZIELE).
+function newsZielOverlayOeffnen(overlay) {
+  if (overlay === "materialcontainer") oeffneMaterialcontainer();
+}
+
 function newsZielFuer(id) {
   const ziel = newsZielRoh(id);
   if (ziel && ziel.tab && !newsZielTabOffen(ziel.tab)) return null;
+  if (ziel && ziel.overlay && !newsZielOverlayOffen(ziel.overlay)) return null;
   return ziel;
 }
 
@@ -2582,14 +2601,16 @@ function renderNews() {
     ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
     ${link}
   `;
-  // Ein Tab dieser App ist keine Adresse -- deshalb dort KEIN <a href>, sondern ein
-  // Klickziel mit Tastaturbedienung. Die Optik traegt .news-item-klick, damit
-  // dieselbe Meldung nicht je nach Ziel anders aussieht.
+  // Ein Tab oder Fenster dieser App ist keine Adresse -- deshalb dort KEIN <a href>,
+  // sondern ein Klickziel mit Tastaturbedienung. Die Optik traegt .news-item-klick,
+  // damit dieselbe Meldung nicht je nach Ziel anders aussieht.
   const itemHtml = (ziel && ziel.url)
     ? `<a class="news-item" href="${escapeHtml(ziel.url)}">${inner}</a>`
     : (ziel && ziel.tab)
       ? `<div class="news-item news-item-klick" role="button" tabindex="0" data-ziel-tab="${escapeHtml(ziel.tab)}">${inner}</div>`
-      : `<div class="news-item">${inner}</div>`;
+      : (ziel && ziel.overlay)
+        ? `<div class="news-item news-item-klick" role="button" tabindex="0" data-ziel-overlay="${escapeHtml(ziel.overlay)}">${inner}</div>`
+        : `<div class="news-item">${inner}</div>`;
 
   const atNewest = newsCarouselIndex === 0;
   const atOldest = newsCarouselIndex === items.length - 1;
@@ -2618,6 +2639,17 @@ function renderNews() {
     zielEl.addEventListener("click", () => activateTab(zielTab));
     zielEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activateTab(zielTab); }
+    });
+  }
+  // Dasselbe fuer ein Fenster-Ziel. Getrennter Zweig statt eines gemeinsamen: der
+  // Tab-Wechsel und das Oeffnen eines Fensters sind zwei verschiedene Aktionen, und
+  // ein Element traegt ohnehin immer nur eines der beiden Attribute.
+  const zielOvEl = banner.querySelector("[data-ziel-overlay]");
+  if (zielOvEl) {
+    const zielOv = zielOvEl.dataset.zielOverlay;
+    zielOvEl.addEventListener("click", () => newsZielOverlayOeffnen(zielOv));
+    zielOvEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); newsZielOverlayOeffnen(zielOv); }
     });
   }
 

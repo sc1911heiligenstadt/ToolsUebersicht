@@ -492,12 +492,22 @@ const NEWS = [];
 // Ziel hier entfernt, macht die damit verknüpften Meldungen zu ziellosen Meldungen
 // (sie bleiben lesbar, nur der Weg fällt weg).
 //
-// `tab` ist der Name der Sektion (`#tab-<name>`), auf die der Klick springt.
-// ⚠️ Ist der Tab für den Leser gesperrt, wird der Link weggelassen statt ins Leere
-// zu führen — die Bedingung dafür steht in newsZielTabOffen() in app.js und muss
-// dort für jedes neue Ziel ergänzt werden.
+// Ein Ziel trägt ENTWEDER `tab` ODER `overlay`, nie beides:
+//   `tab`     = Name der Sektion (`#tab-<name>`), auf die der Klick springt.
+//   `overlay` = Fenster dieser Seite, das der Klick öffnet (seit 2026-09-07). Gedacht
+//               für die internen Kacheln aus TOOLS, die bewusst KEIN `url` haben und
+//               deshalb nicht in der Gruppe „Werkzeuge“ des Auswahlfelds stehen können
+//               — newsToolOptionsOnce() filtert dort auf `t.url`, ein Link ins Nichts
+//               wäre schlimmer als kein Eintrag.
+// ⚠️ Ist das Ziel für den Leser gesperrt, wird der Link weggelassen statt ins Leere
+// zu führen — die Bedingungen dazu stehen in newsZielTabOffen() bzw.
+// newsZielOverlayOffen() in app.js und müssen dort für jedes neue Ziel ergänzt werden.
+// ⚠️ Beim `overlay`-Ziel ist das keine Kosmetik, sondern das Rechte-Gate: der
+// Materialcontainer-Code gehört zu einem echten Schloss und darf Spielerkonten nicht
+// erreichen — dieselbe Prüfung wie an der Kachel (internKachelErlaubt).
 const NEWS_INTERNE_ZIELE = [
-  { id: "intern:ideen", name: "Ideen", tab: "ideen" }
+  { id: "intern:ideen", name: "Ideen", tab: "ideen" },
+  { id: "intern:materialcontainer", name: "Materialcontainercode", overlay: "materialcontainer" }
 ];
 
 // Feste Auswahl an Reaktions-Emojis unter jeder Neuigkeit. MUSS mit
@@ -550,6 +560,19 @@ const MITTEILUNG_EMOJIS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.19",
+    groups: [
+      {
+        title: "Eine Meldung kann jetzt auf den Materialcontainercode zeigen",
+        items: [
+          "Im Feld „Verknüpftes Tool“ einer Neuigkeit stand der Materialcontainercode nicht zur Auswahl. Er hat keine eigene Adresse, sondern öffnet ein Fenster in dieser Übersicht — und das Feld bot bisher nur Werkzeuge mit Adresse an.",
+          "Jetzt steht er oben in der Gruppe „In der Tools-Übersicht“, neben den Ideen. Ein Klick auf die Meldung öffnet das Code-Fenster.",
+          "Wer den Code nicht sehen darf, bekommt keinen Link: bei Spielerkonten bleibt die Meldung lesbar, der Weg dorthin fällt weg. Das ist dieselbe Regel wie bei der Kachel."
+        ]
+      }
+    ]
+  },
   {
     version: "1.18",
     groups: [
