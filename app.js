@@ -2408,8 +2408,15 @@ async function rechteEinspielen(datei) {
     "#2d8c4e");
 }
 
+// Die Aenderungsliste steht seit 07.09.2026 NICHT mehr im Info-Reiter: dort
+// sollen nur die Funktionen der App stehen, gepflegt wird der Bedienungstext in
+// E:\SC1911-Tools-Anleitung.txt. APP_CHANGELOG bleibt in config.js gepflegt und
+// wird weiter geschrieben -- es ist die Quelle fuer die Anleitung und fuer die
+// Neuigkeiten-Meldungen. Diese Funktion steigt darum still aus, wenn es das Ziel
+// nicht gibt, statt beim Seitenstart mit einem Fehler abzubrechen.
 function renderChangelog() {
   const container = document.getElementById("changelog-list");
+  if (!container) return;
   // Die Versionsnummer wird bewusst NICHT mehr angezeigt: im Info-Tab sollen nur
   // die App-Funktionen stehen. Sie laeuft als data-version weiter mit, damit
   // Eintraege weiterhin zuordenbar bleiben (Konsole, Skripte, spaetere Filter).

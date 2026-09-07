@@ -561,6 +561,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.21",
+    groups: [
+      {
+        title: "Die Liste der Änderungen steht nicht mehr im Info-Reiter",
+        items: [
+          "Der Info-Reiter zeigt jetzt nur noch, was die Seite kann, und den Datenschutz-Text. Die lange Liste der Änderungen darunter ist weg.",
+          "Was sich geändert hat, steht weiterhin in den Neuigkeiten oben auf der Startseite — dort, wo man es beim Aufrufen ohnehin sieht.",
+          "Die Bedienung aller Werkzeuge ist ab jetzt in der Anleitung „SC1911-Tools-Anleitung“ beschrieben; sie ist auf den Stand vom 07.09.2026 gebracht.",
+          "Im Hintergrund wird die Liste weitergeführt: sie ist die Quelle für die Anleitung und für die Meldungen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.20",
     groups: [
       {
