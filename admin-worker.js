@@ -212,6 +212,9 @@
 //     vom 2026-09-02: wer einen Termin nach dem Anlegen noch dreimal nachbessert, soll EINE Nachricht mit dem
 //     Endstand auslösen, nicht drei mit Zwischenständen. ⚠️ Der Mailtext entsteht deshalb erst beim Versand im
 //     Worker (vkPostBrief), nicht mehr im Client. Details und alle Entscheidungen: Block am Dateiende.
+//   POST { action: "vereinskalender-termin-ics", terminId } (jeder mit Tool-Zugriff) -> { ok, ics, dateiname }
+//     EINEN Termin als Kalenderdatei zum Herunterladen -- Kopie, kein Abo. Gebaut aus denselben
+//     vkIcs*-Bausteinen wie der Feed, damit das ics-Format nur an einer Stelle steht.
 //   POST { action: "vereinskalender-abo-status" } (jeder mit Tool-Zugriff)  -> { ok, aktiv, umfang?, url?, webcalUrl?, erstelltAm? }
 //   POST { action: "vereinskalender-abo-anlegen", umfang } (dito)           -> { ok, aktiv:true, umfang, url, webcalUrl }
 //   POST { action: "vereinskalender-abo-loeschen" } (dito)                  -> { ok, aktiv:false, entwertet }
@@ -1716,6 +1719,11 @@ export default {
         return handleDavSave(request, body, env, authHeader, corsHeaders);
       case "vereinskalender-vote":
         return handleVereinskalenderVote(request, body, env, authHeader, corsHeaders);
+      // EINEN Termin als .ics-Datei (Knopf oben rechts an der Terminkarte).
+      // Gegenstueck zum Abo-Feed: eine Kopie statt eines Abos, siehe
+      // handleVereinskalenderTerminIcs.
+      case "vereinskalender-termin-ics":
+        return handleVereinskalenderTerminIcs(request, body, env, authHeader, corsHeaders);
       // Abo-Link fuer den eigenen Kalender (seit 2026-08-06). Der Feed selbst
       // laeuft nicht hier durch, sondern ueber den GET-Pfad /kalender/<token>.ics.
       case "vereinskalender-abo-status":
@@ -9200,6 +9208,101 @@ async function handleVkIcsFeed(request, token, env, authHeader, corsHeaders) {
       "Cache-Control": "no-store"
     }
   });
+}
+
+// ---------- Vereinskalender: EIN Termin als .ics zum Herunterladen ----------
+//
+// Michel-Wunsch vom 2026-09-07: neben dem Abo-Feed ueber ALLE Termine soll sich
+// ein EINZELNER Termin in den eigenen Kalender uebernehmen lassen -- Knopf oben
+// rechts an der Terminkarte.
+//
+// ⚠️ Das ist bewusst eine KOPIE, kein Abo. Aendert sich der Termin spaeter,
+// erfaehrt die Datei davon nichts. Deshalb steht hier auch KEIN
+// REFRESH-INTERVAL: eine Datei, die kein Programm je wieder abruft, mit einer
+// Auffrischungsbitte zu versehen, waere ein Versprechen, das sie nicht halten
+// kann. Wer Nachfuehrung will, nimmt den Abo-Link im Info-Tab.
+//
+// ⚠️ Gebaut wird die Datei HIER und nicht im Browser, obwohl der alle Daten
+// haette. Grund: vkTerminEvents / vkIcsFalten / vkBerlinWandzeitZuMs sind die
+// eine Stelle, an der das .ics-Format dieser Flotte steht -- samt
+// Sommerzeit-Rechnung und der 75-Byte-Faltung, die ein fremder Parser 2026-08-06
+// gefunden hat, als 97 eigene gruene Zusagen sie fuer heil hielten. Eine zweite
+// Fassung im Client liefe genauso auseinander wie die Mailtexte, bevor sie in den
+// Worker gewandert sind.
+//
+// Rechte: SEHEN reicht, gleiche Linie wie beim Abo-Feed (Michel 2026-08-06,
+// bewusst gegen "Export ab Bearbeiten"). Die Datei enthaelt ausschliesslich das,
+// was die Person auf der Karte ohnehin vor sich hat.
+//
+// ⚠️ Geprueft wird mit vereinskalenderTerminSichtbar (die APP-Regel MIT
+// Admin-Bypass), NICHT mit vkFeedTerminSichtbar. Der Unterschied ist Absicht:
+// der Feed liegt dauerhaft beim Kalenderanbieter, diese Datei entsteht auf einen
+// Klick an einer Karte, die schon offen auf dem Bildschirm steht.
+async function handleVereinskalenderTerminIcs(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  // Bewusst nur userMayAccessTool, nicht resolveEditPermission -- siehe oben.
+  if (!(await userMayAccessTool("vereinskalender", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const terminId = String(body.terminId || "");
+  if (!terminId) return json({ error: "Fehlende Termin-Id" }, 400, corsHeaders);
+
+  const doc = await readJson(DAV_APPS["vereinskalender"], authHeader, { meta: {}, kategorien: [], termine: [] });
+  const termine = Array.isArray(doc.termine) ? doc.termine : [];
+  const t = termine.find((x) => x && x.id === terminId);
+  if (!t) return json({ error: "Termin nicht gefunden" }, 404, corsHeaders);
+  if (!vereinskalenderTerminSichtbar(t, session)) {
+    return json({ error: "Kein Zugriff auf diesen Termin" }, 403, corsHeaders);
+  }
+
+  const kategorien = Array.isArray(doc.kategorien) ? doc.kategorien : [];
+  const katName = (id) => {
+    const k = kategorien.find((x) => x && x.id === id);
+    return k && k.name ? String(k.name) : "";
+  };
+
+  // ⚠️ Dieselbe Uid wie im Abo-Feed. Wer denselben Termin zweimal herunterlaedt,
+  // bekommt dadurch KEINEN zweiten Eintrag, sondern eine Aktualisierung des
+  // vorhandenen -- genau das will man. Eine je Download frische Uid haette
+  // stattdessen Karteileichen erzeugt.
+  const uidBasis = String(t.id || "") + "@vereinskalender.sc1911-heiligenstadt.de";
+  // Bei einer laufenden Umfrage faechert vkTerminEvents in ein Ereignis je
+  // Vorschlag auf (STATUS:TENTATIVE) -- dieselbe Darstellung wie im Feed. Ein
+  // einziger Eintrag ueber die ganze Spanne waere sachlich falsch.
+  const events = vkTerminEvents(t, katName, vkIcsZeit(Date.now()), uidBasis);
+  if (!events.length) return json({ error: "Zu diesem Termin fehlt ein gültiges Datum" }, 400, corsHeaders);
+
+  const zeilen = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//1. SC 1911 Heiligenstadt//Vereinskalender//DE",
+    "CALSCALE:GREGORIAN",
+    // PUBLISH, nicht REQUEST: eine Einladung mit Zu-/Absage-Knoepfen und einem
+    // Organisator waere etwas anderes als ein Eintrag im eigenen Kalender.
+    "METHOD:PUBLISH",
+    ...events,
+    "END:VCALENDAR"
+  ];
+  // RFC 5545 schreibt CRLF vor -- mit reinem \n weigern sich einzelne Programme,
+  // die Datei ueberhaupt zu lesen.
+  const ics = zeilen.join("\r\n") + "\r\n";
+
+  return json({ ok: true, ics, dateiname: vkIcsDateiname(t) }, 200, corsHeaders);
+}
+
+// Dateiname des Downloads, z. B. "Trainerversammlung-2026-09-16.ics". Alles
+// ausserhalb von Buchstaben und Ziffern faellt auf einen Bindestrich zurueck:
+// der Titel kommt aus einem freien Eingabefeld, und ein Schraegstrich oder
+// Doppelpunkt darin ist weder unter Windows noch unter macOS ein gueltiger
+// Dateiname.
+function vkIcsDateiname(t) {
+  const sauber = String(t.titel || "Termin")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${sauber || "Termin"}-${String(t.datum || "")}.ics`;
 }
 
 // ---------- Aktionen: Abo verwalten ----------
