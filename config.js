@@ -535,6 +535,20 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.15",
+    groups: [
+      {
+        title: "„Meine ToDos“ steht jetzt unter den Terminen",
+        items: [
+          "Der Knopf „📝 Meine ToDos“ ist aus der Kopfzeile verschwunden. Er steht jetzt links auf dem Dashboard direkt unter der Karte mit den nächsten Terminen und Abwesenheiten.",
+          "Der Zähler ist mitgewandert: Was offen ist, steht weiter am Knopf, und der Knopf bekommt einen roten Ring, wenn etwas heute fällig oder überfällig ist.",
+          "Am Handy rückt die Terminkarte samt Knopf wie bisher über die Kacheln — der Knopf bleibt dort, wo die Termine sind.",
+          "Hast du gerade keine Termine, bleibt die linke Spalte trotzdem stehen: sonst wäre die persönliche Liste genau dann weg, wenn nichts anderes ansteht."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.14",
     groups: [
       {
@@ -858,7 +872,7 @@ const APP_CHANGELOG = [
       {
         title: "Meine ToDos und der Materialcontainer-Code",
         items: [
-          "Der Knopf „Meine ToDos“ im Kopfbereich öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
+          "Der Knopf „Meine ToDos“ unter der Terminkarte links auf dem Dashboard öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
           "Der Zähler am Knopf meldet, was offen ist. Er wird rot, wenn etwas überfällig ist.",
           "Hier steht nur, was man sich selbst notiert. Was einem anderen aufgetragen wird, gehört in die Vereinsaufgaben — dorthin führt ein Knopf.",
           "Der Knopf „Materialcontainercode“ zeigt den Code des Zahlenschlosses am Materialcontainer. Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",

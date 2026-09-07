@@ -2914,14 +2914,17 @@ function isUebersichtTabActive() {
   return !!(section && section.classList.contains("active"));
 }
 
-// Die linke Spalte trägt nur noch die Termine — die Aufgabenkarte ist am
-// 2026-07-28 auf Michels Wunsch in ein Kopf-Fenster gezogen (seit 2026-07-29
-// "Meine ToDos"). Sichtbar ist die Spalte also genau dann, wenn Termine da sind.
+// Die linke Spalte trägt die Termine und seit 2026-09-07 auch den Knopf
+// "Meine ToDos" (vorher Kopfzeile, Michel-Vorgabe). Sichtbar ist sie deshalb,
+// sobald EINES von beiden da ist.
+// ⚠️ Der Knopf muss mitzählen: hätte nur der Termininhalt Gewicht, wäre die
+// persönliche Liste bei niemandem erreichbar, der gerade keine Termine hat.
 function updateSidebarSichtbarkeit() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
   const el = document.getElementById("termine-widget-inhalt");
-  const hatInhalt = !!(el && el.innerHTML.trim());
+  const todoBox = document.getElementById("widget-todos");
+  const hatInhalt = !!(el && el.innerHTML.trim()) || !!(todoBox && todoBox.style.display !== "none");
   widget.dataset.hasContent = hatInhalt ? "1" : "0";
   widget.style.display = (hatInhalt && isUebersichtTabActive()) ? "block" : "none";
 }
@@ -7780,8 +7783,14 @@ function dokumenteTabOffen() {
 // Seitenstart laeuft checkSession() vor loadAufgaben(), da steht canAssignDocs
 // noch auf false und der Knopf muss nachtraeglich erscheinen koennen.
 function updateKopfKnoepfe() {
-  const todoKnopf = document.getElementById("btn-todos-oeffnen");
-  if (todoKnopf) todoKnopf.style.display = todosTabOffen() ? "" : "none";
+  // Geschaltet wird der KASTEN, nicht der Knopf: der Kasten ist zugleich das, was
+  // updateSidebarSichtbarkeit() abfragt, um die linke Spalte ohne Termine offen zu
+  // halten. Ein versteckter Knopf in einem sichtbaren Kasten hätte dort einen
+  // leeren Abstand hinterlassen.
+  const todoBox = document.getElementById("widget-todos");
+  if (todoBox) todoBox.style.display = todosTabOffen() ? "" : "none";
+  // Die Spalte hängt jetzt mit am ToDo-Knopf — nach jedem Umschalten neu bewerten.
+  updateSidebarSichtbarkeit();
   // Der Unterschriften-Zugang ist seit 2026-09-07 kein Kopf-Knopf mehr, sondern die
   // Kachel "unterschriften" im Raster (Michel-Vorgabe; sie ersetzt zugleich den
   // abgeschalteten Digitalen Stempel). Sie haengt am selben Gate wie frueher der

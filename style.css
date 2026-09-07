@@ -1034,6 +1034,41 @@ a.btn-link.small { padding: 6px 12px; font-size: 13px; }
 main { flex: 1; min-width: 0; }
 .calendar-widget { flex: 0 0 260px; padding: 24px 0 0 16px; }
 .calendar-widget .card { margin-bottom: 0; }
+/* "Meine ToDos" unter der Terminkarte (seit 2026-09-07, Michel-Vorgabe; vorher
+   Kopfzeile). Der Knopf kann die Pillen-Optik .header-code-btn NICHT erben: die ist
+   weiß auf halbdurchsichtigem Weiß und wäre auf dem hellen Grund der Spalte
+   unsichtbar. Er nimmt daher die Optik von button.btn. */
+.widget-todos { padding-top: 12px; }
+.widget-todo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: white;
+  background: var(--blue);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.widget-todo-btn:hover { opacity: 0.9; }
+/* ⚠️ Die Spalte ist am Handy volle Breite und am Rechner 260px breit — hier ist
+   Platz für "Meine ToDos". Die globale Regel .btn-lang { display: none } unter 860px
+   hätte den Knopf auf "ToDos" gekürzt, obwohl es gar nicht nötig ist. Diese Regel
+   gewinnt über die Spezifität (zwei Klassen gegen eine), unabhängig von der
+   Reihenfolge im Stylesheet. */
+.widget-todo-btn .btn-lang { display: inline; }
+/* Signal (neu zugewiesen / heute fällig / überfällig). Roter Ring statt hellerer
+   Fläche wie in der Kopfzeile — auf blauem Grund trägt eine Aufhellung nicht. */
+.widget-todo-btn.hat-signal { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.55); }
+/* Der Zähler bringt bei .warn seinen EIGENEN roten Ring mit (siehe .header-zaehler.warn).
+   Zusammen mit dem Ring am Knopf wären das zwei ineinander — hier reicht der äußere. */
+.widget-todo-btn .header-zaehler.warn { box-shadow: none; }
 .calendar-widget-list { display: flex; flex-direction: column; }
 .calendar-widget-item {
   display: flex;

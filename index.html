@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.6" />
+<link rel="stylesheet" href="style.css?v=1.7" />
 </head>
 <body>
 
@@ -49,11 +49,10 @@
     <button type="button" class="header-code-btn" id="btn-app-ablegen" style="display:none;" title="Diese Übersicht als App auf dem Startbildschirm ablegen">📲 <span class="btn-lang">Als </span>App<span class="btn-lang"> ablegen</span></button>
   </div>
   <div class="header-right">
-    <!-- Die persönliche Liste steht bewusst auf der ANDEREN Seite der Kopfzeile
-         (Michel-Vorgabe 2026-07-29): sie hat mit den Unterschriften nichts zu tun,
-         und zwei benachbarte Knöpfe hätten genau die Vermischung fortgeschrieben,
-         die das Aufteilen beenden soll. -->
-    <button type="button" class="header-code-btn" id="btn-todos-oeffnen" style="display:none;" title="Eigene ToDos anlegen und abhaken">📝 <span class="btn-lang">Meine </span>ToDos<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
+    <!-- Die persönliche Liste stand bis 2026-09-07 hier in der Kopfzeile. Sie sitzt
+         jetzt auf Michels Wunsch UNTER der Terminkarte in der linken Spalte
+         (#widget-todos) -- die Kopfzeile ist am Handy ohnehin die engste Zeile der
+         App, und der Knopf gehoert inhaltlich zu dem, was ansteht. -->
     <div class="header-user" id="header-user" style="display:none;"></div>
     <button type="button" class="header-logout-btn" id="btn-logout" style="display:none;">Abmelden</button>
   </div>
@@ -93,6 +92,15 @@
        trotzdem, damit die Sichtbarkeitslogik unverändert greift. -->
   <aside id="calendar-widget" class="calendar-widget" style="display:none;">
     <div id="termine-widget-inhalt"></div>
+    <!-- "Meine ToDos", seit 2026-09-07 hier statt in der Kopfzeile (Michel-Vorgabe).
+         ⚠️ Der Knopf haelt die Spalte mit am Leben: updateSidebarSichtbarkeit()
+         zeigt <aside> auch dann, wenn KEINE Termine da sind, aber dieser Knopf
+         sichtbar ist -- sonst waere die persoenliche Liste in genau dem Moment weg,
+         in dem jemand ohne Termine sie braucht. Ein- und ausgeblendet wird der
+         Kasten (nicht der Knopf) in updateKopfKnoepfe(). -->
+    <div class="widget-todos" id="widget-todos" style="display:none;">
+      <button type="button" class="widget-todo-btn" id="btn-todos-oeffnen" title="Eigene ToDos anlegen und abhaken">📝 <span class="btn-lang">Meine </span>ToDos<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
+    </div>
   </aside>
 
   <main>
@@ -1882,7 +1890,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.14"></script>
-<script src="app.js?v=1.10"></script>
+<script src="config.js?v=1.15"></script>
+<script src="app.js?v=1.11"></script>
 </body>
 </html>
