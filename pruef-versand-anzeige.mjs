@@ -104,5 +104,32 @@ sandbox.versandEintraege = [{ id: "y", am: "unsinn", art: "mail", quelle: "", ap
 sandbox.versandTabelleZeichnen();
 pruefe("zeigt einen Strich", knoten["admin-versand-liste"].innerHTML.includes("\u2014"));
 
+console.log("== 7. Fehlerrot bleibt nicht kleben");
+// Live am 2026-09-08 gefunden: ein fehlgeschlagener Ladeversuch faerbt die
+// Statuszeile rot, und ohne Aufraeumen stand danach jede normale Meldung in
+// Fehlerrot da. Das Zuruecksetzen gehoert in die Zeichenfunktion, nicht nur in
+// den Erfolgspfad des Ladens.
+knoten["admin-versand-status"].style.color = "#c0392b";
+sandbox.versandEintraege = beispiele;
+sandbox.versandTabelleZeichnen();
+pruefe("Farbe zurueckgesetzt bei Treffern",
+  knoten["admin-versand-status"].style.color === "",
+  knoten["admin-versand-status"].style.color);
+
+knoten["admin-versand-status"].style.color = "#c0392b";
+knoten["admin-versand-app"].value = "gibtsnicht";
+sandbox.versandTabelleZeichnen();
+pruefe("auch wenn kein Treffer uebrig bleibt",
+  knoten["admin-versand-status"].style.color === "",
+  knoten["admin-versand-status"].style.color);
+
+knoten["admin-versand-app"].value = "";
+knoten["admin-versand-status"].style.color = "#c0392b";
+sandbox.versandEintraege = [];
+sandbox.versandTabelleZeichnen();
+pruefe("auch bei leerem Bestand",
+  knoten["admin-versand-status"].style.color === "",
+  knoten["admin-versand-status"].style.color);
+
 console.log(fehler === 0 ? "\nALLES GRUEN" : "\n" + fehler + " FEHLER");
 process.exit(fehler === 0 ? 0 : 1);

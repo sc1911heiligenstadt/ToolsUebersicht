@@ -11692,7 +11692,6 @@ async function ladeVersandProtokoll() {
     liste.innerHTML = "";
     return;
   }
-  st.style.color = "";
   versandEintraege = Array.isArray(data.eintraege) ? data.eintraege : [];
   versandGesamt = Number(data.gesamt) || versandEintraege.length;
 
@@ -11717,6 +11716,11 @@ function versandTabelleZeichnen() {
   const st = document.getElementById("admin-versand-status");
   const liste = document.getElementById("admin-versand-liste");
   if (!st || !liste) return;
+  // ⚠️ Muss HIER stehen, nicht nur im Erfolgspfad des Ladens: diese Funktion
+  // schreibt ausschliesslich normale Meldungen. Ohne das Aufraeumen bliebe das
+  // Fehlerrot eines frueheren Ladeversuchs kleben und faerbte danach jede
+  // harmlose Zeile ("3 von 12 Vorgaengen") wie einen Fehler.
+  st.style.color = "";
   const artEl = document.getElementById("admin-versand-art");
   const appEl = document.getElementById("admin-versand-app");
   const art = artEl ? artEl.value : "";
