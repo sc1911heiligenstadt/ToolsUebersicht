@@ -1359,6 +1359,9 @@ export default {
         return handlePnLoeschen(request, body, env, authHeader, corsHeaders);
       case "pn-protokoll":
         return handlePnProtokoll(request, env, authHeader, corsHeaders);
+      // Versandprotokoll (seit 2026-09-08): welche Mails und Pushs rausgingen.
+      case "versand-protokoll":
+        return handleVersandProtokoll(request, env, authHeader, corsHeaders);
       // ⚠️ Seit dem Postausgang (2026-09-02) ruft der Client diese Aktion NICHT
       // mehr -- sie bleibt trotzdem stehen. Ein Browser-Tab, der die alte
       // app.js noch offen hat, ueberlebt den Deploy und wuerde sonst beim
@@ -3817,6 +3820,10 @@ async function handleRaumnutzungMailAntrag(request, body, env, authHeader, corsH
     return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
   }
 
+  await versandNotieren(env, authHeader, {
+    art: "mail", quelle: "raumnutzung-antrag", app: "raumnutzung",
+    von: session.username, anzahl: 2, ohne: 0
+  });
   return json({ ok: true, sent: true, to: RAUMNUTZUNG_MAIL_TO, cc: RAUMNUTZUNG_MAIL_CC }, 200, corsHeaders);
 }
 
@@ -4048,6 +4055,10 @@ async function handleNotifyUser(request, body, env, authHeader, corsHeaders, exe
     return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
   }
 
+  await versandNotieren(env, authHeader, {
+    art: "mail", quelle: "notify-user", app: "ToolsUebersicht",
+    von: session.username, anzahl: 1, ohne: 0, empfaenger: [username]
+  });
   return json({ ok: true, sent: true }, 200, corsHeaders);
 }
 
@@ -5415,11 +5426,15 @@ async function dokumentBenachrichtige(empfaenger, titel, faellig, session, env, 
   }
 
   let benachrichtigt = 0;
+  // Kontonamen fuers Versandprotokoll, wie in vaBenachrichtige.
+  const erreichtUser = [];
+  const ohneUser = [];
   for (const username of empfaenger) {
     const user = getOwn((usersDoc && usersDoc.users) || {}, username);
     const email = buildTrainerdatenSummary(findTrainerdatenRecord(trainerdatenDoc, user)).email;
     if (!email) {
       ohneAdresse.push(aufgabenAnzeigeName(usersDoc, username));
+      ohneUser.push(username);
       continue;
     }
     const { subject, textContent } = dokumentMailInhalt(titel, faellig, user, vonName);
@@ -5438,12 +5453,21 @@ async function dokumentBenachrichtige(empfaenger, titel, faellig, session, env, 
           textContent
         })
       });
-      if (resp.ok) benachrichtigt++;
-      else console.error("dokument-anlegen: Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      if (resp.ok) { benachrichtigt++; erreichtUser.push(username); }
+      else {
+        ohneUser.push(username);
+        console.error("dokument-anlegen: Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      }
     } catch (e) {
+      ohneUser.push(username);
       console.error("dokument-anlegen: Brevo-Versand fehlgeschlagen", e && e.message);
     }
   }
+  await versandNotieren(env, authHeader, {
+    art: "mail", quelle: "dokument-anlegen", app: "ToolsUebersicht",
+    von: session.username, anzahl: benachrichtigt, ohne: ohneUser.length,
+    empfaenger: erreichtUser, ohneEmpfaenger: ohneUser
+  });
   return { benachrichtigt, ohneAdresse, mailAus: false };
 }
 
@@ -6255,6 +6279,10 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
   if (!empfaenger.length) return { benachrichtigt: 0, ohneAdresse, mailAus: false };
   if (!env.BREVO_API_KEY) {
     console.warn(wo + ": BREVO_API_KEY fehlt — keine Benachrichtigung verschickt");
+    await versandNotieren(env, authHeader, {
+      art: "mail", quelle: wo, app: "vereinsaufgaben", von: ctx.session.username,
+      anzahl: 0, ohne: empfaenger.length, empfaenger: [], ohneEmpfaenger: empfaenger
+    });
     return { benachrichtigt: 0, ohneAdresse, mailAus: true };
   }
 
@@ -6267,10 +6295,20 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
     trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
   } catch (e) {
     console.error(wo + ": Trainerdaten nicht lesbar", e && e.message);
+    await versandNotieren(env, authHeader, {
+      art: "mail", quelle: wo, app: "vereinsaufgaben", von: ctx.session.username,
+      anzahl: 0, ohne: empfaenger.length, empfaenger: [], ohneEmpfaenger: empfaenger
+    });
     return { benachrichtigt: 0, ohneAdresse, mailAus: true };
   }
 
   let benachrichtigt = 0;
+  // Fuers Versandprotokoll parallel zu ohneAdresse mitgefuehrt: dort stehen
+  // ANZEIGENAMEN (die gehen zurueck an den Client), hier KONTONAMEN (die stehen
+  // in der Datei und werden erst beim Lesen aufgeloest -- ein spaeter geaenderter
+  // Nachname soll das Protokoll nicht ruecklaufend umschreiben).
+  const erreichtUser = [];
+  const ohneUser = [];
   for (const username of empfaenger) {
     const user = getOwn(usersDoc.users, username);
     // Aus dem vollen Summary wird ausschließlich das email-Feld verwendet und nie
@@ -6279,6 +6317,7 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
     const email = buildTrainerdatenSummary(findTrainerdatenRecord(trainerdatenDoc, user)).email;
     if (!email) {
       ohneAdresse.push(aufgabenAnzeigeName(usersDoc, username));
+      ohneUser.push(username);
       continue;
     }
     const { subject, textContent } = vaMailInhalt(info, user, vonName);
@@ -6297,12 +6336,21 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
           textContent
         })
       });
-      if (resp.ok) benachrichtigt++;
-      else console.error(wo + ": Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      if (resp.ok) { benachrichtigt++; erreichtUser.push(username); }
+      else {
+        ohneUser.push(username);
+        console.error(wo + ": Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      }
     } catch (e) {
+      ohneUser.push(username);
       console.error(wo + ": Brevo-Versand fehlgeschlagen", e && e.message);
     }
   }
+  await versandNotieren(env, authHeader, {
+    art: "mail", quelle: wo, app: "vereinsaufgaben", von: ctx.session.username,
+    anzahl: benachrichtigt, ohne: ohneUser.length,
+    empfaenger: erreichtUser, ohneEmpfaenger: ohneUser
+  });
   return { benachrichtigt, ohneAdresse, mailAus: false };
 }
 
@@ -6415,7 +6463,7 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders, exec
     pushSenden(env, authHeader, execCtx, ergebnis.empfaenger || [], "aufgaben",
       (ergebnis.angelegt === 1)
         ? "Dir wurde eine neue Aufgabe zugewiesen. In den Vereinsaufgaben stehen Beschreibung und Frist, dort meldest du sie auch als erledigt."
-        : "Dir wurden neue Aufgaben zugewiesen. In den Vereinsaufgaben stehen Beschreibung und Frist, dort meldest du sie auch als erledigt.");
+        : "Dir wurden neue Aufgaben zugewiesen. In den Vereinsaufgaben stehen Beschreibung und Frist, dort meldest du sie auch als erledigt.", { quelle: "vereinsaufgabe-anlegen", von: ctx.session.username });
     // ohneRecht rein additiv: ein älterer Client, der das Feld nicht kennt,
     // ignoriert es und verhält sich wie bisher.
     return json({ ok: true, angelegt: ergebnis.angelegt, ohneRecht: ergebnis.uebersprungen || [], ...versand }, 200, corsHeaders);
@@ -6488,7 +6536,7 @@ async function handleVaErinnern(request, body, env, authHeader, corsHeaders, exe
     }
     // Der Push-Text nennt weder Titel noch Namen — er steht auf einem Sperrbildschirm.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Erinnerung: Bei dir ist noch eine Aufgabe offen. Öffne die Vereinsaufgaben und melde sie als erledigt, sobald du fertig bist.");
+      "Erinnerung: Bei dir ist noch eine Aufgabe offen. Öffne die Vereinsaufgaben und melde sie als erledigt, sobald du fertig bist.", { quelle: "vereinsaufgabe-erinnern", von: ctx.session.username });
     return json({ ...antwort, ...versand }, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -6597,7 +6645,7 @@ async function handleVaStatus(request, body, env, authHeader, corsHeaders, execC
     });
     // Außerhalb von vaMutiere, sonst ginge die Nachricht bei einem Konflikt bis zu
     // dreimal raus.
-    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben", pushText);
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben", pushText, { quelle: "vereinsaufgabe-status", von: ctx.session.username });
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -6630,7 +6678,7 @@ async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders
     // Gerade hier wichtig: wer den Auftrag noch offen hat, soll nicht an etwas
     // weiterarbeiten, das es nicht mehr gibt.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Eine Aufgabe wurde zurückgezogen. Du musst dafür nichts mehr tun, sie steht nicht mehr in deiner offenen Liste.");
+      "Eine Aufgabe wurde zurückgezogen. Du musst dafür nichts mehr tun, sie steht nicht mehr in deiner offenen Liste.", { quelle: "vereinsaufgabe-zurueckziehen", von: ctx.session.username });
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -6683,7 +6731,7 @@ async function handleVaReaktivieren(request, body, env, authHeader, corsHeaders,
     // Wie beim Zurueckziehen: wer den Auftrag abgehakt hatte, muss erfahren, dass
     // er wieder auf seinem Tisch liegt.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Eine abgeschlossene Aufgabe wurde wieder geöffnet. Sie steht damit erneut in deiner offenen Liste in den Vereinsaufgaben.");
+      "Eine abgeschlossene Aufgabe wurde wieder geöffnet. Sie steht damit erneut in deiner offenen Liste in den Vereinsaufgaben.", { quelle: "vereinsaufgabe-reaktivieren", von: ctx.session.username });
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -6747,7 +6795,7 @@ async function handleVaKommentar(request, body, env, authHeader, corsHeaders, ex
     // Der Text nennt weder Namen noch Titel noch den Wortlaut — er steht auf einem
     // Sperrbildschirm, den auch jemand anders sehen kann.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
-      "Zu einer Aufgabe gibt es eine neue Rückfrage oder Antwort. Der ganze Verlauf steht in den Vereinsaufgaben, dort kannst du antworten.");
+      "Zu einer Aufgabe gibt es eine neue Rückfrage oder Antwort. Der ganze Verlauf steht in den Vereinsaufgaben, dort kannst du antworten.", { quelle: "vereinsaufgabe-rueckfrage", von: ctx.session.username });
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
@@ -8442,6 +8490,10 @@ async function handleBelegEingangNotify(body, env, corsHeaders) {
     return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
   }
 
+  await versandNotieren(env, null, {
+    art: "mail", quelle: "beleg-eingang", app: "beleg-scanner",
+    von: "", anzahl: 1, ohne: 0
+  });
   return json({ ok: true, sent: true }, 200, corsHeaders);
 }
 
@@ -9909,6 +9961,10 @@ async function handleSchulsportNachweisSenden(request, body, env, authHeader, co
     // zu einem Fehlschlag machen.
   }
 
+  await versandNotieren(env, authHeader, {
+    art: "mail", quelle: "schulsport-nachweis", app: "schulsport",
+    von: session.username, anzahl: 1, ohne: 0
+  });
   return json({ ok: true, sent: true, an: email }, 200, corsHeaders);
 }
 
@@ -12855,6 +12911,151 @@ const PUSH_ANLAESSE = [
     label: "Persönliche Nachrichten — wenn jemand mich direkt anschreibt" }
 ];
 
+// =============================================================================
+// Versandprotokoll (seit 2026-09-08)
+// =============================================================================
+// Michel-Wunsch: eine Uebersicht, welche Mails und welche Push-Nachrichten
+// tatsaechlich rausgingen. Anlass war eine als erledigt gemeldete Aufgabe, zu
+// der keine Push ankam -- ohne Protokoll liess sich nicht unterscheiden, ob der
+// Versand ausblieb oder nur die Zustellung.
+//
+// ⚠️ INHALTSLOS, mit Absicht und in derselben Linie wie pn-protokoll: hier steht
+// WER wann WAS AUSGELOEST hat und an wie viele -- niemals Betreff, Text oder
+// Titel. Sonst waere das Protokoll ein Leseweg an "vertraulich" vorbei: eine
+// vertrauliche Vereinsaufgabe haelt ihren Titel selbst aus Betreff und Push
+// heraus (vaFuerAnzeige, vaMailInhalt), das duerfte die Uebersicht nicht wieder
+// einsammeln.
+//
+// Eigene Datei aus demselben Grund wie die Push-Abos: nutzer.json wird bei JEDEM
+// authentifizierten Request gelesen, ein mitwachsendes Protokoll dort verteuerte
+// die ganze Flotte.
+const VERSAND_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/versandprotokoll.json";
+
+// Deckel wie beim Vereinsaufgaben-Protokoll: die Datei wird bei jedem Eintrag
+// ganz gelesen und ganz geschrieben, unbegrenztes Wachstum machte den Versand
+// mit der Zeit langsamer. 800 Eintraege sind bei ~10 Vorgaengen am Tag gut zwei
+// Monate Rueckschau.
+const VERSAND_MAX = 800;
+
+function leeresVersandDoc() {
+  return { version: 1, eintraege: [] };
+}
+
+function normalisiereVersandDoc(data) {
+  const doc = (data && typeof data === "object") ? data : leeresVersandDoc();
+  if (!Array.isArray(doc.eintraege)) doc.eintraege = [];
+  return doc;
+}
+
+// Schreibt EINEN Eintrag je Versand-VORGANG, nicht je Mail. vaBenachrichtige
+// verschickt in einer Schleife an bis zu 30 Empfaenger -- ein Eintrag pro Mail
+// waere dieselbe Handlung 30-mal, und 30 Nextcloud-Schreibvorgaenge dafuer.
+//
+// ⚠️ Wirft NIE. Ein misslungener Protokolleintrag darf weder eine Mail noch eine
+// Push noch die ausloesende Handlung kippen -- die ist zu diesem Zeitpunkt
+// laengst gespeichert (gleiche Linie wie handleVaAnlegen, wo der Versand die
+// Zuweisung auch nicht mehr zu einem Fehler machen darf).
+async function versandNotieren(env, authHeader, eintrag) {
+  try {
+    if (!env || !env.NEXTCLOUD_URL) return;
+    const auth = authHeader
+      || ((env.NEXTCLOUD_USERNAME && env.NEXTCLOUD_PASSWORD)
+        ? "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD)
+        : null);
+    if (!auth) return;
+
+    const fertig = {
+      id: crypto.randomUUID(),
+      am: new Date().toISOString(),
+      art: eintrag.art === "push" ? "push" : "mail",
+      // Maschinenlesbarer Ausloeser, z.B. "vereinsaufgabe-anlegen". Die Anzeige
+      // uebersetzt ihn; steht dort kein Text, zeigt sie diesen Wert roh an,
+      // statt eine Zeile zu verschlucken.
+      quelle: capStr(eintrag.quelle, 60),
+      // Kachel-Id fuer den Filter. "" = gehoert zu keiner Kachel (Rundnachricht,
+      // Unterlagen, Privatnachricht).
+      app: capStr(eintrag.app, 40),
+      // Nur bei Push: der Anlass, an dem der Schalter im Konto-Tab haengt.
+      anlass: capStr(eintrag.anlass, 40),
+      // Wer es ausgeloest hat. "" = niemand, also ein naechtlicher Lauf.
+      von: capStr(eintrag.von, 80),
+      // Erreicht: zugestellte Mails bzw. angesprochene Geraete.
+      anzahl: Math.max(0, Math.floor(Number(eintrag.anzahl) || 0)),
+      // Nicht erreicht: fehlende Adresse, Schalter aus, kein Geraet, Fehler.
+      ohne: Math.max(0, Math.floor(Number(eintrag.ohne) || 0)),
+      // Empfaenger als KONTONAMEN, nicht als Anzeigenamen: der Anzeigename
+      // aendert sich, wenn jemand heiratet, und das Protokoll zeigte dann einen
+      // Namen, den es damals nicht gab. Aufgeloest wird beim Lesen.
+      // Deckel, damit eine Rundnachricht an 200 Konten nicht 200 Namen ablegt.
+      empfaenger: Array.isArray(eintrag.empfaenger)
+        ? eintrag.empfaenger.slice(0, 25).map((u) => capStr(String(u || ""), 80)).filter(Boolean)
+        : [],
+      // Wer NICHT erreicht wurde. Genau dafuer ist das Protokoll gebaut: eine
+      // Push, die an einem ausgeschalteten Schalter oder an einem nie
+      // angemeldeten Geraet endet, sah bisher von aussen aus wie gar kein
+      // Versand.
+      ohneEmpfaenger: Array.isArray(eintrag.ohneEmpfaenger)
+        ? eintrag.ohneEmpfaenger.slice(0, 25).map((u) => capStr(String(u || ""), 80)).filter(Boolean)
+        : []
+    };
+
+    // Zwei Versuche mit If-Match, wie mutiereFrageProtokoll. Zwei gleichzeitige
+    // Versande sind hier der Normalfall (Mail und Push zur selben Handlung),
+    // ohne If-Match verloere einer von beiden seinen Eintrag.
+    for (let versuch = 0; versuch < 2; versuch++) {
+      jsonCache.delete(VERSAND_URL);
+      const { data, rev } = await readJsonWithRev(VERSAND_URL, auth, null);
+      const doc = normalisiereVersandDoc(data);
+      // Neueste vorn: die Anzeige schneidet oben ab, und wer ins Protokoll
+      // schaut, sucht fast immer das Letzte.
+      doc.eintraege.unshift(fertig);
+      if (doc.eintraege.length > VERSAND_MAX) doc.eintraege.length = VERSAND_MAX;
+      try {
+        // Ohne ifMatch beim allerersten Schreiben: writeJson legt den fehlenden
+        // Ordner dann selbst an (409/404-Zweig).
+        await writeJson(VERSAND_URL, auth, doc, data ? rev : null);
+        return;
+      } catch (e) {
+        if (!(e instanceof ConflictError)) throw e;
+      }
+    }
+  } catch (e) {
+    console.error("Versandprotokoll: Eintrag fehlgeschlagen", e && e.message ? e.message : e);
+  }
+}
+
+// Nur globale Admins, gleiche Stufe wie pn-protokoll: das Protokoll zeigt ueber
+// alle Kacheln hinweg, wer wann wen angeschrieben hat. Ein Bearbeiter einer
+// einzelnen App hat daran nichts zu suchen.
+async function handleVersandProtokoll(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const doc = normalisiereVersandDoc(await readJson(VERSAND_URL, authHeader, null));
+  const usersDoc = session.usersDoc;
+  const namen = (liste) => (Array.isArray(liste) ? liste : []).map((u) => aufgabenAnzeigeName(usersDoc, u));
+
+  // 300 statt aller 800: die Anzeige ist eine Tabelle, und wer weiter zurueck
+  // muss, sucht ohnehin gezielt. Die Gesamtzahl steht daneben.
+  const eintraege = doc.eintraege.slice(0, 300).map((e) => ({
+    id: String(e.id || ""),
+    am: String(e.am || ""),
+    art: e.art === "push" ? "push" : "mail",
+    quelle: String(e.quelle || ""),
+    app: String(e.app || ""),
+    anlass: String(e.anlass || ""),
+    // Erst hier aufgeloest: in der Datei stehen Kontonamen, damit ein spaeter
+    // geaenderter Nachname das Protokoll nicht rueckwirkend umschreibt.
+    vonName: e.von ? aufgabenAnzeigeName(usersDoc, String(e.von)) : "",
+    anzahl: Number(e.anzahl) || 0,
+    ohne: Number(e.ohne) || 0,
+    empfaenger: namen(e.empfaenger),
+    ohneEmpfaenger: namen(e.ohneEmpfaenger)
+  }));
+  return json({ ok: true, eintraege, gesamt: doc.eintraege.length }, 200, corsHeaders);
+}
+
 function pushAnlassInfo(id) {
   for (const a of PUSH_ANLAESSE) if (a.id === id) return a;
   return null;
@@ -13825,11 +14026,28 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text, optionen) {
   const info = pushAnlassInfo(anlass);
   if (!info) return;
 
+  // Fuers Protokoll. quelle/von kommen vom Aufrufer, wo eine Kachel mehrere
+  // verschiedene Nachrichten unter demselben Anlass verschickt (Vereinsaufgaben:
+  // anlegen, erinnern, Status, Rueckfrage). Fehlen sie, faellt die Anzeige auf
+  // den Anlass zurueck -- lieber eine groebere Zeile als gar keine.
+  const versandQuelle = String((optionen && optionen.quelle) || "").trim() || anlass;
+  const versandVon = String((optionen && optionen.von) || "").trim();
+  // Kachel-Id aus dem Ziel des Anlasses ("/vereinsaufgaben/" -> "vereinsaufgaben").
+  // Damit braucht kein Aufrufer eine weitere Angabe, und der Filter der Anzeige
+  // hat trotzdem etwas zum Gruppieren.
+  const versandApp = String(info.ziel || "").split("/").filter(Boolean)[0] || "";
+
   const arbeit = (async () => {
     try {
       const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
 
       const ziele = [];
+      // Fuers Versandprotokoll getrennt mitgefuehrt: wen wir wirklich auf einem
+      // Geraet erreichen, und wer aus der Liste faellt. Der zweite Fall war
+      // bisher voellig unsichtbar -- ein ausgeschalteter Schalter und ein nie
+      // angemeldetes Handy sahen von aussen aus wie "es ging nichts raus".
+      const erreicht = [];
+      const ohneZiel = [];
       // Object.create(null) aus demselben Grund wie in rundErreichbar: ein
       // Konto "__proto__" bekaeme sonst nie eine Nachricht.
       const gesehen = Object.create(null);
@@ -13837,12 +14055,23 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text, optionen) {
         const u = normalizeUsername(String(roh || ""));
         if (!u || gesehen[u]) continue;
         gesehen[u] = true;
-        if (!pushAnlaesseFuer(doc, u)[anlass]) continue; // Schalter aus
+        if (!pushAnlaesseFuer(doc, u)[anlass]) { ohneZiel.push(u); continue; } // Schalter aus
+        let hatGeraet = false;
         for (const abo of pushAbosFuer(doc, u)) {
-          if (abo && abo.endpoint) ziele.push(abo);
+          if (abo && abo.endpoint) { ziele.push(abo); hatGeraet = true; }
         }
+        if (hatGeraet) erreicht.push(u); else ohneZiel.push(u);
       }
-      if (!ziele.length) return;
+      // ⚠️ Auch dieser Fall wird protokolliert, und zwar als erstes: "an
+      // niemanden zugestellt" ist die Zeile, wegen der es das Protokoll gibt.
+      if (!ziele.length) {
+        await versandNotieren(env, authHeader, {
+          art: "push", quelle: versandQuelle, app: versandApp, anlass,
+          von: versandVon, anzahl: 0, ohne: ohneZiel.length,
+          empfaenger: [], ohneEmpfaenger: ohneZiel
+        });
+        return;
+      }
 
       const nachricht = {
         // Ein leerer Titel-Wunsch faellt auf den Anlass zurueck, statt eine
@@ -13883,6 +14112,15 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text, optionen) {
       }
 
       if (tot.length) await pushToteAbosEntfernen(authHeader, tot);
+
+      // Gezaehlt werden PERSONEN, nicht Geraete: "an 2 zugestellt" ist die
+      // Auskunft, die jemand sucht, nicht "an 5 Browser". Die Geraetezahl steht
+      // ohnehin im Konto-Tab.
+      await versandNotieren(env, authHeader, {
+        art: "push", quelle: versandQuelle, app: versandApp, anlass,
+        von: versandVon, anzahl: erreicht.length, ohne: ohneZiel.length,
+        empfaenger: erreicht, ohneEmpfaenger: ohneZiel
+      });
     } catch (e) {
       console.error("Push-Versand fehlgeschlagen: " + (e && e.message ? e.message : e));
     }
@@ -14063,6 +14301,8 @@ const PUNKTE_IGNORIERT = new Set([
   // des Hinschauens, gleiche Linie wie "downloads-gesehen". Das VERSCHICKEN
   // zaehlt dagegen mit (PUNKTE_TATEN).
   "pn-info", "pn-gelesen", "pn-protokoll",
+  // Reine Nachschau wie pn-protokoll -- Hinschauen ist keine Handlung.
+  "versand-protokoll",
   // Laeuft beim Oeffnen des Info-Tabs im Vereinskalender von selbst. Das Erzeugen
   // und Entwerten des Abo-Links sind Handlungen und zaehlen weiter mit.
   "vereinskalender-abo-status",
@@ -15841,6 +16081,10 @@ verwendet und nicht weitergegeben.`;
       console.error("Kleiderbörse-Anfragemail fehlgeschlagen", resp.status, errText);
       return false;
     }
+    await versandNotieren(env, null, {
+      art: "mail", quelle: "kleiderboerse-anfrage", app: "kleiderboerse",
+      von: "", anzahl: 1, ohne: 0
+    });
     return true;
   } catch (e) {
     console.error("Kleiderbörse-Anfragemail fehlgeschlagen", e && e.message);
@@ -18773,6 +19017,10 @@ async function busplanMailSenden(env, empfaengerMail, betreff, text) {
       console.error("Busplan-Mail fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
       return false;
     }
+    await versandNotieren(env, null, {
+      art: "mail", quelle: "busplan-erinnerung", app: "busplan",
+      von: "", anzahl: 1, ohne: 0
+    });
     return true;
   } catch (e) {
     console.error("Busplan-Mail fehlgeschlagen", e && e.message);
@@ -23357,6 +23605,12 @@ async function fcMailSenden(env, empfaenger, betreff, text) {
         textContent: text
       })
     });
+    if (resp.ok) {
+      await versandNotieren(env, null, {
+        art: "mail", quelle: "fussballcamp", app: "fussballcamp",
+        von: "", anzahl: 1, ohne: 0
+      });
+    }
     return resp.ok;
   } catch (_) {
     return false;
@@ -24848,6 +25102,15 @@ async function ksMailSenden(env, empfaenger, betreff, text) {
         textContent: text
       })
     });
+    if (resp.ok) {
+      // ⚠️ Wie jede Kinderschutz-Nachricht INHALTSLOS -- und hier zusaetzlich
+      // ohne Empfaenger: wer die Meldungen bekommt, ist selbst eine Auskunft,
+      // die nicht in ein allgemeines Admin-Protokoll gehoert.
+      await versandNotieren(env, null, {
+        art: "mail", quelle: "kinderschutz", app: "kinderschutz",
+        von: "", anzahl: 1, ohne: 0
+      });
+    }
     return resp.ok;
   } catch (_) {
     return false;
@@ -26742,6 +27005,10 @@ async function vkPostMailSenden(env, empfaengerMail, betreff, text) {
       console.error("Vereinskalender-Mail fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
       return false;
     }
+    await versandNotieren(env, null, {
+      art: "mail", quelle: "vereinskalender-postausgang", app: "vereinskalender",
+      von: "", anzahl: 1, ohne: 0
+    });
     return true;
   } catch (e) {
     console.error("Vereinskalender-Mail fehlgeschlagen", e && e.message);

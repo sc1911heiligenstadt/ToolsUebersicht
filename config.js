@@ -656,12 +656,27 @@ const APP_FUNKTIONEN = [
     items: [
       "Sichtbarkeit je Werkzeug, Nutzerkonten, Gruppen und Mannschaften werden im Reiter „Einstellungen“ gepflegt.",
       "Eine eigene Nachricht lässt sich sofort auf alle Handys schicken — für Kurzfristiges, das zu keinem Werkzeug gehört. Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden.",
-      "Zu einer Neuigkeit lässt sich am Rechner ein kurzes Bildschirmvideo aufzeichnen, statt den Weg in Worten zu beschreiben."
+      "Zu einer Neuigkeit lässt sich am Rechner ein kurzes Bildschirmvideo aufzeichnen, statt den Weg in Worten zu beschreiben.",
+      "Die Karte „Versand — Mails und Push“ zeigt, was die Werkzeuge verschickt haben und wen sie dabei NICHT erreicht haben — ohne den Inhalt der Nachrichten."
     ]
   }
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.23",
+    groups: [
+      {
+        title: "Neu für Administratoren: eine Übersicht über verschickte Mails und Push-Nachrichten",
+        items: [
+          "Unter „Einstellungen“ steht jetzt die Karte „Versand — Mails und Push“. Darin steht, was die Werkzeuge tatsächlich verschickt haben: wann, aus welchem Werkzeug, wer es ausgelöst hat und an wie viele.",
+          "Die wichtigste Spalte heißt „Nicht erreicht“. Eine Push-Nachricht an jemanden, der den Schalter aus hat oder sein Handy nie angemeldet hat, sah bisher aus wie gar kein Versand — jetzt steht sie dort mit Namen.",
+          "Der Inhalt steht bewusst nicht darin: weder Betreff noch Text noch der Titel einer Aufgabe. Die Übersicht zeigt, DASS etwas rausging, nicht was drinstand.",
+          "Zwei Filter: nur Mails oder nur Push, und einzelne Werkzeuge. Festgehalten werden die letzten 800 Vorgänge."
+        ]
+      }
+    ]
+  },
   {
     version: "1.22",
     groups: [

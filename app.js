@@ -8523,6 +8523,7 @@ function renderAdminPanels() {
   document.getElementById("admin-mannschaften-panel").style.display = "none";
   document.getElementById("admin-rundnachricht-panel").style.display = "none";
   document.getElementById("admin-pn-panel").style.display = "none";
+  document.getElementById("admin-versand-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("push-panel").style.display = "none";
   document.getElementById("punkte-panel").style.display = "none";
@@ -8562,6 +8563,7 @@ function renderAdminPanels() {
       document.getElementById("admin-mannschaften-panel").style.display = "block";
       document.getElementById("admin-rundnachricht-panel").style.display = "block";
       document.getElementById("admin-pn-panel").style.display = "block";
+      document.getElementById("admin-versand-panel").style.display = "block";
       document.getElementById("admin-aufgaben-panel").style.display = "block";
       document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
     }
@@ -11607,6 +11609,158 @@ function setupPrivatnachrichten() {
       if (e.target.open) ladePnProtokoll();
     });
   }
+
+  // Versandprotokoll: dieselbe Überlegung — ein Nextcloud-Read für ein Panel,
+  // das die meiste Zeit zu ist. Die beiden Auswahlfelder zeichnen nur NEU, sie
+  // holen nichts nach: sonst wäre jeder Filterwechsel ein weiterer Read.
+  const versandPanel = document.getElementById("admin-versand-panel");
+  if (versandPanel) {
+    versandPanel.addEventListener("toggle", (e) => {
+      if (e.target.open) ladeVersandProtokoll();
+    });
+    ["admin-versand-art", "admin-versand-app"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("change", () => versandTabelleZeichnen());
+    });
+  }
+}
+
+// Rohbestand des letzten Ladevorgangs. Liegt ausserhalb, damit die Filter ohne
+// neuen Serveraufruf umschalten können.
+let versandEintraege = [];
+let versandGesamt = 0;
+
+// Übersetzt den maschinenlesbaren Auslöser in Klartext. Fehlt eine Zeile, zeigt
+// die Tabelle den Rohwert — lieber "aufgaben" als eine leere Zelle.
+const VERSAND_QUELLEN = {
+  "vereinsaufgabe-anlegen": "Aufgabe zugewiesen",
+  "vereinsaufgabe-erinnern": "Erinnerung an die Aufgabe",
+  "vereinsaufgabe-status": "Aufgabe: Status geändert",
+  "vereinsaufgabe-zurueckziehen": "Aufgabe zurückgezogen",
+  "vereinsaufgabe-reaktivieren": "Aufgabe wieder geöffnet",
+  "vereinsaufgabe-rueckfrage": "Rückfrage oder Antwort",
+  "dokument-anlegen": "Unterschrift angefordert",
+  "notify-user": "Nachricht aus dem Nutzerbereich",
+  "raumnutzung-antrag": "Antrag ans Amt",
+  "schulsport-nachweis": "Nachweis verschickt",
+  "beleg-eingang": "Beleg eingegangen",
+  "busplan-erinnerung": "Erinnerung an die Fahrt",
+  "vereinskalender-postausgang": "Termin-Mail",
+  "fussballcamp": "Camp-Mail",
+  "kinderschutz": "Kinderschutz-Mail",
+  "kleiderboerse-anfrage": "Anfrage an den Anbieter",
+  // Anlässe ohne eigene Quelle fallen im Worker auf die Anlass-Id zurück.
+  "kalender": "Vereinskalender",
+  "aufgaben": "Vereinsaufgaben",
+  "unterschriften": "Unterschriften",
+  "testspiele": "Testspielplaner",
+  "material": "Materialbedarf",
+  "fahrtenbuch": "Fahrtenbuch",
+  "fotos": "Fotoaufträge",
+  "raumnutzung": "Raumnutzung",
+  "schulsport": "Schulsport",
+  "spieltagscrew": "Spieltagscrew",
+  "ablaufplan": "Ablaufplan",
+  "busplan": "Busplan",
+  "kinderschutz-push": "Kinderschutz",
+  "feedback": "Feedback & Wünsche",
+  "unterlagen": "Unterlagen",
+  "mitteilung": "Nachricht an alle Handys",
+  "nachricht": "Privatnachricht"
+};
+
+function versandDatum(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("de-DE", {
+    day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit"
+  });
+}
+
+async function ladeVersandProtokoll() {
+  const st = document.getElementById("admin-versand-status");
+  const liste = document.getElementById("admin-versand-liste");
+  if (!st || !liste) return;
+  st.textContent = "Wird geladen …";
+  st.style.display = "";
+  let data;
+  try {
+    data = await callWorker("versand-protokoll", {});
+  } catch (e) {
+    st.textContent = e.message || "Konnte nicht geladen werden.";
+    st.style.color = "#c0392b";
+    liste.innerHTML = "";
+    return;
+  }
+  st.style.color = "";
+  versandEintraege = Array.isArray(data.eintraege) ? data.eintraege : [];
+  versandGesamt = Number(data.gesamt) || versandEintraege.length;
+
+  // Werkzeug-Auswahl aus dem BESTAND füllen, nicht aus einer festen Liste: was
+  // nie etwas verschickt hat, soll auch nicht zur Auswahl stehen.
+  const auswahl = document.getElementById("admin-versand-app");
+  if (auswahl) {
+    const apps = [];
+    versandEintraege.forEach((e) => { if (e.app && apps.indexOf(e.app) < 0) apps.push(e.app); });
+    apps.sort();
+    const vorher = auswahl.value;
+    auswahl.innerHTML = "<option value=\"\">alle</option>"
+      + apps.map((a) => "<option value=\"" + escapeHtml(a) + "\">" + escapeHtml(a) + "</option>").join("");
+    // Die vorige Wahl darf überleben, aber nur wenn es sie noch gibt — sonst
+    // stünde im Filter ein Wert, auf den keine Zeile mehr passt.
+    if (vorher && apps.indexOf(vorher) >= 0) auswahl.value = vorher;
+  }
+  versandTabelleZeichnen();
+}
+
+function versandTabelleZeichnen() {
+  const st = document.getElementById("admin-versand-status");
+  const liste = document.getElementById("admin-versand-liste");
+  if (!st || !liste) return;
+  const artEl = document.getElementById("admin-versand-art");
+  const appEl = document.getElementById("admin-versand-app");
+  const art = artEl ? artEl.value : "";
+  const app = appEl ? appEl.value : "";
+
+  if (!versandEintraege.length) {
+    st.textContent = "Seit dem Einbau des Protokolls ist noch nichts rausgegangen.";
+    liste.innerHTML = "";
+    return;
+  }
+  const zeilen = versandEintraege.filter((e) =>
+    (!art || e.art === art) && (!app || e.app === app));
+  if (!zeilen.length) {
+    st.textContent = "Kein Versand passt zu dieser Auswahl.";
+    liste.innerHTML = "";
+    return;
+  }
+  st.textContent = zeilen.length + " von " + versandEintraege.length
+    + " angezeigten Vorgängen (festgehalten insgesamt: " + versandGesamt + ").";
+
+  // ⚠️ table-layout:fixed am Container ist Pflicht — eine Tabelle ohne das
+  // zieht in diesem Flex-main die ganze Seite auf (gleiche Falle wie beim
+  // PN-Protokoll, deshalb dieselben beiden Klassen).
+  liste.innerHTML = "<div class=\"pn-tabelle-wrap\"><table class=\"pn-tabelle versand-tabelle\">"
+    + "<thead><tr><th>Wann</th><th>Was</th><th>Weg</th><th>Von</th>"
+    + "<th>Zugestellt</th><th>Nicht erreicht</th></tr></thead><tbody>"
+    + zeilen.map((e) => {
+      const was = VERSAND_QUELLEN[e.quelle] || e.quelle || "—";
+      const weg = e.art === "push" ? "Push" : "Mail";
+      const zu = e.anzahl
+        + (e.empfaenger && e.empfaenger.length ? " — " + e.empfaenger.join(", ") : "");
+      const ohne = e.ohne
+        ? e.ohne + (e.ohneEmpfaenger && e.ohneEmpfaenger.length ? " — " + e.ohneEmpfaenger.join(", ") : "")
+        : "—";
+      return "<tr>"
+        + "<td>" + escapeHtml(versandDatum(e.am)) + "</td>"
+        + "<td>" + escapeHtml(was) + "</td>"
+        + "<td>" + escapeHtml(weg) + "</td>"
+        + "<td>" + escapeHtml(e.vonName || "automatisch") + "</td>"
+        + "<td>" + escapeHtml(String(zu)) + "</td>"
+        + "<td class=\"" + (e.ohne ? "versand-ohne" : "") + "\">" + escapeHtml(String(ohne)) + "</td>"
+        + "</tr>";
+    }).join("")
+    + "</tbody></table></div>";
 }
 
 async function ladePnProtokoll() {

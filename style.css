@@ -2877,6 +2877,20 @@ nav .nav-right { margin-left: auto; display: flex; flex-wrap: wrap; gap: inherit
 }
 .pn-tabelle th { color: var(--muted); font-weight: 600; }
 
+/* Versandprotokoll (seit 2026-09-08). Erbt Tabelle und Scroll-Container vom
+   PN-Protokoll — nur die beiden Eigenheiten stehen hier.
+
+   ⚠️ Die Filterzeile braucht die Deckelung: .form-grid ist
+   repeat(auto-fit, minmax(180px, 1fr)) und zieht zwei Auswahlfelder sonst über
+   die ganze Kartenbreite auseinander. Bei 375 px greift die Deckelung nicht und
+   die Felder stehen wie überall sonst untereinander. */
+.versand-filter { max-width: 520px; }
+
+/* Die einzige farbige Zelle der Tabelle. #b03a2e statt eines helleren Rots:
+   auf der hellen Kartenfläche erfüllt es AA (gleiche Linie wie die
+   Kontrast-Nacharbeit in den Vereinsaufgaben). */
+.versand-tabelle td.versand-ohne { color: #b03a2e; font-weight: 600; }
+
 /* Der Knopf unter einer gekürzten Nachrichtenliste (seit 2026-08-30). Steht
    linksbündig unter dem letzten Eintrag, nicht mittig: er ist die Fortsetzung
    der Liste, kein Abschluss. */

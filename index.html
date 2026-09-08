@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=2.2" />
+<link rel="stylesheet" href="style.css?v=2.3" />
 </head>
 <body>
 
@@ -1101,6 +1101,35 @@
       <div id="admin-pn-liste"></div>
     </details>
 
+    <!-- Versandprotokoll (seit 2026-09-08). Bewusst direkt hinter dem
+         Privatnachrichten-Protokoll: gleiche Rechtestufe, gleiche Zusage
+         ("wer an wen, nie was"), gleiche Tabellenoptik. -->
+    <details class="card collapsible" id="admin-versand-panel" style="display:none;">
+      <summary>Versand — Mails und Push</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Was die Werkzeuge tatsächlich verschickt haben. <strong>Der Inhalt steht hier
+        bewusst nicht</strong> — weder Betreff noch Text noch der Titel einer Aufgabe.
+        Die Spalte <strong>Nicht erreicht</strong> ist der eigentliche Zweck: eine Push
+        an ein ausgeschaltetes Handy sah bisher aus wie gar kein Versand.
+      </p>
+      <div class="form-grid versand-filter">
+        <div class="form-field">
+          <label for="admin-versand-art">Anzeigen</label>
+          <select id="admin-versand-art" class="form-select">
+            <option value="">Mails und Push</option>
+            <option value="mail">nur Mails</option>
+            <option value="push">nur Push</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="admin-versand-app">Werkzeug</label>
+          <select id="admin-versand-app" class="form-select"><option value="">alle</option></select>
+        </div>
+      </div>
+      <p class="muted" id="admin-versand-status" style="margin-bottom:14px;">Zum Laden aufklappen.</p>
+      <div id="admin-versand-liste"></div>
+    </details>
+
     <!-- Materialcontainer-Code (nur Admin) -->
     <details class="card collapsible" id="admin-materialcontainer-panel" style="display:none;">
       <summary>Materialcontainer-Code</summary>
@@ -1909,7 +1938,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.24"></script>
-<script src="app.js?v=1.19"></script>
+<script src="config.js?v=1.25"></script>
+<script src="app.js?v=1.20"></script>
 </body>
 </html>
