@@ -3267,6 +3267,31 @@ async function loadSidebarWidget() {
   });
 }
 
+// ---------- Kategorie-Filter der Termin-Karte (seit 09.09.2026) ----------
+// Eigene Einstellung, NICHT die der Vereinskalender-App: die beiden liegen auf
+// verschiedenen Adressen und koennen sich den localStorage nicht teilen. Hier
+// filtert man die Karte auf dem Dashboard, dort die volle Liste -- absichtlich
+// unabhaengig, denn die Karte zeigt nur die naechsten paar Termine.
+//
+// Gespeichert werden die AUSGEBLENDETEN Kategorien, nicht die gewaehlten: eine
+// spaeter im Vereinskalender angelegte Kategorie ist damit bei allen automatisch
+// sichtbar. Andersherum bliebe sie fuer jeden, der schon einmal gefiltert hat,
+// unsichtbar -- dieselbe Falle wie bei einer neuen Kachel, die erst ein Admin
+// freischalten muss.
+const KAL_KAT_FILTER_KEY = "tu-kal-kat-ausgeblendet";
+let kalKatAus = ladeKalKatFilter();
+
+function ladeKalKatFilter() {
+  try {
+    const roh = JSON.parse(localStorage.getItem(KAL_KAT_FILTER_KEY) || "[]");
+    return new Set(Array.isArray(roh) ? roh.filter((x) => typeof x === "string") : []);
+  } catch (_) { return new Set(); }
+}
+function speichereKalKatFilter() {
+  try { localStorage.setItem(KAL_KAT_FILTER_KEY, JSON.stringify(Array.from(kalKatAus))); }
+  catch (_) { /* privates Fenster o.ae. -- gilt dann nur bis zum Neuladen */ }
+}
+
 function renderSidebarWidget(widget, opts) {
   const { showCalendar, oeffentlich, privat, kategorien, geburtstage, showAbsences, absences, absenceKategorien,
           showAblauf, ablauf } = opts;
@@ -3276,6 +3301,21 @@ function renderSidebarWidget(widget, opts) {
     const k = kategorien.find((k2) => k2.id === id);
     return k ? k.farbe : "#6b7280";
   };
+  // Der Kategorie-Filter. Knoepfe gibt es nur fuer Kategorien, die in den
+  // angezeigten Terminen ueberhaupt vorkommen -- die Karte zeigt die naechsten
+  // paar Termine, ein Knopf fuer eine Kategorie ohne einen einzigen davon waere
+  // ein Knopf, der nichts tut. Ein Termin, dessen Kategorie es nicht mehr gibt,
+  // bleibt sichtbar: fuer ihn gaebe es keinen Knopf zum Zurueckholen.
+  const alleRows = (oeffentlich || []).concat(privat || []);
+  const katVorhanden = kategorien.filter((k) => alleRows.some((r) => r.termin.kategorie === k.id));
+  const rowPasstZumFilter = (r) => {
+    if (!kalKatAus.size) return true;
+    if (!kategorien.some((k) => k.id === r.termin.kategorie)) return true;
+    return !kalKatAus.has(r.termin.kategorie);
+  };
+  const oeffentlichSichtbar = (oeffentlich || []).filter(rowPasstZumFilter);
+  const privatSichtbar = (privat || []).filter(rowPasstZumFilter);
+  const etwasGefiltert = oeffentlichSichtbar.length + privatSichtbar.length < alleRows.length;
   // row = { termin, datum, zeit, candId } (siehe calendarWidgetRows) -- das Datum
   // kommt aus der Zeile, nicht aus dem Termin, damit jeder Umfrage-Vorschlag sein
   // eigenes Datum zeigt statt dreimal dem frühesten.
@@ -3352,22 +3392,48 @@ function renderSidebarWidget(widget, opts) {
     `;
   }
 
+  // Die Filterleiste. Erst ab zwei vorhandenen Kategorien -- mit einer waere sie
+  // ein Knopf, der entweder alles oder nichts zeigt. Die Zahl am Knopf zaehlt OHNE
+  // den Filter, sonst stuende hinter jeder ausgeblendeten Kategorie eine 0 und
+  // niemand saehe, was ihm entgeht.
+  let katFilterHtml = "";
+  if (showCalendar && katVorhanden.length >= 2) {
+    const knoepfe = katVorhanden.map((k) => {
+      const an = !kalKatAus.has(k.id);
+      const anzahl = alleRows.filter((r) => r.termin.kategorie === k.id).length;
+      return `<button type="button" class="cw-katfilter-btn${an ? " an" : ""}"
+          data-kat="${escapeHtml(k.id)}" aria-pressed="${an ? "true" : "false"}"
+          title="${escapeHtml(k.name || "")} ${an ? "ausblenden" : "wieder einblenden"}"><span class="cw-dot" style="background:${escapeHtml(k.farbe)}"></span><span class="cwk-name">${escapeHtml(k.name || "")}</span><span class="cwk-zahl">${anzahl}</span></button>`;
+    }).join("");
+    const alle = kalKatAus.size
+      ? `<button type="button" class="cw-katfilter-alle" data-kat-alle="1">Alle zeigen</button>`
+      : "";
+    katFilterHtml = `<div class="cw-katfilter" role="group" aria-label="Termine nach Kategorie filtern">${knoepfe}${alle}</div>`;
+  }
+
   let calendarHtml = "";
   if (showCalendar) {
-    const rows = (geburtstage.length || oeffentlich.length)
-      ? geburtstage.map(birthdayRowHtml).join("") + oeffentlich.map(rowHtml).join("")
-      : '<p class="muted" style="padding:4px 0;">Keine anstehenden Termine.</p>';
+    // ⚠️ Zwei verschiedene Saetze: "es gibt nichts" und "dein Filter laesst nichts
+    // durch" sind fuer den Leser zwei Lagen. Stuende immer der erste, suchte er den
+    // Fehler in den Daten statt am eigenen Filter.
+    const leerText = etwasGefiltert
+      ? "Kein Termin passt zu den gewählten Kategorien."
+      : "Keine anstehenden Termine.";
+    const rows = (geburtstage.length || oeffentlichSichtbar.length)
+      ? geburtstage.map(birthdayRowHtml).join("") + oeffentlichSichtbar.map(rowHtml).join("")
+      : `<p class="muted" style="padding:4px 0;">${leerText}</p>`;
     // Private Termine (nur für den eingeloggten Nutzer sichtbar, siehe
     // calendarTerminVisibleFor) stehen als eigener Abschnitt UNTER den normalen
     // Terminen — der Abschnitt fehlt ganz, wenn der Nutzer keine hat.
-    const privateSection = privat.length ? `
+    const privateSection = privatSichtbar.length ? `
       <h2 class="calendar-widget-sub-heading">🔒 Private Termine</h2>
-      <div class="calendar-widget-list">${privat.map(rowHtml).join("")}</div>
+      <div class="calendar-widget-list">${privatSichtbar.map(rowHtml).join("")}</div>
     ` : "";
     // Steht der Ablaufplan darueber, braucht diese Ueberschrift den Abstand der
     // Unterueberschrift -- sonst klebt sie an der Ablauf-Zeile.
     calendarHtml = `
       <h2${ablaufHtml ? ' class="calendar-widget-sub-heading"' : ""}><a class="cw-heading-link" href="${escapeHtml(url)}">📅 Nächste Termine</a></h2>
+      ${katFilterHtml}
       <div class="calendar-widget-list">${rows}</div>
       ${privateSection}
     `;
@@ -3434,6 +3500,23 @@ function calendarWidgetTerminById(id) {
 // hat und zeigen dann dessen Zahlen -- so steht im Widget nie ein Stand, den der
 // Server nicht bestätigt hat.
 async function onCalendarWidgetClick(e) {
+  // Kategorie-Filter zuerst: seine Knoepfe stecken in derselben Karte, und der
+  // Handler haengt am Behaelter (die Karte wird bei jedem Zeichnen neu gebaut,
+  // einzelne Handler waeren danach weg). Neu gezeichnet wird mit den GEMERKTEN
+  // opts -- die Daten sind dieselben, nur der Filter darueber ist ein anderer.
+  const katAlle = e.target.closest("[data-kat-alle]");
+  const katBtn = e.target.closest(".cw-katfilter-btn");
+  if (katAlle || katBtn) {
+    e.preventDefault();
+    if (katAlle) kalKatAus.clear();
+    else if (kalKatAus.has(katBtn.dataset.kat)) kalKatAus.delete(katBtn.dataset.kat);
+    else kalKatAus.add(katBtn.dataset.kat);
+    speichereKalKatFilter();
+    const w = document.getElementById("calendar-widget");
+    if (w && calendarWidgetOpts) renderSidebarWidget(w, calendarWidgetOpts);
+    return;
+  }
+
   const btn = e.target.closest(".cw-vote");
   if (!btn || btn.disabled) return;
   e.preventDefault();

@@ -675,6 +675,15 @@ const APP_CHANGELOG = [
           "Am Handy erscheint sie nicht: dort gibt es keine Maus. In der Listenansicht war der Text am Handy schon vorher ausgeblendet.",
           "Auch die Ampel („Daten unvollständig“, „3× Gegner eintragen“) steht jetzt neben dem Symbol statt darunter. Vorher schob sie den Namen eine Zeile tiefer, und die eine Kachel stand schief in der Reihe."
         ]
+      },
+      {
+        title: "Karte „Nächste Termine“: nach Kategorie filtern",
+        items: [
+          "Über der Terminliste steht jetzt je Kategorie ein Knopf — „Halle gesperrt“, „Training“, „Veranstaltung“. Ein Druck darauf blendet diese Kategorie aus, ein zweiter holt sie zurück.",
+          "Knöpfe gibt es nur für Kategorien, zu denen auch wirklich ein Termin ansteht. Die Zahl daneben sagt, wie viele es sind, und ändert sich beim Filtern nicht mit.",
+          "Ist etwas ausgeblendet, erscheint daneben „Alle zeigen“. Geburtstage bleiben immer stehen.",
+          "Die Auswahl bleibt in deinem Browser und gilt nur für dich. Sie ist unabhängig vom Filter im Vereinskalender selbst — hier filterst du die Karte, dort die ganze Liste."
+        ]
       }
     ]
   },

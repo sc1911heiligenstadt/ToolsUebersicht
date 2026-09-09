@@ -1107,6 +1107,56 @@ main { flex: 1; min-width: 0; }
 /* Der Zähler bringt bei .warn seinen EIGENEN roten Ring mit (siehe .header-zaehler.warn).
    Zusammen mit dem Ring am Knopf wären das zwei ineinander — hier reicht der äußere. */
 .widget-todo-btn .header-zaehler.warn { box-shadow: none; }
+/* ---------- Kategorie-Filter der Termin-Karte (seit 09.09.2026) ---------- */
+/* Kleiner als die Knoepfe in der Vereinskalender-App: die Karte hier ist schmal
+   und zeigt nur die naechsten paar Termine -- die Leiste darf nicht mehr Platz
+   nehmen als die Liste darunter.
+
+   ⚠️ Aus ist nicht nur blass, sondern auch durchgestrichen. Farbe allein
+   reichte nicht: wer Rot und Gruen schlecht unterscheidet, saehe keinen
+   Unterschied zwischen an und aus. */
+.cw-katfilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+.cw-katfilter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  /* 44px fuer den Daumen -- dasselbe Mass wie die Filterknoepfe in der
+     Vereinskalender-App und wie die Abnahme vom 07.09.2026 es verlangt. Die
+     Stimm-Knoepfe derselben Karte (.cw-vote) sind kleiner; die sind aelter und
+     stehen hier nicht zur Debatte, aber neue Knoepfe fangen nicht darunter an. */
+  min-height: 44px;
+}
+.cw-katfilter-btn.an { color: var(--text); border-color: var(--blue); background: var(--blue-light); }
+.cw-katfilter-btn:not(.an) { opacity: 0.55; }
+.cw-katfilter-btn:not(.an) .cwk-name { text-decoration: line-through; }
+.cw-katfilter-btn:not(.an) .cw-dot { background: var(--muted) !important; }
+.cw-katfilter .cw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cwk-zahl { font-size: 11px; font-weight: 700; color: var(--muted); }
+.cw-katfilter-alle {
+  background: none;
+  border: none;
+  padding: 5px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  text-decoration: underline;
+  cursor: pointer;
+  min-height: 44px;
+}
+
 .calendar-widget-list { display: flex; flex-direction: column; }
 .calendar-widget-item {
   display: flex;
