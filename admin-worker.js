@@ -1106,6 +1106,17 @@ export default {
     // ⚠️ Alle Nachrichten aus diesem Lauf sind INHALTSLEER: sie nennen Anzahlen,
     // nie Namen, Orte oder Beschreibungen.
     ctx.waitUntil(ksTaeglicherLauf(env, authHeader, ctx).catch(() => {}));
+    // Umfragen haengen sich aus demselben Grund an denselben Lauf: eine
+    // Umfrage mit Enddatum schliesst sich selbst, und einen Tag vorher wird
+    // erinnert, wer noch nicht geantwortet hat. Eigener waitUntil, damit ein
+    // Fehler hier keinen der anderen Laeufe mitreisst.
+    //
+    // ⚠️ Auch dieser Lauf LOESCHT KEINE Umfragen und keine Antworten
+    // (Michel-Entscheidung 2026-09-09). Er schliesst und erinnert; geloescht
+    // wird von Hand. Wer hier je eine automatische Loeschung ergaenzt, zieht
+    // zuerst den Datenschutztext in umfragen/u.html nach -- der verspricht
+    // ausdruecklich keine Automatik.
+    ctx.waitUntil(umTaeglicherLauf(env, authHeader, ctx).catch(() => {}));
   },
 
   // ctx (seit 2026-08-03): nur fuer ctx.waitUntil beim Push-Versand. Ohne den
@@ -1182,6 +1193,21 @@ export default {
       const ksBildTreffer = new URL(request.url).pathname.match(/^\/ks-bild\/([0-9a-fA-F-]{36})$/);
       if (ksBildTreffer) {
         return handleKsBildGet(request, ksBildTreffer[1], env, authHeader, corsHeaders);
+      }
+
+      // Ein Bild aus einer oeffentlich freigegebenen Umfrage -- der FUENFTE
+      // GET-Pfad dieses Workers. Muss wie die anderen VOR der Sichtbarkeits-
+      // Antwort stehen; ein <img src> kann keinen POST schicken und keinen
+      // Bearer-Token tragen.
+      //
+      // ⚠️ Der Ausweis ist der Link-Token der Umfrage, und ausgeliefert werden
+      // NUR Kennungen, die in genau DIESER Umfrage als Kopfbild oder als Bild
+      // einer Antwortmoeglichkeit stehen. Der Token einer Umfrage oeffnet also
+      // nicht die Bilder aller anderen (gleiche Linie wie /ks-bild/, wo die
+      // Meldungs-Anhaenge derselben Ablage ausdruecklich nicht erreichbar sind).
+      const umBildTreffer = new URL(request.url).pathname.match(/^\/umfrage-bild\/([A-Za-z0-9]{16,60})\/([0-9a-fA-F-]{36})$/);
+      if (umBildTreffer) {
+        return handleUmOeffentlichBild(request, umBildTreffer[1], umBildTreffer[2], env, authHeader, corsHeaders);
       }
 
       // Der GET ist der öffentliche Kanal (Tool-Sichtbarkeit für jeden Besucher),
@@ -14328,6 +14354,10 @@ const PUNKTE_IGNORIERT = new Set([
   // hin und her waere sonst eine beliebig oft nachfuellbare Punktequelle (genau
   // die Begruendung, aus der toggle-news-reaction nicht im Katalog steht).
   "ideen-load", "idee-daumen",
+  // Umfragen: das Laden ist eine Anzeige, die Gruppenliste eine Zuarbeit fuer
+  // die Maske, und ein Bild wird beim Rendern einer Liste nachgeladen -- ein
+  // Punkt je Bild waere die Kachel-Falle der Nutzerfotos noch einmal.
+  "umfragen-load", "umfragen-gruppen", "umfragen-bild-get",
   // Die eigene Ansicht der Startseite. Das Lesen laeuft bei jedem Seitenaufbau von
   // selbst. ⚠️ Auch das SPEICHERN bleibt draussen, obwohl es eine Handlung ist: es ist
   // eine reine Anzeige-Vorliebe ohne Vereinsarbeit dahinter, und Hin- und Herschalten
@@ -14418,6 +14448,13 @@ const PUNKTE_TATEN = new Map([
   // setzen, antworten) ebenso -- gleiche Linie wie feedback-antwort.
   ["idee-speichern", PUNKTE_PRO_TAT],
   ["idee-verwalten", PUNKTE_PRO_TAT],
+  // Eine Umfrage bauen und sie oeffnen bzw. schliessen sind echte Handlungen.
+  // ⚠️ Das ANTWORTEN steht bewusst NICHT im Katalog: eine namentliche Antwort
+  // laesst sich beliebig oft aendern, und jede Aenderung waere sonst eine neue
+  // Tat -- dieselbe Begruendung wie bei idee-daumen und toggle-news-reaction.
+  // Ueber das Fensterpunkt-Muster zaehlt die Teilnahme trotzdem mit.
+  ["umfragen-speichern", PUNKTE_PRO_TAT],
+  ["umfragen-status", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-uebergabe", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-ressort-speichern", PUNKTE_PRO_TAT],
   // Klubzertifizierung: ein Kriterium auf "erfuellt" zu setzen und eine Aufgabe
@@ -14500,6 +14537,12 @@ const PUNKTE_APP_PRAEFIXE = [
   // DAV_APPS-Eintrag). Ohne diesen Eintrag liefe ihre Nutzung unter keiner App und
   // taeuchte in der Admin-Auswertung als "von niemandem benutzt" auf.
   ["kontakte", "kontakte"],
+  // Die Umfragen haben keinen DAV_APPS-Eintrag und sprechen ausschliesslich
+  // eigene Aktionen. Ohne diesen Eintrag liefe ihre Nutzung unter KEINER App und
+  // die Admin-Auswertung meldete das Werkzeug als "von niemandem benutzt". Die
+  // login-losen Gast-Aktionen (umfragen-oeffentlich-*) tragen ohnehin keine
+  // Sitzung und erzeugen gar kein Ereignis.
+  ["umfragen", "umfragen"],
   // Die Klubzertifizierung ist ein Tab in "Vereinsaufgaben" und laeuft unter
   // deren Kachel. Ohne diesen Eintrag griffe das Praefix "vereinsaufgabe" nicht
   // (die Aktionen heissen "zertifizierung-*"), die Nutzung liefe unter keiner App
@@ -28439,4 +28482,20 @@ async function umTaeglicherLauf(env, authHeader, execCtx) {
   }
 
   return { geschlossen: geschlossen.length, erinnert: zuErinnern.length };
+}
+
+// Bild-Auslieferung fuer die oeffentliche Seite. Ausweis ist der Link-Token;
+// ausgeliefert wird eine Kennung NUR dann, wenn sie in genau dieser Umfrage
+// vorkommt. Ohne diese Bindung waere ein einziger geteilter Umfrage-Link der
+// Generalschluessel fuer die Bilder aller Umfragen.
+async function handleUmOeffentlichBild(request, token, bildId, env, authHeader, corsHeaders) {
+  try {
+    const doc = umNormalisiere(await readJson(UMFRAGEN_URL, authHeader, umLeer()));
+    const u = umPerToken(doc, token);
+    if (u.status === "entwurf") throw new UmFehler("Nicht gefunden", 404);
+    if (umBilderVon(u).indexOf(String(bildId)) === -1) throw new UmFehler("Nicht gefunden", 404);
+    return umBildAusliefern(String(bildId), authHeader, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
 }

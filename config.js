@@ -437,6 +437,19 @@ const TOOLS = [
     category: "Verein",
     mail: true,
     push: true
+  },
+  {
+    // Umfragetool. ⚠️ NICHT die Terminfindung — „wann haben alle Zeit" bleibt im
+    // Vereinskalender (Umfrage-Termine), nur der landet auch im Kalender-Abo.
+    // Hier geht es um freie Fragen: Zufriedenheit, Vorschläge, Namenswahl.
+    id: "umfragen",
+    name: "Umfragen",
+    description: "Eine Frage stellen und Antworten einsammeln — intern bei den eigenen Leuten oder per Link bei allen, die man erreichen will. Eine Umfrage besteht aus beliebig vielen Fragen in fünf Arten: eine auswählen, mehrere auswählen, Ja/Nein, freier Text und Note 1–5; zu jeder Antwortmöglichkeit kann ein Bild stehen, etwa bei der Wahl eines Trikot-Entwurfs. Intern ist die Zielgruppe wählbar und die Umfrage wahlweise namentlich oder geheim — bei geheim speichert der Server getrennt, dass jemand abgestimmt hat und was gewählt wurde. Nach außen gibt es einen geheimen Link samt QR-Code, den nur bekommt, wem man ihn gibt. Ein Enddatum schließt die Umfrage von selbst; das Ergebnis gibt es als Balken, als Excel und als Druckansicht. Freitext-Antworten erscheinen nie von selbst, sondern erst nach Freigabe durch die Verwaltung.",
+    url: "https://sc1911heiligenstadt.github.io/umfragen/",
+    icon: "❓",
+    category: "Verein",
+    mail: true,
+    push: true
   }
 ];
 
