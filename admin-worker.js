@@ -28210,6 +28210,14 @@ async function handleUmOeffentlichInfo(request, body, env, authHeader, corsHeade
 function umOeffentlichSicht(u) {
   return {
     titel: u.titel,
+    // ⚠️ Kein Geheimnis, sondern eine BETRIEBSANGABE fuer u.html: nur wenn die
+    // Umfrage auch intern laeuft, darf die oeffentliche Seite einen Angemeldeten
+    // in die interne Ansicht schicken. Bei einer reinen Link-Umfrage gibt es
+    // dort naemlich gar nichts zu sehen -- umInZielgruppe() sagt bei !intern
+    // immer nein, und handleUmLoad wirft sie aus der Liste eines Nur-Sehers
+    // heraus. Vorher lief jedes angemeldete Mitglied, das den QR-Code scannte,
+    // damit gegen eine Wand (Bugjagd 09.09.2026, Fund 2).
+    intern: !!u.intern,
     beschreibung: u.beschreibung || "",
     kopfbild: u.kopfbild || null,
     endeAm: u.endeAm || "",
