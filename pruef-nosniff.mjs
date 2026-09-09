@@ -46,6 +46,18 @@ const EIGENE_KOEPFE = ["handleVvNachweisGet", "handleUnterlagenDatei", "handleFc
 // Diese liefern keine Datei, sondern selbst erzeugten Text mit festem Typ.
 const KEIN_DATEIWEG = ["function json(", "function vkTextAntwort(", "handleVkIcsFeed"];
 
+// Jeder Weg, der eine echte Datei ausliefert und dafuer dateiKopfzeilen() ruft.
+// ⚠️ Eine LISTE, keine Anzahl. Wer einen neuen Dateiweg baut, traegt ihn hier
+// ein -- dann sagt der Pruefstand beim Fehlschlag auch, WELCHER Weg fehlt,
+// statt nur "es sind nicht neun". Vergisst er den Eintrag, faengt C1 den Fall
+// trotzdem: das liest jede new Response() im Worker.
+const DATEIWEGE = [
+  "handleDavFileGet", "handleDavRestrictedGet", "handleDokumentDateiGet",
+  "handleFahrtenbuchBelegFileGet", "handleKboExternFotoGet", "handleNewsDateiGet",
+  "handleNutzerfotoGet", "handleVaDateiGet", "handleZertDateiGet",
+  "umBildAusliefern"   // seit 09.09.2026: die Bilder der Umfragen
+];
+
 // ----------------------------------------------------------------------------
 function verhalten(m) {
   const t = m.sichererDateiTyp;
@@ -138,8 +150,16 @@ function quelltext() {
   return [
     ["C1 KEIN Dateiweg baut seine Kopfzeilen von Hand" +
       (nackt.length ? " — offen: " + nackt.map((x) => x.fn + " Z." + x.zeile).join(", ") : ""), nackt.length === 0],
-    ["C2 Alle neun Wege rufen dateiKopfzeilen()",
-      (W.match(/headers: dateiKopfzeilen\(corsHeaders/g) || []).length === 9],
+    // ⚠️ Hier stand eine feste Zahl ("=== 9"). Am 09.09.2026 kam mit
+    // umBildAusliefern() ein zehnter Dateiweg dazu, der alles richtig macht --
+    // der Pruefstand wurde trotzdem rot. Ein rotes Sicherheitsnetz, das aus
+    // einem harmlosen Grund rot ist, wird nach zwei Wochen ignoriert; dann
+    // faellt der echte Fall auch nicht mehr auf. Jetzt wird JEDER bekannte Weg
+    // einzeln geprueft, und ein neuer Weg macht die Zusage nicht kaputt --
+    // dafuer ist C1 zustaendig, das jede Response ohne nosniff findet.
+    ...DATEIWEGE.map((fn) => [
+      "C2 " + fn + "() ruft dateiKopfzeilen()", rumpfHat(fn, "dateiKopfzeilen(")
+    ]),
     ["C3 Die vier Wege mit eigenen Koepfen tragen nosniff selbst",
       EIGENE_KOEPFE.every((f) => {
         const i = W.indexOf("function " + f + "(");
