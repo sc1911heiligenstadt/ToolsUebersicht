@@ -27700,7 +27700,14 @@ async function handleUmSpeichern(request, body, env, authHeader, corsHeaders) {
     const roh = body.umfrage || {};
     const id = capStr(roh.id, 60);
 
+    // Welche Bilder nach dem Speichern niemand mehr braucht. ⚠️ Gesammelt wird
+    // INNERHALB der Mutation (dort steht der alte Stand), geloescht wird erst
+    // DANACH -- schluege das Schreiben fehl, waeren die Dateien sonst weg und
+    // die Umfrage traege lauter kaputte Verweise. Gleiche Reihenfolge wie in
+    // handleUmLoeschen.
+    let verwaist = [];
     const ergebnis = await umMutiere(authHeader, (doc) => {
+      verwaist = [];
       if (!id) {
         if (doc.umfragen.length >= UM_MAX_UMFRAGEN) throw new UmFehler("Es sind zu viele Umfragen angelegt");
         const neu = umPruefeUndBaue(roh, null);
@@ -27716,6 +27723,7 @@ async function handleUmSpeichern(request, body, env, authHeader, corsHeaders) {
       }
 
       const u = umHolen(doc, id);
+      const vorher = umBilderVon(u);
       const gebaut = umPruefeUndBaue(roh, u);
 
       // ⚠️ Sobald geantwortet wurde, ist die STRUKTUR eingefroren. Wer einer
@@ -27743,9 +27751,18 @@ async function handleUmSpeichern(request, body, env, authHeader, corsHeaders) {
       // Der Wunsch "nicht mehr nach außen" nimmt eine bestehende Freigabe mit —
       // sonst bliebe der Link gültig, obwohl der Haken aus ist.
       if (!gebaut.willExtern && u.extern) { u.extern = false; u.token = ""; }
+      // ⚠️ Was jetzt nicht mehr in der Umfrage steht, hat keinen Verweis mehr:
+      // wer ein Kopfbild austauscht oder eine Frage mit Bildern loescht, liess
+      // die Dateien sonst fuer immer in der Nextcloud liegen (Abnahme
+      // 09.09.2026). Bis dahin raeumte NUR das Loeschen der ganzen Umfrage auf.
+      // Der Vergleich laeuft gegen den frisch geschriebenen Stand `u`, nicht
+      // gegen `gebaut`: bei eingefrorener Struktur uebernimmt u.fragen gar nicht.
+      const jetzt = umBilderVon(u);
+      verwaist = vorher.filter((b) => jetzt.indexOf(b) === -1);
       return { id: u.id };
     });
 
+    for (const b of verwaist) await umBildLoeschen(b, authHeader).catch(() => {});
     return json(ergebnis, 200, corsHeaders);
   } catch (e) {
     return umAntwortFehler(e, corsHeaders);

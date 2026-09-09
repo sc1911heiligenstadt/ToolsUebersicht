@@ -41,6 +41,11 @@ const dateien = new Map();
 let revZaehler = 0;
 const echteFetch = globalThis.fetch;
 let letzterBildAbruf = null;
+// Welche Bild-Dateien der Worker geloescht hat. Nur so laesst sich pruefen, dass
+// ein ausgetauschtes Kopfbild wirklich aus der Nextcloud verschwindet -- die
+// Datei selbst liegt im Stub gar nicht, es gibt also nichts, dessen Fehlen man
+// sonst messen koennte.
+const bildLoeschungen = [];
 
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url);
@@ -52,6 +57,7 @@ globalThis.fetch = async (url, opts = {}) => {
         letzterBildAbruf = u;
         return new Response("BILDBYTES", { status: 200, headers: { "Content-Type": "image/png" } });
       }
+      if (m === "DELETE") bildLoeschungen.push(u.slice(u.lastIndexOf("/") + 1));
       return new Response(null, { status: 204 });
     }
     if (m === "GET") {
@@ -456,6 +462,32 @@ pruefe("fremde Bild-Id -> 404", resp.status === 404, "war " + resp.status);
 frisch();
 resp = await T.handleUmOeffentlichBild(req(null), "falscherToken", echteBildId, env, auth, cors);
 pruefe("falscher Token -> 404", resp.status === 404, "war " + resp.status);
+
+// ---------------------------------------------------------------------------
+console.log("== 12b. Ein ersetztes Bild bleibt nicht in der Nextcloud liegen");
+// ---------------------------------------------------------------------------
+// ⚠️ Bis zur Abnahme 09.09.2026 raeumte NUR das Loeschen der ganzen Umfrage auf.
+// Wer ein Kopfbild austauschte oder eine Frage mit Bildern entfernte, liess die
+// Datei fuer immer liegen -- ohne jeden Verweis, also auch ohne Weg, sie je
+// wiederzufinden.
+bildLoeschungen.length = 0;
+await ruf(T.handleUmSpeichern, "bearbeiter", {
+  umfrage: vorlage({ id: uid, kopfbild: { id: fremdeBildId, contentType: "image/png" } })
+});
+pruefe("das ersetzte Kopfbild wird geloescht",
+  bildLoeschungen.indexOf(echteBildId) !== -1, "geloescht: " + JSON.stringify(bildLoeschungen));
+pruefe("das neue Kopfbild bleibt", bildLoeschungen.indexOf(fremdeBildId) === -1);
+pruefe("und steht danach in der Umfrage", doc().umfragen[0].kopfbild.id === fremdeBildId);
+
+// Und die Gegenprobe: ein Speichern, das nichts an den Bildern aendert, darf
+// auch nichts loeschen. Sonst raeumte der Fix das Bild bei jedem Tippfehler im
+// Titel gleich mit weg.
+bildLoeschungen.length = 0;
+await ruf(T.handleUmSpeichern, "bearbeiter", {
+  umfrage: vorlage({ id: uid, titel: "Anderer Titel", kopfbild: { id: fremdeBildId, contentType: "image/png" } })
+});
+pruefe("ein Speichern ohne Bildwechsel loescht nichts",
+  bildLoeschungen.length === 0, "geloescht: " + JSON.stringify(bildLoeschungen));
 
 // ---------------------------------------------------------------------------
 console.log("== 13. Schliessen raeumt die Fingerabdruecke weg");
