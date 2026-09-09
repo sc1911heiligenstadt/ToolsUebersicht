@@ -677,6 +677,22 @@ const APP_FUNKTIONEN = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.26",
+    groups: [
+      {
+        title: "Neue Kachel: Umfragen",
+        items: [
+          "Neu im Raster steht „Umfragen“ (❓). Damit lässt sich eine Frage stellen und die Antworten einsammeln — bei den eigenen Leuten im Verein oder per Link bei allen, die man erreichen will.",
+          "Eine Umfrage hat beliebig viele Fragen in fünf Arten: eine auswählen, mehrere auswählen, Ja/Nein, freier Text und Note 1–5. Zu jeder Antwortmöglichkeit kann ein Bild stehen.",
+          "Intern ist die Zielgruppe wählbar, und die Umfrage läuft wahlweise namentlich oder geheim. Bei geheim wird getrennt gespeichert, dass jemand abgestimmt hat und was gewählt wurde — zusammengeführt wird das nie.",
+          "Nach außen gibt es einen geheimen Link samt QR-Code. Es gibt keine öffentliche Liste; mitmachen kann nur, wer den Link bekommen hat. Freigeben darf ihn nur, wer die Umfragen administriert.",
+          "Wer wissen will, wann alle Zeit haben, bleibt beim Vereinskalender — nur ein Umfrage-Termin von dort landet auch im Kalender-Abo.",
+          "Wie bei jedem neuen Werkzeug ist die Kachel erst sichtbar, wenn ein Administrator die Sichtbarkeit gesetzt hat."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.25",
     groups: [
       {
