@@ -73,6 +73,8 @@ for (const marke of [
 let DOC = null;
 let RECHT = { canEdit: true, canAdmin: true };
 let MAILS = [];
+// Eintraege, die das Versandprotokoll mitbekommen hat.
+let VERSAND = [];
 let MAIL_KAPUTT = false;
 
 const kopf = `
@@ -91,6 +93,13 @@ async function resolveAdminPermission() { return true; }
 async function readJson(url, auth, fallback) { return JSON.parse(JSON.stringify(__DOC() ?? fallback)); }
 async function readJsonWithRev(url, auth, fallback) { return { data: JSON.parse(JSON.stringify(__DOC() ?? fallback)), rev: "r1" }; }
 async function writeJson(url, auth, doc, rev) { __SETDOC(JSON.parse(JSON.stringify(doc))); }
+// ⚠️ Seit dem 08.09.2026 meldet jede zugestellte Mail einen Eintrag ins
+// Versandprotokoll. Die Funktion steht WEIT oberhalb des Fussballcamp-Abschnitts
+// und wird deshalb nicht mitgeschnitten -- ohne diese Attrappe warf fcMailSenden
+// einen ReferenceError, faengt ihn in seinem eigenen catch und meldete JEDE
+// zugestellte Mail als Fehlschlag. Sie SAMMELT statt nur zu schweigen, damit die
+// Zusagen unten nachsehen koennen, dass der Eintrag wirklich entsteht.
+async function versandNotieren(env, authHeader, eintrag) { __VERSAND().push(eintrag); }
 `;
 
 const fuss = `
@@ -105,10 +114,10 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcEuro, fcBetrag,
          handleFcAnmelden, handleFcMeineAbsagen, handleFcAbsagen, handleFcMeineSpeichern };
 `;
 
-const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
+const bau = new Function("__DOC", "__SETDOC", "__RECHT", "__VERSAND", "fetch", "crypto",
   kopf + capStrQ + "\n" + kboQ + "\n" + haeppchenQ + "\n" + fcQ + "\n" + fuss
 )(
-  () => DOC, (d) => { DOC = d; }, () => RECHT,
+  () => DOC, (d) => { DOC = d; }, () => RECHT, () => VERSAND,
   async (url, opt) => {
     if (MAIL_KAPUTT) throw new Error("Brevo antwortet nicht");
     try { MAILS.push(JSON.parse(opt.body)); } catch (_) {}

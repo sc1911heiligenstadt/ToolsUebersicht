@@ -91,6 +91,8 @@ for (const marke of [
 let DOC = null;
 let RECHT = { canEdit: true, canAdmin: true };
 let MAILS = [];
+// Eintraege, die das Versandprotokoll mitbekommen hat.
+let VERSAND = [];
 // ⚠️ Steuerbare Mail-Attrappe fuer Abschnitt 15. `verzoegerung` MUSS echte
 // Millisekunden bedeuten: eine Attrappe, die als Microtask aufloest, verdeckt
 // genau den Unterschied zwischen "eine nach der anderen" und "zehn parallel".
@@ -117,6 +119,17 @@ async function resolveAdminPermission() { return true; }
 async function readJson(url, auth, fallback) { return JSON.parse(JSON.stringify(__DOC() ?? fallback)); }
 async function readJsonWithRev(url, auth, fallback) { return { data: JSON.parse(JSON.stringify(__DOC() ?? fallback)), rev: "r1" }; }
 async function writeJson(url, auth, doc, rev) { __SETDOC(JSON.parse(JSON.stringify(doc))); }
+// ⚠️ Seit dem 08.09.2026 meldet jede zugestellte Mail einen Eintrag ins
+// Versandprotokoll. Die Funktion steht WEIT oberhalb des Fussballcamp-Abschnitts
+// und wird deshalb nicht mitgeschnitten -- ohne diese Attrappe warf fcMailSenden
+// einen ReferenceError, faengt ihn in seinem eigenen catch und meldete JEDE
+// zugestellte Mail als Fehlschlag. Sie SAMMELT statt nur zu schweigen, damit die
+// Zusagen unten nachsehen koennen, dass der Eintrag wirklich entsteht.
+async function versandNotieren(env, authHeader, eintrag) {
+  const z = __VERSAND();
+  if (z.wirft) throw new Error("Versandprotokoll kaputt (simuliert)");
+  z.push(eintrag);
+}
 `;
 
 const fuss = `
@@ -141,10 +154,10 @@ return { fcLeer, fcNormalisiere, fcHeuteBerlin, fcTagPlusUtc,
          FC_MAIL_VORLAGEN, FC_MAIL_PLATZHALTER, FC_MAIL_BETREFF_FELDER };
 `;
 
-const bau = new Function("__DOC", "__SETDOC", "__RECHT", "fetch", "crypto",
+const bau = new Function("__DOC", "__SETDOC", "__RECHT", "__VERSAND", "fetch", "crypto",
   kopf + capStrQ + "\n" + kboQ + "\n" + haeppchenQ + "\n" + fcQ + "\n" + fuss
 )(
-  () => DOC, (d) => { DOC = d; }, () => RECHT,
+  () => DOC, (d) => { DOC = d; }, () => RECHT, () => VERSAND,
   async (url, opt) => {
     try { MAILS.push(JSON.parse(opt.body)); } catch (_) {}
     MAIL.laufend++; MAIL.versuche++;
@@ -1480,6 +1493,7 @@ campFuerFeedback(35);
 mailZaehlerZuruecksetzen();
 MAIL.verzoegerung = 8;
 MAILS = [];
+VERSAND = [];
 r = await bau.fcFeedbackLauf(ENV, AUTH, null);
 zusage("Der Feedbacklauf verschickt alle 35", r.gesendet === 35 && r.gefunden === 35, JSON.stringify(r));
 zusage("...und zwar haeppchenweise",
@@ -1490,6 +1504,48 @@ zusage("...und zwar haeppchenweise",
 zusage("Eine geglueckte Nacht meldet keinen Fehlschlag",
   !/NICHT zugestellt/.test((camp0() && DOC.lauf && DOC.lauf.ergebnis) || ""),
   JSON.stringify(DOC.lauf));
+// ⚠️ Seit dem 08.09.2026 haengt an jeder zugestellten Mail ein Eintrag im
+// Versandprotokoll. Ohne diese Zusage waere die Attrappe oben ein blosses
+// Wegblenden: sie liesse den Lauf gruen durchlaufen, egal ob das Protokoll je
+// etwas mitbekommt. Genau diese Verdrahtung ist am 08.09. entstanden und hat
+// den Prueflauf hier stillschweigend rot gemacht.
+zusage("Jede zugestellte Mail landet im Versandprotokoll", VERSAND.length === 35,
+  "Eintraege: " + VERSAND.length);
+zusage("...als Mail der Kachel fussballcamp, ohne Inhalt",
+  VERSAND.every((e) => e.art === "mail" && e.app === "fussballcamp" && e.quelle === "fussballcamp"
+    && e.anzahl === 1 && !("betreff" in e) && !("text" in e)),
+  JSON.stringify(VERSAND[0]));
+
+// Gegenprobe: klemmt Brevo, entsteht auch kein Protokolleintrag -- sonst
+// behauptete das Protokoll Zustellungen, die es nicht gab.
+campFuerFeedback(4);
+mailZaehlerZuruecksetzen();
+MAIL.antwort = false;
+MAILS = [];
+VERSAND = [];
+await bau.fcFeedbackLauf(ENV, AUTH, null);
+zusage("Eine NICHT zugestellte Mail steht auch nicht im Protokoll", VERSAND.length === 0,
+  "Eintraege: " + VERSAND.length);
+
+// ⚠⚠ Der Kern der Haertung vom 09.09.2026: das Protokoll ist BEIWERK und darf
+// das Ergebnis nie umdrehen. Stand der Aufruf nackt im aeusseren try von
+// fcMailSenden, machte ein Wurf dort aus einer ZUGESTELLTEN Mail ein "nicht
+// zugestellt" -- und bei den Feedbackboegen steht feedbackGebetenAm dann schon,
+// die Familie bekaeme also nie wieder Post wegen eines Fehlers, der die Mail
+// gar nicht betraf.
+campFuerFeedback(6);
+mailZaehlerZuruecksetzen();
+MAILS = [];
+VERSAND = [];
+VERSAND.wirft = true;
+r = await bau.fcFeedbackLauf(ENV, AUTH, null);
+VERSAND.wirft = false;
+zusage("Ein kaputtes Versandprotokoll kippt die Zustellung NICHT",
+  r.gesendet === 6 && r.gefunden === 6, JSON.stringify(r));
+zusage("...und der Lauf meldet folgerichtig keinen Fehlschlag",
+  !/NICHT zugestellt/.test((DOC.lauf && DOC.lauf.ergebnis) || ""),
+  JSON.stringify(DOC.lauf));
+zusage("...die sechs Mails sind wirklich raus", MAILS.length === 6, "Mails: " + MAILS.length);
 
 // ---- Der Kern des Fundes: ein Fehlschlag darf nicht lautlos sein ---------
 // ⚠⚠ Der Merker feedbackGebetenAm steht schon, BEVOR die erste Mail rausgeht

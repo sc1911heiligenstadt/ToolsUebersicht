@@ -7,8 +7,15 @@ import { dirname, join } from "node:path";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 // Die App liegt neben diesem Repo, nicht darin.
-const APP = join(HIER, "..", "fussballcamp") + "/";
-const WORKER = fs.readFileSync(join(HIER, "admin-worker.js"), "utf8");
+//
+// FC_APP_DIR und FC_WORKER stellen beide Quellen auf eine Kopie um. Das ist
+// nicht Bequemlichkeit, sondern die Voraussetzung fuer eine Mutationsprobe:
+// ohne sie laeuft JEDE Verschlechterung gegen das Original, der Lauf bleibt
+// gruen, und der Pruefstand sieht scharf aus, ohne es zu sein. Genau diese
+// Falle hat am 19.08.2026 schon beim Busplan zugeschlagen (14x "uebersehen",
+// alles Prueffehler).
+const APP = (process.env.FC_APP_DIR || join(HIER, "..", "fussballcamp")) + "/";
+const WORKER = fs.readFileSync(process.env.FC_WORKER || join(HIER, "admin-worker.js"), "utf8");
 const lies = (f) => fs.readFileSync(APP + f, "utf8");
 
 const funde = [];
@@ -28,7 +35,11 @@ console.log("1. Namenskollisionen ueber Dateigrenzen");
 const SEITEN = {
   "index.html":            ["config.js", "db.js", "app.js"],
   "anmeldung.html":        ["config.js", "oeffentlich.js", "anmeldung.js"],
-  "meine-anmeldung.html":  ["config.js", "oeffentlich.js", "meine-anmeldung.js"]
+  "meine-anmeldung.html":  ["config.js", "oeffentlich.js", "meine-anmeldung.js"],
+  // Am 09.09.2026 nachgetragen: die Feedback-Seite laedt dieselbe config.js und
+  // fehlte in dieser Liste. Damit lief sie an der ?v=-Gleichheitspruefung vorbei
+  // -- also an genau der Pruefung, die den Fund gemeldet hat.
+  "feedback.html":         ["config.js", "oeffentlich.js", "feedback.js"]
 };
 for (const [seite, dateien] of Object.entries(SEITEN)) {
   const wo = new Map();
@@ -100,7 +111,19 @@ for (const [seite, dateien] of Object.entries(SEITEN)) {
   const imHtml = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
   const imJs   = new Set([...js.matchAll(/id="([^"$]+)"/g)].map((m) => m[1]));
   const gesucht = [...js.matchAll(/getElementById\("([^"]+)"\)/g)].map((m) => m[1]);
-  const fehlend = [...new Set(gesucht)].filter((id) => !imHtml.has(id) && !imJs.has(id));
+  // Ein GESICHERTER Zugriff ist kein Fund. renderChangelog() sucht bewusst eine
+  // Id, die es im Markup nicht mehr gibt, und steigt eine Zeile spaeter still
+  // aus -- der Changelog wird weitergepflegt, nur nicht mehr angezeigt. Ohne
+  // diese Ausnahme meldet der Lauf dauerhaft einen Befund, der keiner ist, und
+  // an einen dauerhaft roten Lauf gewoehnt man sich. Erkannt wird die Wache am
+  // Namen der Variablen:
+  //   const ziel = document.getElementById("changelog");
+  //   if (!ziel) return;
+  const gesichert = new Set(
+    [...js.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*document\.getElementById\("([^"]+)"\)\s*;?\s*\n\s*if\s*\(\s*!\1\s*\)/g)].map((m) => m[2])
+  );
+  const fehlend = [...new Set(gesucht)]
+    .filter((id) => !imHtml.has(id) && !imJs.has(id) && !gesichert.has(id));
   pruefe(`${seite}: jede gesuchte Id existiert`, fehlend.length === 0, fehlend.join(", "));
 }
 

@@ -525,6 +525,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8810", // Vereinsverwaltung (Dev-Server)
   "http://localhost:8819", // Fußballcamp (Dev-Server)
   "http://localhost:8821", // Kinderschutz (Dev-Server)
+  "http://localhost:8822", // Umfragen (Dev-Server)
   "https://sc1911heiligenstadt.github.io",
   // ⚠️ NICHT loeschen. Zwei Gruende, der zweite ist der wichtigere:
   //   1. Bis 2026-08 lag die ganze Flotte hier; PWAs mit eigenem SW-Cache rufen
@@ -1519,6 +1520,42 @@ export default {
       case "zertifizierung-datei-loeschen":
         return handleZertDateiLoeschen(request, body, env, authHeader, corsHeaders);
       // ---- Spieltagscrew (Handler am Dateiende) ----
+      // Umfragen. ⚠️ Bewusst OHNE DAV_APPS-Eintrag -- siehe den Block am
+      // Dateiende. Die beiden "oeffentlich"-Aktionen laufen ohne Auth: der
+      // Token im Link ist der Ausweis (Muster: fussballcamp-anmelde-info).
+      case "umfragen-load":
+        return handleUmLoad(request, env, authHeader, corsHeaders);
+      case "umfragen-speichern":
+        return handleUmSpeichern(request, body, env, authHeader, corsHeaders);
+      case "umfragen-loeschen":
+        return handleUmLoeschen(request, body, env, authHeader, corsHeaders);
+      case "umfragen-status":
+        return handleUmStatus(request, body, env, authHeader, corsHeaders, ctx);
+      case "umfragen-freigeben":
+        return handleUmFreigeben(request, body, env, authHeader, corsHeaders);
+      case "umfragen-freigabe-bitten":
+        return handleUmFreigabeBitten(request, body, env, authHeader, corsHeaders, ctx);
+      case "umfragen-antworten":
+        return handleUmAntworten(request, body, env, authHeader, corsHeaders);
+      case "umfragen-antwort-zuruecknehmen":
+        return handleUmAntwortZuruecknehmen(request, body, env, authHeader, corsHeaders);
+      case "umfragen-freitext-freigeben":
+        return handleUmFreitextFreigeben(request, body, env, authHeader, corsHeaders);
+      case "umfragen-erinnern":
+        return handleUmErinnern(request, body, env, authHeader, corsHeaders, ctx);
+      case "umfragen-gruppen":
+        return handleUmGruppen(request, env, authHeader, corsHeaders);
+      case "umfragen-bild-put":
+        return handleUmBildPut(request, body, env, authHeader, corsHeaders);
+      case "umfragen-bild-get":
+        return handleUmBildGet(request, body, env, authHeader, corsHeaders);
+      case "umfragen-bild-loeschen":
+        return handleUmBildLoeschen(request, body, env, authHeader, corsHeaders);
+      case "umfragen-oeffentlich-info":
+        return handleUmOeffentlichInfo(request, body, env, authHeader, corsHeaders);
+      case "umfragen-oeffentlich-absenden":
+        return handleUmOeffentlichAbsenden(request, body, env, authHeader, corsHeaders);
+
       case "spieltagscrew-load":
         return handleScLoad(request, env, authHeader, corsHeaders);
       case "spieltagscrew-eintragen":
@@ -12865,6 +12902,11 @@ const PUSH_ANLAESSE = [
     label: "Schulsport — Termine, die auf meine Rückmeldung warten" },
   { id: "spieltagscrew", titel: "Spieltagscrew", ziel: "/spieltagscrew/",
     label: "Spieltagscrew — offene Posten und Erinnerung an meinen Dienst" },
+  // ⚠️ Der Text zu diesem Anlass nennt nur den TITEL der Umfrage -- nie eine
+  // Frage und nie eine Antwort. Bei einer heiklen Frage waere schon die Frage
+  // selbst zu viel fuer einen Sperrbildschirm.
+  { id: "umfrage", titel: "Umfragen", ziel: "/umfragen/",
+    label: "Umfragen — neue Umfragen, Erinnerung vor dem Ende und das Ergebnis" },
   // Erinnerung kurz vor dem eigenen Punkt eines Ablaufplans. Ausgeloest vom
   // Fuenf-Minuten-Lauf in scheduled(), NICHT von einer Nutzerhandlung.
   { id: "ablaufplan", titel: "Ablaufplan", ziel: "/ablaufplan/",
@@ -23605,13 +23647,22 @@ async function fcMailSenden(env, empfaenger, betreff, text) {
         textContent: text
       })
     });
-    if (resp.ok) {
-      await versandNotieren(env, null, {
-        art: "mail", quelle: "fussballcamp", app: "fussballcamp",
-        von: "", anzahl: 1, ohne: 0
-      });
+    // ⚠️ Das Protokoll darf das Ergebnis NIE umdrehen. `versandNotieren` faengt
+    // heute alles selbst ab -- stuende der Aufruf aber weiter nackt im aeusseren
+    // try, machte ein spaeterer Wurf dort aus einer ZUGESTELLTEN Mail ein
+    // "nicht zugestellt": der naechtliche Lauf vermerkte einen Ausfall, den es
+    // nicht gab, und bei den Camp-Feedbackboegen steht der Merker
+    // `feedbackGebetenAm` dann schon -- die Familie bekaeme nie wieder Post.
+    const zugestellt = resp.ok;
+    if (zugestellt) {
+      try {
+        await versandNotieren(env, null, {
+          art: "mail", quelle: "fussballcamp", app: "fussballcamp",
+          von: "", anzahl: 1, ohne: 0
+        });
+      } catch (_) { /* Beiwerk -- die Mail ist raus */ }
     }
-    return resp.ok;
+    return zugestellt;
   } catch (_) {
     return false;
   }
@@ -25102,16 +25153,25 @@ async function ksMailSenden(env, empfaenger, betreff, text) {
         textContent: text
       })
     });
-    if (resp.ok) {
+    // ⚠️ Das Protokoll darf das Ergebnis NIE umdrehen. `versandNotieren` faengt
+    // heute alles selbst ab -- stuende der Aufruf aber weiter nackt im aeusseren
+    // try, machte ein spaeterer Wurf dort aus einer ZUGESTELLTEN Mail ein
+    // "nicht zugestellt": der naechtliche Lauf vermerkte einen Ausfall, den es
+    // nicht gab, und bei den Camp-Feedbackboegen steht der Merker
+    // `feedbackGebetenAm` dann schon -- die Familie bekaeme nie wieder Post.
+    const zugestellt = resp.ok;
+    if (zugestellt) {
       // ⚠️ Wie jede Kinderschutz-Nachricht INHALTSLOS -- und hier zusaetzlich
       // ohne Empfaenger: wer die Meldungen bekommt, ist selbst eine Auskunft,
       // die nicht in ein allgemeines Admin-Protokoll gehoert.
-      await versandNotieren(env, null, {
-        art: "mail", quelle: "kinderschutz", app: "kinderschutz",
-        von: "", anzahl: 1, ohne: 0
-      });
+      try {
+        await versandNotieren(env, null, {
+          art: "mail", quelle: "kinderschutz", app: "kinderschutz",
+          von: "", anzahl: 1, ohne: 0
+        });
+      } catch (_) { /* Beiwerk -- die Mail ist raus */ }
     }
-    return resp.ok;
+    return zugestellt;
   } catch (_) {
     return false;
   }
@@ -27174,4 +27234,1209 @@ async function vkPostausgangLauf(env, authHeader, execCtx) {
     }
   }
   return { gesendet };
+}
+
+// ===========================================================================
+// Umfragen
+// ===========================================================================
+//
+// ⚠️ "umfragen" steht mit ABSICHT NICHT in DAV_APPS. Es gibt keinen generischen
+// dav-load/dav-save-Weg auf diese Datei; jeder Zugriff läuft über die Aktionen
+// hier, die Rechte, Sichtbarkeit und Doppelstimmen selbst entscheiden. Vier
+// Gründe, von denen jeder einzelne reicht:
+//
+//   1. Antworten kommen von GÄSTEN OHNE LOGIN. dav-save verlangt einen
+//      Sitzungstoken; eine per Link geöffnete Seite hat keinen.
+//   2. "Geheim" ist nur geheim, wenn der Server den Namen gar nicht erst
+//      herausgibt. dav-load hätte die volle Datei an jeden ausgeliefert, der
+//      das Tool sehen darf — Ausblenden im Client wäre keine Zurückhaltung.
+//   3. Die Doppelstimmen-Bremse muss hier fallen. Ein Client, der seinen
+//      eigenen Bestand zurückschreibt, kann sie nicht halten.
+//   4. Freitext-Antworten sollen erst nach Freigabe sichtbar werden. Filtern
+//      kann nur, wer die ungefilterten Daten gar nicht erst herausgibt.
+//
+// Folge wie bei spieltagscrew und fussballcamp: der Client hält keinen eigenen
+// Bestand. Jede Änderung ist ein Aufruf, danach lädt er neu.
+//
+// ⚠️ Ebenso KEIN Eintrag in WRITE_REQUIRES_EDIT_PERMISSION nötig — dav-save
+// läuft für diese App-Id ohnehin in "Unbekannte App".
+
+const UMFRAGEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Umfragen/umfragen.json";
+const UMFRAGEN_DATEIEN = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Umfragen/dateien";
+
+const UM_MAX_UMFRAGEN = 300;
+const UM_MAX_FRAGEN = 40;
+const UM_MAX_OPTIONEN = 30;
+const UM_MAX_TITEL = 120;
+const UM_MAX_BESCHREIBUNG = 2000;
+const UM_MAX_FRAGE_TEXT = 300;
+const UM_MAX_OPTION_TEXT = 200;
+const UM_MAX_ANTWORT_TEXT = 1000;
+const UM_MAX_GAST_NAME = 80;
+const UM_MAX_ANTWORTEN = 5000;          // je Umfrage
+const UM_MAX_BILD_BYTES = 2 * 1024 * 1024;
+const UM_BILD_TYPEN = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const UM_ARTEN = new Set(["einzel", "mehrfach", "janein", "text", "note"]);
+const UM_SICHTEN = new Set(["verwaltung", "nachStimme", "nachEnde"]);
+const UM_NAMENSMODI = new Set(["aus", "optional", "pflicht"]);
+const UM_STATUS = new Set(["entwurf", "offen", "geschlossen"]);
+
+// Bremse gegen Massenabgaben aus einer Leitung, zusätzlich zum Fingerabdruck in
+// der Datei. Der Fingerabdruck verhindert die ZWEITE Stimme derselben Herkunft;
+// diese Map hier verhindert, dass jemand mit hundert Anfragen je Minute die
+// Nextcloud beschäftigt. Fail-open ohne CF-Connecting-IP wie alle Bremsen des
+// Hauses (siehe pwBremseOffen).
+const UM_GAST_ZAEHLER = new Map();
+const UM_GAST_MAX_PRO_STUNDE = 40;
+
+// Gelesen wird mit pwBremseOffen (die Funktion zählt nichts hoch und passt
+// deshalb). Hochgezählt wird hier eigens: pwBremseFehlschlag ist ausdrücklich
+// nur für FEHLversuche gedacht, wir zählen aber jede erfolgreiche Abgabe — den
+// gemeinsamen Helfer mit dieser anderen Bedeutung aufzurufen, wäre eine Falle
+// für den Nächsten, der ihn liest.
+function umGastZaehlen(request) {
+  const ip = bremseIp(request);
+  if (!ip) return;
+  const jetzt = Date.now();
+  const eintrag = UM_GAST_ZAEHLER.get(ip);
+  if (!eintrag || jetzt - eintrag.start > 3600000) {
+    UM_GAST_ZAEHLER.set(ip, { start: jetzt, n: 1 });
+    // Aufräumen, damit die Map in einem langlebigen Isolate nicht wächst.
+    if (UM_GAST_ZAEHLER.size > 500) {
+      for (const [k, v] of UM_GAST_ZAEHLER) {
+        if (jetzt - v.start > 3600000) UM_GAST_ZAEHLER.delete(k);
+      }
+    }
+    return;
+  }
+  eintrag.n++;
+}
+
+class UmFehler extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "UmFehler";
+    this.status = status || 400;
+  }
+}
+
+function umAntwortFehler(e, corsHeaders) {
+  if (e instanceof UmFehler) return json({ error: e.message }, e.status, corsHeaders);
+  if (e instanceof ConflictError) return json({ error: "Gleichzeitige Änderung — bitte erneut versuchen" }, 409, corsHeaders);
+  return json({ error: "Speicherfehler: " + (e && e.message ? e.message : "unbekannt") }, 502, corsHeaders);
+}
+
+// ---------- Sitzung und Rechte ----------
+
+async function umSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (session.art === USER_ART_SPIELER) {
+    return { fehler: json({ error: "Kein Zugriff auf die Umfragen" }, 403, corsHeaders) };
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!(await userMayAccessTool("umfragen", session, env, authHeader, Promise.resolve(config)))) {
+    return { fehler: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
+  }
+  const canEdit = await resolveEditPermission("umfragen", session, env, authHeader, Promise.resolve(config));
+  const canAdmin = await resolveAdminPermission("umfragen", session, env, authHeader, Promise.resolve(config));
+  return { session, config, canEdit, canAdmin, fehler: null };
+}
+
+function umVerlangeEdit(ctx) {
+  if (!ctx.canEdit) throw new UmFehler("Dafür fehlt dir das Bearbeiten-Recht", 403);
+}
+
+function umVerlangeAdmin(ctx) {
+  if (!ctx.canAdmin) throw new UmFehler("Dafür fehlt dir das Administrieren-Recht", 403);
+}
+
+// ---------- Dokument ----------
+
+function umLeer() {
+  return { version: 1, umfragen: [], lauf: null };
+}
+
+function umNormalisiere(doc) {
+  doc.version = doc.version || 1;
+  if (!Array.isArray(doc.umfragen)) doc.umfragen = [];
+  doc.umfragen.forEach((u) => {
+    if (!Array.isArray(u.fragen)) u.fragen = [];
+    u.fragen.forEach((f) => { if (!Array.isArray(f.optionen)) f.optionen = []; });
+    if (!Array.isArray(u.antworten)) u.antworten = [];
+    if (!Array.isArray(u.teilnehmer)) u.teilnehmer = [];
+    if (!Array.isArray(u.gaeste)) u.gaeste = [];
+    if (!Array.isArray(u.zielgruppen)) u.zielgruppen = [];
+    if (!u.freitextFreigabe || typeof u.freitextFreigabe !== "object") u.freitextFreigabe = {};
+  });
+  return doc;
+}
+
+// Read-modify-write mit If-Match und drei Versuchen — gleiches Muster wie
+// scMutiere. fn ändert das Dokument an Ort und Stelle und gibt zurück, was der
+// Client als Antwort sehen soll.
+async function umMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(UMFRAGEN_URL, authHeader, umLeer());
+    umNormalisiere(doc);
+    const ergebnis = await fn(doc) || {};
+    try {
+      await writeJson(UMFRAGEN_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new UmFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+function umHolen(doc, id) {
+  const u = doc.umfragen.find((x) => x && x.id === String(id || ""));
+  if (!u) throw new UmFehler("Umfrage nicht gefunden", 404);
+  return u;
+}
+
+function umHeuteBerlin() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+// Eine Umfrage mit Enddatum läuft bis zum ENDE dieses Kalendertages. Am
+// Stichtag selbst soll noch jemand antworten können.
+function umAbgelaufen(u) {
+  return !!u.endeAm && String(u.endeAm) < umHeuteBerlin();
+}
+
+// ---------- Wer gehört zur Zielgruppe ----------
+
+// Leere Liste heißt "alle Angemeldeten" — bewusst, nicht "niemand". Ein leeres
+// Feld ist im Zweifel eine vergessene Auswahl, und eine Umfrage, die niemand
+// sieht, fällt niemandem auf.
+function umInZielgruppe(u, session, usersDoc) {
+  if (!u.intern) return false;
+  if (!Array.isArray(u.zielgruppen) || !u.zielgruppen.length) return true;
+  if (session.isAdmin) return true;
+  const meine = getUserGroupIds(usersDoc, session.username);
+  return u.zielgruppen.some((g) => meine.indexOf(g) !== -1);
+}
+
+// Alle Personal-Konten der Zielgruppe. Grundlage für "12 von 18 haben
+// geantwortet" und für die Erinnerung.
+function umZielpersonen(u, usersDoc) {
+  const users = (usersDoc && usersDoc.users) || {};
+  const out = [];
+  for (const schluessel of Object.keys(users)) {
+    const nutzer = users[schluessel];
+    if (!nutzer || nutzer.archiviert || !istPersonal(nutzer)) continue;
+    const name = normalizeUsername(nutzer.username || schluessel);
+    if (!Array.isArray(u.zielgruppen) || !u.zielgruppen.length) { out.push(name); continue; }
+    if (nutzer.isAdmin) { out.push(name); continue; }
+    const meine = getUserGroupIds(usersDoc, schluessel);
+    if (u.zielgruppen.some((g) => meine.indexOf(g) !== -1)) out.push(name);
+  }
+  return out;
+}
+
+// ---------- Sichtbarkeit des Ergebnisses ----------
+
+// ⚠️ Diese Funktion ist die einzige Stelle, an der über die Herausgabe von
+// Antworten entschieden wird. Wer sie lockert, lockert sie für den internen
+// Client UND für die öffentliche Seite.
+function umErgebnisSichtbar(u, ctx, habeGeantwortet) {
+  if (ctx && ctx.canEdit) return true;
+  if (u.ergebnisSicht === "verwaltung") return false;
+  if (u.ergebnisSicht === "nachStimme") return !!habeGeantwortet;
+  return u.status === "geschlossen";   // "nachEnde"
+}
+
+// ---------- Laden ----------
+
+async function handleUmLoad(request, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+
+  const doc = umNormalisiere(await readJson(UMFRAGEN_URL, authHeader, umLeer()));
+  const usersDoc = ctx.session.usersDoc || await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const ich = ctx.session.username;
+
+  const namen = Object.create(null);
+  const merke = (u) => { if (u && !namen[u]) namen[u] = aufgabenAnzeigeName(usersDoc, u); };
+  merke(ich);
+
+  const sichtbare = [];
+  for (const u of doc.umfragen) {
+    const drin = umInZielgruppe(u, ctx.session, usersDoc);
+    const habeGeantwortet = u.teilnehmer.some((t) => t && t.username === ich);
+    const darfAntworten = u.status === "offen" && !umAbgelaufen(u) && drin;
+    const ergebnisFrei = umErgebnisSichtbar(u, ctx, habeGeantwortet);
+
+    // Wer weder mitmachen noch das Ergebnis sehen darf, erfährt von der Umfrage
+    // gar nichts. Ein Entwurf ist ausschließlich Sache der Bearbeitenden.
+    if (!ctx.canEdit && !darfAntworten && !(ergebnisFrei && drin)) continue;
+
+    sichtbare.push(umProjektion(u, ctx, {
+      ich, usersDoc, merke, drin, habeGeantwortet, darfAntworten, ergebnisFrei
+    }));
+  }
+
+  const gruppen = ctx.canEdit
+    ? Object.values(usersDoc.groups || {}).map((g) => ({
+        id: g.id, name: g.name,
+        anzahl: Array.isArray(g.memberUsernames) ? g.memberUsernames.length : 0
+      }))
+    : [];
+
+  return json({
+    umfragen: sichtbare,
+    gruppen,
+    namen,
+    // Der Lauf-Status ist eine Betriebsangabe und geht nur an die Verwaltung.
+    lauf: ctx.canAdmin ? (doc.lauf || null) : null,
+    me: {
+      username: ctx.session.username, isAdmin: !!ctx.session.isAdmin,
+      canEdit: ctx.canEdit, canAdmin: ctx.canAdmin
+    }
+  }, 200, corsHeaders);
+}
+
+// ⚠️ DER KERNPUNKT. Hier entscheidet sich, was den Server verlässt. Wer daran
+// etwas ändert, prüft alle vier Zusagen gegen:
+//   * Ein Nur-Seher bekommt Antworten nur, wenn das Ergebnis freigegeben ist.
+//   * Bei GEHEIM trägt keine Antwort einen Nutzernamen — auch nicht für Admins.
+//   * Freitexte gehen nur an Bearbeitende oder nach ausdrücklicher Freigabe.
+//   * Der Link-Token ist ein Geheimnis und geht nur an Administrierende.
+function umProjektion(u, ctx, o) {
+  const p = {
+    id: u.id,
+    titel: u.titel,
+    beschreibung: u.beschreibung || "",
+    kopfbild: u.kopfbild || null,
+    status: u.status,
+    intern: !!u.intern,
+    extern: !!u.extern,
+    willExtern: !!u.willExtern,
+    geheim: !!u.geheim,
+    endeAm: u.endeAm || "",
+    ergebnisSicht: u.ergebnisSicht,
+    externName: u.externName,
+    fragenAnzahl: u.fragen.length,
+    stimmen: u.antworten.length,
+    habeGeantwortet: o.habeGeantwortet,
+    darfAntworten: o.darfAntworten,
+    darfErgebnisSehen: o.ergebnisFrei,
+    freigabeAngefragt: !!u.freigabeAngefragt
+  };
+
+  // Die Fragen braucht, wer antworten oder das Ergebnis lesen darf — und wer
+  // bearbeitet.
+  if (o.darfAntworten || o.ergebnisFrei || ctx.canEdit) p.fragen = u.fragen;
+
+  if (ctx.canEdit) {
+    p.zielgruppen = u.zielgruppen;
+    p.erstelltAm = u.erstelltAm;
+    p.erstelltVon = u.erstelltVon;
+    p.freitextFreigabe = u.freitextFreigabe;
+    p.eingeladen = u.intern ? umZielpersonen(u, o.usersDoc).length : 0;
+    if (u.erstelltVon) o.merke(u.erstelltVon);
+  }
+
+  // ⚠️ Der Link-Token ist der Ausweis für JEDEN, der ihn hat. Er geht nur an
+  // Administrierende — dieselbe Überlegung wie beim Eltern-Token im
+  // Fußballcamp.
+  if (ctx.canAdmin && u.extern) p.token = u.token || "";
+
+  // Die eigene Antwort zum Ändern. Nur bei einer NAMENTLICHEN Umfrage; bei
+  // einer geheimen findet der Server sie gar nicht wieder.
+  if (!u.geheim && o.habeGeantwortet) {
+    const meine = u.antworten.find((a) => a && a.herkunft === "intern" && a.username === o.ich);
+    if (meine) p.meineAntwort = meine.werte;
+  }
+
+  if (o.ergebnisFrei) p.antworten = u.antworten.map((a) => umAntwortProjektion(u, a, ctx, o));
+
+  return p;
+}
+
+function umAntwortProjektion(u, a, ctx, o) {
+  const werte = {};
+  for (const f of u.fragen) {
+    const wert = a.werte ? a.werte[f.id] : undefined;
+    if (wert === undefined) continue;
+    if (f.art === "text") {
+      // ⚠️ Freitext NIE automatisch. Ein Nur-Seher bekommt ihn ausschließlich,
+      // wenn die Verwaltung genau diese Antwort freigegeben hat — der erste
+      // Blödsinn-Vorschlag soll nicht von selbst auf der Vereinsseite stehen.
+      const frei = Array.isArray(u.freitextFreigabe[f.id]) ? u.freitextFreigabe[f.id] : [];
+      if (!ctx.canEdit && frei.indexOf(a.id) === -1) continue;
+    }
+    werte[f.id] = wert;
+  }
+
+  const out = { id: a.id, herkunft: a.herkunft, am: a.am, werte };
+  // ⚠️ Bei GEHEIM verlässt der Nutzername den Server nicht. Er steht in dieser
+  // Datei ohnehin nicht an der Antwort (siehe handleUmAntworten) — diese Zeile
+  // ist die zweite Sicherung für den Fall, dass irgendwann doch einer landet.
+  if (!u.geheim) {
+    if (a.username) { out.username = a.username; o.merke(a.username); out.name = aufgabenAnzeigeName(o.usersDoc, a.username); }
+    else if (a.name) out.name = a.name;
+  }
+  return out;
+}
+
+// ---------- Umfrage anlegen und ändern ----------
+
+function umPruefeUndBaue(roh, alt) {
+  const titel = capStr(roh.titel, UM_MAX_TITEL);
+  if (!titel) throw new UmFehler("Die Umfrage braucht einen Titel");
+
+  const intern = !!roh.intern;
+  const willExtern = !!roh.willExtern;
+  if (!intern && !willExtern) throw new UmFehler("Wähle mindestens einen Weg: intern, per Link oder beides");
+
+  const endeAm = /^\d{4}-\d{2}-\d{2}$/.test(String(roh.endeAm || "")) ? String(roh.endeAm) : "";
+  const ergebnisSicht = UM_SICHTEN.has(roh.ergebnisSicht) ? roh.ergebnisSicht : "nachEnde";
+  const externName = UM_NAMENSMODI.has(roh.externName) ? roh.externName : "aus";
+
+  const fragen = Array.isArray(roh.fragen) ? roh.fragen : [];
+  if (!fragen.length) throw new UmFehler("Die Umfrage braucht mindestens eine Frage");
+  if (fragen.length > UM_MAX_FRAGEN) throw new UmFehler(`Mehr als ${UM_MAX_FRAGEN} Fragen gehen nicht`);
+
+  const gebaute = fragen.map((f, i) => {
+    const art = UM_ARTEN.has(f.art) ? f.art : "einzel";
+    const text = capStr(f.text, UM_MAX_FRAGE_TEXT);
+    if (!text) throw new UmFehler(`Frage ${i + 1} hat keinen Text`);
+    const eintrag = {
+      id: capStr(f.id, 60) || crypto.randomUUID(),
+      text, art, pflicht: !!f.pflicht, optionen: []
+    };
+    if (art === "einzel" || art === "mehrfach") {
+      const rohOpt = (Array.isArray(f.optionen) ? f.optionen : []).filter((o) => capStr(o && o.text, UM_MAX_OPTION_TEXT));
+      if (rohOpt.length < 2) throw new UmFehler(`Frage ${i + 1} braucht mindestens zwei Antwortmöglichkeiten`);
+      if (rohOpt.length > UM_MAX_OPTIONEN) throw new UmFehler(`Frage ${i + 1} hat mehr als ${UM_MAX_OPTIONEN} Antwortmöglichkeiten`);
+      eintrag.optionen = rohOpt.map((o) => ({
+        id: capStr(o.id, 60) || crypto.randomUUID(),
+        text: capStr(o.text, UM_MAX_OPTION_TEXT),
+        bild: umBildFeld(o.bild)
+      }));
+    }
+    return eintrag;
+  });
+
+  return {
+    titel,
+    beschreibung: capStr(roh.beschreibung, UM_MAX_BESCHREIBUNG),
+    kopfbild: umBildFeld(roh.kopfbild),
+    fragen: gebaute,
+    intern,
+    zielgruppen: intern && Array.isArray(roh.zielgruppen) ? roh.zielgruppen.map((g) => capStr(g, 60)).filter(Boolean).slice(0, 40) : [],
+    geheim: intern ? !!roh.geheim : false,
+    willExtern,
+    externName,
+    ergebnisSicht,
+    endeAm,
+    // extern/token bleiben in der Hand der Administrieren-Stufe und werden hier
+    // NIE aus dem Körper übernommen — sonst wäre die Freigabe-Schranke ein
+    // Schild ohne Tür.
+    extern: alt ? !!alt.extern : false,
+    token: alt ? (alt.token || "") : ""
+  };
+}
+
+function umBildFeld(roh) {
+  if (!roh || typeof roh !== "object") return null;
+  const id = capStr(roh.id, 60);
+  if (!/^[0-9a-f-]{10,60}$/i.test(id)) return null;
+  return { id, contentType: capStr(roh.contentType, 60) || "application/octet-stream" };
+}
+
+async function handleUmSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    umVerlangeEdit(ctx);
+    const roh = body.umfrage || {};
+    const id = capStr(roh.id, 60);
+
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      if (!id) {
+        if (doc.umfragen.length >= UM_MAX_UMFRAGEN) throw new UmFehler("Es sind zu viele Umfragen angelegt");
+        const neu = umPruefeUndBaue(roh, null);
+        neu.id = crypto.randomUUID();
+        neu.status = "entwurf";
+        neu.erstelltAm = new Date().toISOString();
+        neu.erstelltVon = ctx.session.username;
+        neu.antworten = []; neu.teilnehmer = []; neu.gaeste = [];
+        neu.freitextFreigabe = {};
+        neu.freigabeAngefragt = false;
+        doc.umfragen.push(neu);
+        return { id: neu.id };
+      }
+
+      const u = umHolen(doc, id);
+      const gebaut = umPruefeUndBaue(roh, u);
+
+      // ⚠️ Sobald geantwortet wurde, ist die STRUKTUR eingefroren. Wer einer
+      // laufenden Umfrage nachträglich eine Antwortmöglichkeit unterschiebt,
+      // macht die bereits abgegebenen Stimmen unvergleichbar — dieselbe
+      // Überlegung wie bei den Umfrage-Terminen im Vereinskalender. Titel,
+      // Beschreibung, Enddatum und die Ergebnis-Sichtbarkeit bleiben frei.
+      if (u.antworten.length && !umStrukturGleich(u, gebaut)) {
+        throw new UmFehler("Auf diese Umfrage wurde schon geantwortet — Fragen und Antwortmöglichkeiten lassen sich nicht mehr ändern", 409);
+      }
+
+      u.titel = gebaut.titel;
+      u.beschreibung = gebaut.beschreibung;
+      u.kopfbild = gebaut.kopfbild;
+      u.endeAm = gebaut.endeAm;
+      u.ergebnisSicht = gebaut.ergebnisSicht;
+      u.externName = gebaut.externName;
+      if (!u.antworten.length) {
+        u.fragen = gebaut.fragen;
+        u.intern = gebaut.intern;
+        u.zielgruppen = gebaut.zielgruppen;
+        u.geheim = gebaut.geheim;
+      }
+      u.willExtern = gebaut.willExtern;
+      // Der Wunsch "nicht mehr nach außen" nimmt eine bestehende Freigabe mit —
+      // sonst bliebe der Link gültig, obwohl der Haken aus ist.
+      if (!gebaut.willExtern && u.extern) { u.extern = false; u.token = ""; }
+      return { id: u.id };
+    });
+
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Vergleicht nur, was eingefroren ist: Fragen samt Art, Pflicht und
+// Antwortmöglichkeiten, dazu intern/geheim/Zielgruppe. Bilder und Reihenfolge
+// zählen mit — ein verschobenes Bild ändert für den Antwortenden die Frage.
+function umStrukturGleich(alt, neu) {
+  const knapp = (u) => JSON.stringify({
+    intern: !!u.intern, geheim: !!u.geheim, zielgruppen: (u.zielgruppen || []).slice().sort(),
+    fragen: (u.fragen || []).map((f) => ({
+      id: f.id, text: f.text, art: f.art, pflicht: !!f.pflicht,
+      optionen: (f.optionen || []).map((o) => ({ id: o.id, text: o.text, bild: o.bild ? o.bild.id : null }))
+    }))
+  });
+  return knapp(alt) === knapp(neu);
+}
+
+async function handleUmLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    umVerlangeAdmin(ctx);
+    let bilder = [];
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const i = doc.umfragen.findIndex((x) => x && x.id === capStr(body.id, 60));
+      if (i === -1) throw new UmFehler("Umfrage nicht gefunden", 404);
+      bilder = umBilderVon(doc.umfragen[i]);
+      doc.umfragen.splice(i, 1);
+      return {};
+    });
+    // ⚠️ Erst nach dem erfolgreichen Schreiben. Andersherum wären die Bilder
+    // weg und die Umfrage stünde noch da — mit lauter kaputten Verweisen.
+    for (const b of bilder) await umBildLoeschen(b, authHeader).catch(() => {});
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+function umBilderVon(u) {
+  const ids = [];
+  if (u.kopfbild && u.kopfbild.id) ids.push(u.kopfbild.id);
+  (u.fragen || []).forEach((f) => (f.optionen || []).forEach((o) => {
+    if (o.bild && o.bild.id) ids.push(o.bild.id);
+  }));
+  return ids;
+}
+
+// ---------- Status ----------
+
+async function handleUmStatus(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    umVerlangeEdit(ctx);
+    const status = String(body.status || "");
+    if (!UM_STATUS.has(status)) throw new UmFehler("Unbekannter Zustand");
+
+    let melden = null;
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const u = umHolen(doc, body.id);
+      if (u.status === status) return { id: u.id };
+      if (status === "offen" && !u.fragen.length) throw new UmFehler("Eine Umfrage ohne Frage lässt sich nicht öffnen");
+      if (status === "offen" && umAbgelaufen(u)) throw new UmFehler("Das Enddatum liegt zurück — bitte erst ein neues setzen");
+
+      const vorher = u.status;
+      u.status = status;
+      if (status === "offen") {
+        u.geoeffnetAm = new Date().toISOString();
+        // Nur beim ERSTEN Öffnen benachrichtigen. Ein versehentlich
+        // geschlossenes und wieder geöffnetes Fenster darf nicht ein zweites
+        // Mal alle Handys wecken.
+        if (vorher === "entwurf" && u.intern) melden = { umfrage: u };
+      }
+      if (status === "geschlossen") {
+        u.geschlossenAm = new Date().toISOString();
+        // ⚠️ Die Fingerabdrücke der Gäste fliegen hier raus. Sie waren
+        // ausschließlich die Doppelstimmen-Bremse; ohne offene Umfrage haben
+        // sie keinen Zweck mehr — und der Datenschutztext verspricht genau das.
+        u.gaeste = [];
+      }
+      return { id: u.id };
+    });
+
+    if (melden) await umMeldeOeffnung(melden.umfrage, env, authHeader, execCtx);
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Freigabe nach außen ----------
+
+async function handleUmFreigeben(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    // ⚠️ Ausdrücklich die Administrieren-Stufe. Eine Umfrage nach außen ist der
+    // Verein, der öffentlich spricht — das ist etwas anderes, als intern die
+    // Trainer zu fragen (Michel-Entscheidung 09.09.2026).
+    umVerlangeAdmin(ctx);
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const u = umHolen(doc, body.id);
+      if (!body.frei) {
+        u.extern = false;
+        u.token = "";
+        return { id: u.id, token: "" };
+      }
+      if (!u.token || body.neu) u.token = umNeuerToken();
+      u.extern = true;
+      u.willExtern = true;
+      u.freigabeAngefragt = false;
+      u.freigabeAm = new Date().toISOString();
+      u.freigabeVon = ctx.session.username;
+      return { id: u.id, token: u.token };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// 160 Bit aus dem Zufallsgenerator, base36. Lang genug, dass Raten aussichtslos
+// ist, und kurz genug für einen QR-Code auf einem Aushang.
+function umNeuerToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  let s = "";
+  for (const b of bytes) s += b.toString(36).padStart(2, "0");
+  return s.slice(0, 28);
+}
+
+async function handleUmFreigabeBitten(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    umVerlangeEdit(ctx);
+    let titel = "";
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const u = umHolen(doc, body.id);
+      if (u.extern) throw new UmFehler("Diese Umfrage ist bereits nach außen freigegeben");
+      u.willExtern = true;
+      u.freigabeAngefragt = true;
+      titel = u.titel;
+      return { id: u.id };
+    });
+
+    // ⚠️ Ein Rechte-Gate ohne Gegenstück ist ein Weg ins Nichts. Die Bitte steht
+    // im Verwaltungs-Tab UND weckt die Administrierenden — sonst fragt ein
+    // Trainer und niemand erfährt davon.
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const empfaenger = await pushEmpfaengerMitRecht("umfragen", usersDoc, env, authHeader, ctx.session.username, true);
+    pushSenden(env, authHeader, execCtx, empfaenger, "umfrage",
+      `„${titel}“ wartet auf die Freigabe nach außen. In den Umfragen kannst du sie freigeben.`,
+      { quelle: "umfrage-freigabe", von: ctx.session.username });
+
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Antworten (intern) ----------
+
+// ⚠️ Bewusst OHNE Bearbeiten-Recht. Vorbild ist handleKmSelf im selben Worker:
+// der Aufruf schreibt ausschließlich die EIGENE Antwort, der Nutzername kommt
+// aus dem signierten Token und nie aus dem Körper. Die Flottenregel
+// "Selbsteintrag braucht Bearbeiten" (2026-07-24) zielt auf Einträge, die
+// ANDERE betreffen (Postenbesetzung) — eine Umfrage, an der nur Bearbeitende
+// teilnehmen dürfen, wäre keine Umfrage.
+async function handleUmAntworten(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    const usersDoc = ctx.session.usersDoc || await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const ich = ctx.session.username;
+
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const u = umHolen(doc, body.id);
+      if (!u.intern) throw new UmFehler("Diese Umfrage läuft nicht intern", 400);
+      if (u.status !== "offen") throw new UmFehler("Diese Umfrage nimmt keine Antworten mehr an", 409);
+      if (umAbgelaufen(u)) throw new UmFehler("Die Frist für diese Umfrage ist abgelaufen", 409);
+      if (!umInZielgruppe(u, ctx.session, usersDoc)) throw new UmFehler("Diese Umfrage richtet sich nicht an dich", 403);
+
+      const werte = umWertePruefen(u, body.werte);
+      const schon = u.teilnehmer.some((t) => t && t.username === ich);
+
+      if (schon) {
+        // ⚠️ Ändern geht nur bei einer NAMENTLICHEN Umfrage. Bei einer geheimen
+        // findet der Server die eigene Antwort gar nicht wieder — Name und
+        // Inhalt liegen getrennt, und genau das ist die Zusage.
+        if (u.geheim) throw new UmFehler("Diese Umfrage ist geheim — eine abgegebene Stimme lässt sich nicht mehr ändern", 409);
+        const meine = u.antworten.find((a) => a && a.herkunft === "intern" && a.username === ich);
+        if (!meine) throw new UmFehler("Deine frühere Antwort ist nicht mehr auffindbar", 409);
+        meine.werte = werte;
+        meine.am = new Date().toISOString();
+        return { geaendert: true };
+      }
+
+      if (u.antworten.length >= UM_MAX_ANTWORTEN) throw new UmFehler("Diese Umfrage hat die Höchstzahl an Antworten erreicht", 409);
+
+      const eintrag = { id: crypto.randomUUID(), herkunft: "intern", am: new Date().toISOString(), werte };
+      // ⚠️ Bei GEHEIM kommt der Nutzername NICHT an die Antwort. Er steht allein
+      // in teilnehmer[] — das ist die Trennung, auf die sich die Leute
+      // verlassen. Wer hier ein `username` ergänzt, hebt sie auf.
+      if (!u.geheim) eintrag.username = ich;
+      u.antworten.push(eintrag);
+      u.teilnehmer.push({ username: ich, am: eintrag.am });
+      return { geaendert: false };
+    });
+
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+async function handleUmAntwortZuruecknehmen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    const ich = ctx.session.username;
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const u = umHolen(doc, body.id);
+      if (u.status !== "offen") throw new UmFehler("Die Umfrage ist geschlossen", 409);
+      if (u.geheim) throw new UmFehler("Diese Umfrage ist geheim — eine abgegebene Stimme lässt sich nicht mehr zurücknehmen", 409);
+      const i = u.antworten.findIndex((a) => a && a.herkunft === "intern" && a.username === ich);
+      if (i === -1) throw new UmFehler("Von dir liegt keine Antwort vor", 404);
+      u.antworten.splice(i, 1);
+      u.teilnehmer = u.teilnehmer.filter((t) => !(t && t.username === ich));
+      // Freigaben, die auf diese Antwort zeigten, mitnehmen — ein verwaister
+      // Verweis würde die Freigabeliste stillschweigend kürzer machen.
+      Object.keys(u.freitextFreigabe).forEach((fid) => {
+        u.freitextFreigabe[fid] = (u.freitextFreigabe[fid] || []).filter((aid) => u.antworten.some((a) => a.id === aid));
+      });
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Prüft die eingegangenen Werte gegen die Fragen der Umfrage und wirft alles
+// weg, was dort nicht hingehört. ⚠️ Das ist die einzige Stelle, an der geprüft
+// wird — der Client tut es nur der Freundlichkeit halber, und die öffentliche
+// Seite lässt sich umgehen.
+function umWertePruefen(u, roh) {
+  const rein = (roh && typeof roh === "object") ? roh : {};
+  const out = {};
+  for (const f of u.fragen) {
+    const wert = rein[f.id];
+    let sauber;
+
+    if (f.art === "mehrfach") {
+      const ids = Array.isArray(wert) ? wert : [];
+      const gueltig = ids.map((x) => capStr(x, 60)).filter((x) => f.optionen.some((o) => o.id === x));
+      // Doppelte Kennungen zählten sonst zweimal — dieselbe Möglichkeit darf
+      // je Antwort nur einmal auftauchen.
+      sauber = Array.from(new Set(gueltig));
+      if (!sauber.length) sauber = undefined;
+    } else if (f.art === "einzel") {
+      const id = capStr(wert, 60);
+      sauber = f.optionen.some((o) => o.id === id) ? id : undefined;
+    } else if (f.art === "janein") {
+      sauber = (wert === "ja" || wert === "nein") ? wert : undefined;
+    } else if (f.art === "note") {
+      const n = Number(wert);
+      sauber = (Number.isFinite(n) && n >= 1 && n <= 5) ? String(Math.round(n)) : undefined;
+    } else {
+      const t = capStr(wert, UM_MAX_ANTWORT_TEXT);
+      sauber = t || undefined;
+    }
+
+    if (f.pflicht && sauber === undefined) {
+      throw new UmFehler(`Die Frage „${f.text}“ muss beantwortet werden`, 400);
+    }
+    if (sauber !== undefined) out[f.id] = sauber;
+  }
+  return out;
+}
+
+// ---------- Freitext freigeben ----------
+
+async function handleUmFreitextFreigeben(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    umVerlangeEdit(ctx);
+    const rein = (body.freigaben && typeof body.freigaben === "object") ? body.freigaben : {};
+    const ergebnis = await umMutiere(authHeader, (doc) => {
+      const u = umHolen(doc, body.id);
+      const neu = {};
+      for (const f of u.fragen) {
+        if (f.art !== "text") continue;
+        const ids = Array.isArray(rein[f.id]) ? rein[f.id] : [];
+        // Nur Antworten, die es wirklich gibt. Eine erfundene Kennung soll
+        // nicht als Freigabe stehen bleiben und später eine fremde Antwort
+        // öffnen, die zufällig dieselbe Kennung bekommt.
+        neu[f.id] = ids.map((x) => capStr(x, 60)).filter((x) => u.antworten.some((a) => a.id === x));
+      }
+      u.freitextFreigabe = neu;
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Gruppen ----------
+
+async function handleUmGruppen(request, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  if (!ctx.canEdit) return json({ gruppen: [] }, 200, corsHeaders);
+  const usersDoc = ctx.session.usersDoc || await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  return json({
+    gruppen: Object.values(usersDoc.groups || {}).map((g) => ({
+      id: g.id, name: g.name,
+      anzahl: Array.isArray(g.memberUsernames) ? g.memberUsernames.length : 0
+    }))
+  }, 200, corsHeaders);
+}
+
+// ---------- Bilder ----------
+//
+// Eigene Datei-Aktionen statt dav-file-put/-get: die generischen verlangen
+// einen DAV_APPS-Eintrag, den diese App bewusst nicht hat. Und lesen muss ein
+// GAST können — dav-file-get verlangt eine Sitzung.
+
+function umBildUrl(bildId) {
+  return `${UMFRAGEN_DATEIEN}/${encodeURIComponent(bildId)}`;
+}
+
+async function handleUmBildPut(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  if (!ctx.canEdit) return json({ error: "Dafür fehlt dir das Bearbeiten-Recht" }, 403, corsHeaders);
+
+  const ctype = capStr(body.contentType, 60);
+  if (!UM_BILD_TYPEN.has(ctype)) return json({ error: "Nur JPG, PNG, WEBP oder GIF" }, 400, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Bild-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (!bytes.length) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > UM_MAX_BILD_BYTES) return json({ error: "Das Bild ist größer als 2 MB" }, 413, corsHeaders);
+
+  const bildId = crypto.randomUUID();
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(umBildUrl(bildId), { method: "PUT", headers, body: bytes });
+  // 409/404 = ein Elternordner fehlt noch. Beim ersten Bild einer frischen App
+  // fehlen gleich zwei Ebenen (App-Ordner und "dateien") — deshalb 404
+  // mitbehandeln, gleicher MKCOL-Autofix wie bei dav-file-put.
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(UMFRAGEN_DATEIEN, authHeader, 0);
+    resp = await fetch(umBildUrl(bildId), { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true, bildId }, 200, corsHeaders);
+}
+
+async function handleUmBildGet(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  return umBildAusliefern(capStr(body.bildId, 60), authHeader, corsHeaders);
+}
+
+async function umBildAusliefern(bildId, authHeader, corsHeaders) {
+  if (!/^[0-9a-f-]{10,60}$/i.test(bildId)) return json({ error: "Ungültige Bild-Kennung" }, 400, corsHeaders);
+  let resp;
+  try {
+    resp = await fetch(umBildUrl(bildId), { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Bild nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+  const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
+  return new Response(resp.body, { status: 200, headers: dateiKopfzeilen(corsHeaders, ctype) });
+}
+
+async function handleUmBildLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  if (!ctx.canEdit) return json({ error: "Dafür fehlt dir das Bearbeiten-Recht" }, 403, corsHeaders);
+  await umBildLoeschen(capStr(body.bildId, 60), authHeader);
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+async function umBildLoeschen(bildId, authHeader) {
+  if (!/^[0-9a-f-]{10,60}$/i.test(bildId)) return;
+  const resp = await fetch(umBildUrl(bildId), { method: "DELETE", headers: { Authorization: authHeader } });
+  // 204/200 = gelöscht, 404 = war schon weg. Beides ist Erfolg fürs Aufräumen.
+  if (!resp.ok && resp.status !== 404) throw new UmFehler(`Nextcloud DELETE ${resp.status}`, 502);
+}
+
+// ---------- Öffentlich: die Seite u.html ----------
+//
+// ⚠️ Diese beiden Aktionen laufen OHNE Authorization-Kopf. Der Ausweis ist der
+// Token im Link. Sie geben deshalb nur das heraus, was auf einem Aushang stehen
+// könnte — nie eine Antwortliste, nie einen Nutzernamen, nie einen Zählstand,
+// den die Umfrage nicht ausdrücklich freigibt.
+
+function umPerToken(doc, token) {
+  const t = capStr(token, 60);
+  if (!t) throw new UmFehler("Die Umfrage gibt es nicht", 404);
+  const u = doc.umfragen.find((x) => x && x.extern && x.token && x.token === t);
+  if (!u) throw new UmFehler("Die Umfrage gibt es nicht", 404);
+  return u;
+}
+
+// Der Fingerabdruck. ⚠️ Die Internet-Adresse selbst wird NIE gespeichert — nur
+// diese Prüfsumme, und die auch nur bis zum Schließen der Umfrage. Der Pfeffer
+// aus SESSION_SECRET verhindert, dass jemand mit einer Liste von Adressen die
+// gespeicherten Werte nachrechnen kann; die Umfrage-Kennung verhindert, dass
+// sich derselbe Gast über mehrere Umfragen hinweg wiedererkennen lässt.
+async function umFingerabdruck(request, u, env) {
+  const ip = bremseIp(request);
+  if (!ip) return "";
+  const roh = new TextEncoder().encode(`${ip}|${u.id}|${env.SESSION_SECRET || ""}`);
+  const hash = await crypto.subtle.digest("SHA-256", roh);
+  const bytes = new Uint8Array(hash).slice(0, 16);
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  return hex;
+}
+
+async function handleUmOeffentlichInfo(request, body, env, authHeader, corsHeaders) {
+  try {
+    const doc = umNormalisiere(await readJson(UMFRAGEN_URL, authHeader, umLeer()));
+    const u = umPerToken(doc, body.token);
+    if (u.status === "entwurf") throw new UmFehler("Die Umfrage gibt es nicht", 404);
+    if (u.status !== "offen") throw new UmFehler("Diese Umfrage ist inzwischen geschlossen. Vielen Dank für dein Interesse.", 410);
+    if (umAbgelaufen(u)) throw new UmFehler("Die Frist für diese Umfrage ist abgelaufen. Vielen Dank für dein Interesse.", 410);
+
+    const fp = await umFingerabdruck(request, u, env);
+    const schon = !!fp && u.gaeste.some((g) => g && g.fp === fp);
+
+    return json({
+      umfrage: umOeffentlichSicht(u),
+      schonAbgestimmt: schon,
+      // Der Zwischenstand nur, wenn die Umfrage ihn freigibt UND von hier schon
+      // abgestimmt wurde. Sonst beeinflusste er genau die Stimme, die noch
+      // aussteht.
+      ergebnis: (schon && umErgebnisSichtbar(u, null, true)) ? umOeffentlichErgebnis(u) : null
+    }, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// Was ein Gast von der Umfrage zu sehen bekommt. Bewusst eine eigene Funktion
+// und keine Filterung der vollen Umfrage: hier steht Feld für Feld, was
+// herausgeht — ein neu hinzugefügtes Feld ist damit standardmäßig NICHT dabei.
+function umOeffentlichSicht(u) {
+  return {
+    titel: u.titel,
+    beschreibung: u.beschreibung || "",
+    kopfbild: u.kopfbild || null,
+    endeAm: u.endeAm || "",
+    externName: u.externName || "aus",
+    fragen: u.fragen.map((f) => ({
+      id: f.id, text: f.text, art: f.art, pflicht: !!f.pflicht,
+      optionen: (f.optionen || []).map((o) => ({ id: o.id, text: o.text, bild: o.bild || null }))
+    }))
+  };
+}
+
+// Fertig gerechnete Zählwerke, nie die einzelnen Antworten. Freitexte nur, wenn
+// die Verwaltung sie ausdrücklich freigegeben hat.
+function umOeffentlichErgebnis(u) {
+  const fragen = u.fragen.map((f) => {
+    const gegeben = u.antworten.filter((a) => a.werte && a.werte[f.id] !== undefined);
+    const eintrag = { text: f.text, gesamt: gegeben.length, werte: [] };
+
+    if (f.art === "text") {
+      const frei = Array.isArray(u.freitextFreigabe[f.id]) ? u.freitextFreigabe[f.id] : [];
+      eintrag.freitexte = gegeben.filter((a) => frei.indexOf(a.id) !== -1).map((a) => a.werte[f.id]);
+      return eintrag;
+    }
+    if (f.art === "janein") {
+      eintrag.werte = [
+        { text: "Ja", anzahl: gegeben.filter((a) => a.werte[f.id] === "ja").length },
+        { text: "Nein", anzahl: gegeben.filter((a) => a.werte[f.id] === "nein").length }
+      ];
+      return eintrag;
+    }
+    if (f.art === "note") {
+      const noten = gegeben.map((a) => Number(a.werte[f.id])).filter((n) => Number.isFinite(n));
+      eintrag.schnitt = noten.length ? (noten.reduce((s, n) => s + n, 0) / noten.length).toFixed(2) : null;
+      eintrag.werte = [1, 2, 3, 4, 5].map((n) => ({ text: "Note " + n, anzahl: noten.filter((x) => x === n).length }));
+      return eintrag;
+    }
+    eintrag.werte = (f.optionen || []).map((o) => ({
+      text: o.text,
+      anzahl: gegeben.filter((a) => {
+        const w = a.werte[f.id];
+        return Array.isArray(w) ? w.indexOf(o.id) !== -1 : w === o.id;
+      }).length
+    }));
+    return eintrag;
+  });
+  return { stimmen: u.antworten.length, fragen };
+}
+
+async function handleUmOeffentlichAbsenden(request, body, env, authHeader, corsHeaders) {
+  try {
+    // Erst die Burst-Bremse, dann alles andere: sie soll greifen, BEVOR der
+    // Aufruf die Nextcloud beschäftigt. Fail-open ohne CF-Connecting-IP, wie
+    // alle Bremsen des Hauses.
+    if (!pwBremseOffen(UM_GAST_ZAEHLER, UM_GAST_MAX_PRO_STUNDE, request)) {
+      throw new UmFehler("Aus deinem Netz kamen sehr viele Antworten. Bitte versuche es später noch einmal.", 429);
+    }
+
+    // Der Fingerabdruck braucht die Umfrage-Kennung, die Kennung braucht ein
+    // Lesen — deshalb einmal lesen, bevor der eigentliche Schreibvorgang läuft.
+    const vorab = umNormalisiere(await readJson(UMFRAGEN_URL, authHeader, umLeer()));
+    const uVorab = umPerToken(vorab, body.token);
+    const fp = await umFingerabdruck(request, uVorab, env);
+
+    let ergebnisDaten = null;
+    const antwort = await umMutiere(authHeader, (doc) => {
+      const u = umPerToken(doc, body.token);
+      if (u.status !== "offen") throw new UmFehler("Diese Umfrage ist inzwischen geschlossen.", 410);
+      if (umAbgelaufen(u)) throw new UmFehler("Die Frist für diese Umfrage ist abgelaufen.", 410);
+      if (u.antworten.length >= UM_MAX_ANTWORTEN) throw new UmFehler("Diese Umfrage hat die Höchstzahl an Antworten erreicht.", 409);
+      if (fp && u.gaeste.some((g) => g && g.fp === fp)) {
+        throw new UmFehler("Von diesem Gerät wurde bei dieser Umfrage schon abgestimmt.", 409);
+      }
+
+      const werte = umWertePruefen(u, body.werte);
+      const name = (u.externName === "aus") ? "" : capStr(body.name, UM_MAX_GAST_NAME);
+      if (u.externName === "pflicht" && !name) throw new UmFehler("Bitte gib deinen Namen an.", 400);
+
+      const eintrag = { id: crypto.randomUUID(), herkunft: "extern", am: new Date().toISOString(), werte };
+      if (name) eintrag.name = name;
+      u.antworten.push(eintrag);
+      if (fp) u.gaeste.push({ fp, am: eintrag.am });
+
+      ergebnisDaten = umErgebnisSichtbar(u, null, true) ? umOeffentlichErgebnis(u) : null;
+      return {};
+    });
+
+    umGastZaehlen(request);
+    return json({ ...antwort, ergebnis: ergebnisDaten }, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ---------- Benachrichtigen ----------
+
+async function umMeldeOeffnung(u, env, authHeader, execCtx) {
+  try {
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+    const empfaenger = umZielpersonen(u, usersDoc);
+
+    // ⚠️ Der Text nennt den TITEL, aber nie eine Frage und nie eine Antwort.
+    // Auf einem Sperrbildschirm ist dafür kein Platz, und bei einer heiklen
+    // Frage wäre schon die Frage selbst zu viel.
+    pushSenden(env, authHeader, execCtx, empfaenger, "umfrage",
+      `„${u.titel}“ ist offen.${u.endeAm ? ` Antworten bis zum ${umDatumLesbar(u.endeAm)}.` : ""} In den Umfragen kannst du abstimmen.`,
+      { quelle: "umfrage-start" });
+
+    const betreff = `Umfrage: ${u.titel}`;
+    const text = `Hallo,\n\nim Werkzeug "Umfragen" ist eine neue Umfrage offen:\n\n${u.titel}\n` +
+      (u.beschreibung ? `\n${u.beschreibung}\n` : "") +
+      (u.endeAm ? `\nDu kannst noch bis zum ${umDatumLesbar(u.endeAm)} antworten.\n` : "") +
+      (u.geheim ? `\nDiese Umfrage ist geheim: dein Name wird nicht bei deiner Antwort gespeichert.\n` : "") +
+      `\nZum Abstimmen bitte anmelden:\nhttps://sc1911heiligenstadt.github.io/umfragen/\n\n1. SC 1911 Heiligenstadt e.V.`;
+
+    // ⚠️ Die Adresse kommt aus den TRAINERDATEN, nicht aus nutzer.json — dort
+    // gibt es gar kein Adressfeld (siehe der ausführliche Vermerk bei
+    // ksMailSenden).
+    await mailsHaeppchenweise(empfaenger, async (name) => {
+      const mail = busplanAdresse(name, usersDoc, trainerdatenDoc);
+      if (mail) await umMailSenden(env, mail, betreff, text);
+    }, "umfrage-start");
+  } catch (e) {
+    // Ein Fehlschlag beim Benachrichtigen darf das Öffnen nicht mitreißen — die
+    // Umfrage ist zu diesem Zeitpunkt bereits gespeichert.
+    console.error("Umfrage-Benachrichtigung fehlgeschlagen", e && e.message);
+  }
+}
+
+function umDatumLesbar(iso) {
+  const t = String(iso || "").slice(0, 10).split("-");
+  return t.length === 3 ? `${t[2]}.${t[1]}.${t[0]}` : String(iso || "");
+}
+
+async function umMailSenden(env, empfaengerMail, betreff, text) {
+  if (!env.BREVO_API_KEY || !empfaengerMail) return false;
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": env.BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: empfaengerMail }],
+        subject: betreff,
+        textContent: text
+      })
+    });
+    if (!resp.ok) {
+      console.error("Umfrage-Mail fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+      return false;
+    }
+    await versandNotieren(env, null, { art: "mail", quelle: "umfrage", app: "umfragen", von: "", anzahl: 1, ohne: 0 });
+    return true;
+  } catch (e) {
+    console.error("Umfrage-Mail fehlgeschlagen", e && e.message);
+    return false;
+  }
+}
+
+// ---------- Erinnern ----------
+
+// Trifft ausschließlich, wer noch NICHT geantwortet hat. Genau dafür gibt es
+// teilnehmer[] auch bei einer geheimen Umfrage — die Liste verrät, DASS jemand
+// abgestimmt hat, nie WAS.
+async function handleUmErinnern(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await umSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    umVerlangeEdit(ctx);
+    const doc = umNormalisiere(await readJson(UMFRAGEN_URL, authHeader, umLeer()));
+    const u = umHolen(doc, body.id);
+    if (u.status !== "offen") throw new UmFehler("Diese Umfrage ist nicht offen", 400);
+    if (!u.intern) throw new UmFehler("Diese Umfrage läuft nicht intern", 400);
+
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const bericht = await umErinnerungVerschicken(u, env, authHeader, execCtx, usersDoc);
+
+    await umMutiere(authHeader, (d) => {
+      const frisch = umHolen(d, body.id);
+      frisch.erinnertAm = new Date().toISOString();
+      return {};
+    });
+
+    return json({ ok: true, ...bericht }, 200, corsHeaders);
+  } catch (e) {
+    return umAntwortFehler(e, corsHeaders);
+  }
+}
+
+// ⚠️ Der Bericht zählt die ERREICHTEN, nicht die Angeschriebenen. Wer kein
+// Gerät angemeldet oder den Schalter aus hat, fiele sonst still heraus, und die
+// Meldung verspräche mehr, als passiert ist (dieselbe Korrektur wie bei der
+// Spieltagscrew 1.1).
+async function umErinnerungVerschicken(u, env, authHeader, execCtx, usersDoc) {
+  const offen = umZielpersonen(u, usersDoc).filter((n) => !u.teilnehmer.some((t) => t && t.username === n));
+  if (!offen.length) return { infrage: 0, erreicht: 0, ohneZiel: 0 };
+
+  const abos = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  let erreicht = 0;
+  for (const n of offen) {
+    if (pushAnlaesseFuer(abos, n)["umfrage"] && pushAbosFuer(abos, n).length) erreicht++;
+  }
+
+  pushSenden(env, authHeader, execCtx, offen, "umfrage",
+    `„${u.titel}“ wartet noch auf deine Antwort.${u.endeAm ? ` Die Umfrage endet am ${umDatumLesbar(u.endeAm)}.` : ""}`,
+    { quelle: "umfrage-erinnerung" });
+
+  return { infrage: offen.length, erreicht, ohneZiel: offen.length - erreicht };
+}
+
+// ---------- Nächtlicher Lauf ----------
+//
+// Hängt am bestehenden Zeitplan, kein eigener Wecker. Zwei Aufgaben:
+//   1. Umfragen schließen, deren Enddatum gestern war.
+//   2. Ein Tag vor dem Ende erinnern, wer noch nicht geantwortet hat.
+//
+// ⚠️ Gelöscht wird hier NICHTS (Michel-Entscheidung 09.09.2026). Wer je eine
+// automatische Löschung ergänzt, zieht zuerst den Datenschutztext in u.html
+// nach — der verspricht ausdrücklich keine Automatik.
+async function umTaeglicherLauf(env, authHeader, execCtx) {
+  const heute = umHeuteBerlin();
+  const morgen = new Date(Date.now() + 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+
+  const doc = umNormalisiere(await readJson(UMFRAGEN_URL, authHeader, umLeer()));
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+
+  const zuSchliessen = doc.umfragen.filter((u) => u.status === "offen" && u.endeAm && u.endeAm < heute);
+  const zuErinnern = doc.umfragen.filter((u) =>
+    u.status === "offen" && u.intern && u.endeAm === morgen &&
+    String(u.erinnertAm || "").slice(0, 10) !== heute);
+
+  for (const u of zuErinnern) {
+    try { await umErinnerungVerschicken(u, env, authHeader, execCtx, usersDoc); }
+    catch (e) { console.error("Umfrage-Erinnerung fehlgeschlagen", u.id, e && e.message); }
+  }
+
+  // Nach dem Schließen bekommt die Verwaltung eine Push mit der Zahl — der
+  // einzige Anlass, bei dem sie ungefragt etwas hört (Michel-Entscheidung:
+  // keine Meldung bei jeder einzelnen Antwort).
+  const geschlossen = [];
+  if (zuSchliessen.length || zuErinnern.length) {
+    await umMutiere(authHeader, (d) => {
+      zuSchliessen.forEach((alt) => {
+        const u = d.umfragen.find((x) => x && x.id === alt.id);
+        if (!u || u.status !== "offen") return;
+        u.status = "geschlossen";
+        u.geschlossenAm = new Date().toISOString();
+        u.gaeste = [];   // Fingerabdrücke haben ohne offene Umfrage keinen Zweck
+        geschlossen.push({ titel: u.titel, stimmen: u.antworten.length });
+      });
+      zuErinnern.forEach((alt) => {
+        const u = d.umfragen.find((x) => x && x.id === alt.id);
+        if (u) u.erinnertAm = new Date().toISOString();
+      });
+      d.lauf = {
+        zuletztAm: new Date().toISOString(),
+        ergebnis: `${geschlossen.length} geschlossen, ${zuErinnern.length} erinnert`
+      };
+      return {};
+    });
+  }
+
+  if (geschlossen.length) {
+    const empfaenger = await pushEmpfaengerMitRecht("umfragen", usersDoc, env, authHeader, "", false);
+    for (const g of geschlossen) {
+      pushSenden(env, authHeader, execCtx, empfaenger, "umfrage",
+        `„${g.titel}“ ist beendet — ${g.stimmen} Antwort${g.stimmen === 1 ? "" : "en"}. Das Ergebnis steht in den Umfragen.`,
+        { quelle: "umfrage-ende" });
+    }
+  }
+
+  return { geschlossen: geschlossen.length, erinnert: zuErinnern.length };
 }
