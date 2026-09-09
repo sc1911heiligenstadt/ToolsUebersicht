@@ -667,11 +667,12 @@ const APP_CHANGELOG = [
     version: "1.24",
     groups: [
       {
-        title: "Listenansicht: der Erklärtext steht nicht mehr in der Zeile",
+        title: "Der Erklärtext steht nicht mehr fest auf der Kachel",
         items: [
-          "In der Listenansicht stand hinter jedem Werkzeugnamen der Erklärtext — abgeschnitten nach einer Zeile, bei fast jedem Werkzeug endete er mitten im Satz mit „…“. Er ist jetzt aus der Zeile raus.",
-          "Wer den Text lesen will, fährt mit der Maus über die Zeile: dann klappt er als Sprechblase auf, vollständig und mehrzeilig.",
-          "Die Kachelansicht bleibt unverändert — dort steht der Text weiter fest unter dem Namen. Am Handy war er in der Liste schon vorher ausgeblendet."
+          "Auf den Kacheln stand unter jedem Namen der ganze Erklärtext. Werkzeuge mit langem Text machten daraus einen Klotz, der dreimal so hoch war wie die Kachel daneben — die Übersicht war weg. In der Listenansicht war derselbe Text nach einer Zeile abgeschnitten und endete mitten im Satz mit „…“.",
+          "Jetzt sind alle Kacheln gleich hoch und zeigen nur Symbol und Namen. Wer den Text lesen will, hält die Maus eine Sekunde auf der Kachel: dann klappt er als Sprechblase auf, vollständig und mehrzeilig.",
+          "Die eine Sekunde Wartezeit ist Absicht — sonst blitzt die Sprechblase bei jeder Kachel auf, über die man nur hinwegfährt.",
+          "Am Handy erscheint sie nicht: dort gibt es keine Maus. In der Listenansicht war der Text am Handy schon vorher ausgeblendet."
         ]
       }
     ]

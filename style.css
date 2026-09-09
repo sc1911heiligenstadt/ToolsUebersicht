@@ -1873,7 +1873,59 @@ main { flex: 1; min-width: 0; }
 #tool-groups.anordnen .tool-card.ist-versteckt { opacity: 0.5; }
 #tool-groups.anordnen .tool-card.ist-versteckt h3 { text-decoration: line-through; }
 .tool-card h3 { font-size: 16px; color: var(--blue); }
-.tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
+/* Die Beschreibung steht seit 2026-09-09 in KEINER der beiden Ansichten mehr fest
+   da (Michel-Vorgabe). Im Raster machte sie aus den Kacheln unterschiedlich hohe
+   Textbloecke -- eine Kachel mit langem Text war dreimal so hoch wie die daneben --,
+   in der Liste war sie einzeilig abgeschnitten und endete bei fast jedem Werkzeug
+   mitten im Satz mit "...". Jetzt liegt sie als Sprechblase unter der Karte und
+   kommt erst beim Ueberfahren, dann aber vollstaendig.
+
+   Sie bleibt im DOM stehen (kein display:none): ein Vorleseprogramm liest sie
+   weiter mit, und die Suche ueber die Kacheltexte greift unveraendert. Nur
+   dauerhaft sichtbar ist sie nicht mehr.
+
+   ⚠️ left UND right gesetzt statt einer max-width: so ist die Sprechblase genau
+   so breit wie die Karte und kann bei der rechten Rasterspalte nicht ueber den
+   Seitenrand hinauslaufen (das gaebe seitliches Scrollen). */
+.tool-card p {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: calc(100% - 6px);
+  z-index: 5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  /* Ohne Verzoegerung beim VERSCHWINDEN: wer die Maus wegzieht, will die
+     Sprechblase sofort los. Die Wartezeit steckt nur in der Hover-Regel. */
+  transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+/* ⚠️ Auch bei Tastatur-Fokus zeigen: ohne :focus-visible kaeme wer ohne Maus
+   arbeitet nie an den Text.
+
+   1 Sekunde Wartezeit (Michel-Vorgabe 2026-09-09): sonst ploppt die Sprechblase
+   bei jedem Ueberqueren auf dem Weg zu einer anderen Kachel auf. Die Verzoegerung
+   steht auf beiden Eigenschaften -- `visibility` laesst sich nicht weich schalten,
+   sie wuerde ohne eigenen delay sofort umspringen. */
+.tool-card:hover p,
+.tool-card:focus-visible p {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.15s ease 1s, visibility 0s linear 1s;
+}
+/* Ohne das legt sich die NAECHSTE Karte ueber die Sprechblase: alle Karten sind
+   positioniert, und dann gewinnt im Stapel die spaetere im Markup. */
+.tool-card:hover,
+.tool-card:focus-visible { z-index: 5; }
 /* Hinweis-Symbole unten links auf der Kachel: Briefumschlag (Flag mail:true) und
    Glocke (Flag push:true, seit 2026-08-03). Sie zeigen vor dem Klick, ueber welche
    Kanaele eine Handlung hier nach draussen wirkt. Bewusst IM Flex-Fluss mit
@@ -1923,55 +1975,11 @@ main { flex: 1; min-width: 0; }
 .tool-grid.als-liste .tool-card:hover { transform: none; background: var(--blue-light); box-shadow: var(--shadow); }
 .tool-grid.als-liste .tool-card .tool-icon { font-size: 22px; }
 .tool-grid.als-liste .tool-card h3 { flex: 0 0 auto; }
-/* Die Beschreibung steht in der Liste NICHT mehr in der Zeile (Michel-Vorgabe
-   2026-09-09): sie war dort einzeilig abgeschnitten und endete bei fast jedem
-   Werkzeug in "...", also mit halbem Satz. Jetzt liegt sie als Sprechblase ueber
-   der Zeile und kommt erst beim Ueberfahren -- und dann vollstaendig, mehrzeilig.
-
-   Sie bleibt im DOM stehen (kein display:none): ein Vorleseprogramm liest sie
-   weiter mit, und die Suche ueber die Kacheltexte greift unveraendert. Nur
-   sichtbar ist sie nicht mehr dauernd.
-
-   position:absolute nimmt sie aus der Zeile -- die Badges rechts haengen an
-   margin-left:auto und stehen deshalb weiter ganz rechts. */
-.tool-grid.als-liste .tool-card p {
-  position: absolute;
-  left: 16px;
-  top: calc(100% - 6px);
-  z-index: 5;
-  max-width: min(460px, calc(100% - 32px));
-  white-space: normal;
-  overflow-wrap: anywhere;
-  background: #1f2937;
-  color: #fff;
-  font-size: 12px;
-  line-height: 1.45;
-  padding: 8px 10px;
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-/* ⚠️ Auch bei Tastatur-Fokus zeigen: ohne :focus-visible kaeme wer ohne Maus
-   arbeitet nie an den Text. */
-.tool-grid.als-liste .tool-card:hover p,
-.tool-grid.als-liste .tool-card:focus-visible p {
-  opacity: 1;
-  visibility: visible;
-}
-/* Ohne das legte sich die NAECHSTE Zeile ueber die Sprechblase: beide Karten sind
-   positioniert, und dann gewinnt im Stapel die spaetere im Markup. */
-.tool-grid.als-liste .tool-card:hover,
-.tool-grid.als-liste .tool-card:focus-visible { z-index: 5; }
-/* Am Handy reicht die Breite fuer Name UND Beschreibung nicht: gemessen bei 375px
-   wurde die Zeile sonst 173px hoch -- kaum weniger als die Kachel (205px), womit die
-   Liste ihren Zweck verfehlt. Der Name allein traegt hier, die Beschreibung steht in
-   der Kachelansicht. */
-@media (max-width: 560px) {
-  .tool-grid.als-liste .tool-card p { display: none; }
-}
+/* ⚠️ Hier stand bis 2026-09-09 ein `display: none` fuer die Handy-Breite -- die
+   Beschreibung machte die Listenzeile sonst 173px hoch. Das erledigt jetzt die
+   Sprechblase von selbst: ohne Maus gibt es kein Ueberfahren, also erscheint sie
+   am Handy gar nicht. Bewusst KEIN display:none mehr, das haette sie auch dem
+   Vorleseprogramm weggenommen. */
 /* Der Greifpunkt ganz nach VORNE. Er braucht kein eigenes `order`: er ist das
    erste Kind im Markup und behaelt die Vorgabe 0, waehrend alles, was nach hinten
    gehoert, sich per order 97-99 dahinter einreiht. */
