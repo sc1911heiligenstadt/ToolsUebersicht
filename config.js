@@ -672,7 +672,8 @@ const APP_CHANGELOG = [
           "Auf den Kacheln stand unter jedem Namen der ganze Erklärtext. Werkzeuge mit langem Text machten daraus einen Klotz, der dreimal so hoch war wie die Kachel daneben — die Übersicht war weg. In der Listenansicht war derselbe Text nach einer Zeile abgeschnitten und endete mitten im Satz mit „…“.",
           "Jetzt sind alle Kacheln gleich hoch und zeigen nur Symbol und Namen. Wer den Text lesen will, hält die Maus eine Sekunde auf der Kachel: dann klappt er als Sprechblase auf, vollständig und mehrzeilig.",
           "Die eine Sekunde Wartezeit ist Absicht — sonst blitzt die Sprechblase bei jeder Kachel auf, über die man nur hinwegfährt.",
-          "Am Handy erscheint sie nicht: dort gibt es keine Maus. In der Listenansicht war der Text am Handy schon vorher ausgeblendet."
+          "Am Handy erscheint sie nicht: dort gibt es keine Maus. In der Listenansicht war der Text am Handy schon vorher ausgeblendet.",
+          "Auch die Ampel („Daten unvollständig“, „3× Gegner eintragen“) steht jetzt neben dem Symbol statt darunter. Vorher schob sie den Namen eine Zeile tiefer, und die eine Kachel stand schief in der Reihe."
         ]
       }
     ]

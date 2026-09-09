@@ -2002,6 +2002,40 @@ main { flex: 1; min-width: 0; }
 .tool-grid.als-liste .badge-status-ok,
 .tool-grid.als-liste .badge-status-fail { order: 97; align-self: center; }
 
+/* Im RASTER stehen dieselben Marken NEBEN dem Symbol statt darunter
+   (Michel-Vorgabe 2026-09-09). Vorher schob die Ampel den Namen eine Zeile nach
+   unten: die Trainerdaten-Kachel sah dadurch anders aus als alle anderen und der
+   Name stand nicht mehr auf einer Linie mit den Nachbarn.
+
+   position:absolute, weil die Karte eine Flex-SPALTE ist -- ein Geschwisterkind
+   des Symbols kaeme im Fluss zwangslaeufig darunter zu stehen, ohne Wrapper im
+   Markup. Der bleibt bewusst weg: die Zeilenansicht sortiert dieselben Marken
+   per `order` (siehe direkt darueber), und in einem Wrapper waeren sie keine
+   Geschwister mehr und die Sortierung liefe ins Leere.
+
+   ⚠️ `left` ist auf das Symbol abgestimmt (20px Kachelrand + ~34px Symbol +
+   Abstand). Aendert sich die Schriftgroesse des Symbols, muss der Wert mit.
+   Truegen zwei Marken gleichzeitig (heute tut das keine Kachel: `wip` ist in
+   config.js nirgends gesetzt), laegen sie uebereinander. */
+.tool-grid:not(.als-liste) .tool-card .badge-wip,
+.tool-grid:not(.als-liste) .tool-card .badge-status-ok,
+.tool-grid:not(.als-liste) .tool-card .badge-status-fail {
+  position: absolute;
+  /* 29px statt der 20px Kachelpolsterung: damit liegt die Mitte der Marke auf der
+     Mitte des Symbols (gemessen 2026-09-09 -- Symbolmitte 71, Markenmitte 71). */
+  top: 29px;
+  left: 64px;
+  max-width: calc(100% - 84px);
+}
+/* Im Anordnen-Modus rueckt das Symbol um 26px nach rechts (Platz fuer den
+   Greifpunkt) -- die Marke daneben muss mitgehen. */
+#tool-groups.anordnen .tool-grid:not(.als-liste) .tool-card .badge-wip,
+#tool-groups.anordnen .tool-grid:not(.als-liste) .tool-card .badge-status-ok,
+#tool-groups.anordnen .tool-grid:not(.als-liste) .tool-card .badge-status-fail {
+  left: 90px;
+  max-width: calc(100% - 110px);
+}
+
 .tool-card.wip { opacity: 0.82; }
 .badge-wip {
   display: inline-flex;
