@@ -664,6 +664,21 @@ const APP_FUNKTIONEN = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.25",
+    groups: [
+      {
+        title: "Karte „Nächste Termine“: nach Kategorie filtern",
+        items: [
+          "Neben der Überschrift „Nächste Termine“ steht jetzt der Knopf „Kategorien“. Ein Druck klappt eine Liste auf: je Kategorie ein Haken. Haken raus heißt, diese Kategorie verschwindet aus der Karte.",
+          "Haken gibt es nur für Kategorien, zu denen auch wirklich ein Termin ansteht. Die Zahl daneben sagt, wie viele es sind, und ändert sich beim Filtern nicht mit.",
+          "Am Knopf steht, wie viele Kategorien gerade aus sind. Unten in der Liste steht „Alle zeigen“. Geburtstage bleiben immer stehen.",
+          "Die Liste bleibt beim Anhaken offen — man wählt meist mehrere hintereinander. Zu geht sie mit einem Klick daneben, mit Escape oder mit dem Knopf.",
+          "Die Auswahl bleibt in deinem Browser und gilt nur für dich. Sie ist unabhängig vom Filter im Vereinskalender selbst — hier filterst du die Karte, dort die ganze Liste."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.24",
     groups: [
       {
@@ -674,16 +689,6 @@ const APP_CHANGELOG = [
           "Die eine Sekunde Wartezeit ist Absicht — sonst blitzt die Sprechblase bei jeder Kachel auf, über die man nur hinwegfährt.",
           "Am Handy erscheint sie nicht: dort gibt es keine Maus. In der Listenansicht war der Text am Handy schon vorher ausgeblendet.",
           "Auch die Ampel („Daten unvollständig“, „3× Gegner eintragen“) steht jetzt neben dem Symbol statt darunter. Vorher schob sie den Namen eine Zeile tiefer, und die eine Kachel stand schief in der Reihe."
-        ]
-      },
-      {
-        title: "Karte „Nächste Termine“: nach Kategorie filtern",
-        items: [
-          "Neben der Überschrift „Nächste Termine“ steht jetzt der Knopf „Kategorien“. Ein Druck klappt eine Liste auf: je Kategorie ein Haken. Haken raus heißt, diese Kategorie verschwindet aus der Karte.",
-          "Haken gibt es nur für Kategorien, zu denen auch wirklich ein Termin ansteht. Die Zahl daneben sagt, wie viele es sind, und ändert sich beim Filtern nicht mit.",
-          "Am Knopf steht, wie viele Kategorien gerade aus sind. Unten in der Liste steht „Alle zeigen“. Geburtstage bleiben immer stehen.",
-          "Die Liste bleibt beim Anhaken offen — man wählt meist mehrere hintereinander. Zu geht sie mit einem Klick daneben, mit Escape oder mit dem Knopf.",
-          "Die Auswahl bleibt in deinem Browser und gilt nur für dich. Sie ist unabhängig vom Filter im Vereinskalender selbst — hier filterst du die Karte, dort die ganze Liste."
         ]
       }
     ]
