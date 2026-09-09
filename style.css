@@ -1108,54 +1108,100 @@ main { flex: 1; min-width: 0; }
    Zusammen mit dem Ring am Knopf wären das zwei ineinander — hier reicht der äußere. */
 .widget-todo-btn .header-zaehler.warn { box-shadow: none; }
 /* ---------- Kategorie-Filter der Termin-Karte (seit 09.09.2026) ---------- */
-/* Kleiner als die Knoepfe in der Vereinskalender-App: die Karte hier ist schmal
-   und zeigt nur die naechsten paar Termine -- die Leiste darf nicht mehr Platz
-   nehmen als die Liste darunter.
-
-   ⚠️ Aus ist nicht nur blass, sondern auch durchgestrichen. Farbe allein
-   reichte nicht: wer Rot und Gruen schlecht unterscheidet, saehe keinen
-   Unterschied zwischen an und aus. */
-.cw-katfilter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 2px 0 8px;
-}
-.cw-katfilter-btn {
+/* Eine Klappliste neben der Ueberschrift, keine Reihe Knoepfe (Michel-Vorgabe):
+   die Reihe nahm in der schmalen Karte zwei Zeilen ein -- mehr Platz als zwei
+   Termine. Gleicher Aufbau wie in der Vereinskalender-App, nur etwas kompakter. */
+.cw-kopf { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cw-kopf h2 { margin: 0; }
+.cw-katfilter { position: relative; }
+.cw-katfilter-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   background: var(--white);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 5px 12px;
   font-size: 12px;
   font-weight: 600;
+  font-family: inherit;
   color: var(--muted);
   cursor: pointer;
-  /* 44px fuer den Daumen -- dasselbe Mass wie die Filterknoepfe in der
-     Vereinskalender-App und wie die Abnahme vom 07.09.2026 es verlangt. Die
-     Stimm-Knoepfe derselben Karte (.cw-vote) sind kleiner; die sind aelter und
-     stehen hier nicht zur Debatte, aber neue Knoepfe fangen nicht darunter an. */
+  /* 44px fuer den Daumen -- dasselbe Mass wie in der Vereinskalender-App und wie
+     die Abnahme vom 07.09.2026 es verlangt. Die aelteren Stimm-Knoepfe derselben
+     Karte (.cw-vote) sind kleiner; die bleiben, aber neue fangen nicht darunter an. */
   min-height: 44px;
 }
-.cw-katfilter-btn.an { color: var(--text); border-color: var(--blue); background: var(--blue-light); }
-.cw-katfilter-btn:not(.an) { opacity: 0.55; }
-.cw-katfilter-btn:not(.an) .cwk-name { text-decoration: line-through; }
-.cw-katfilter-btn:not(.an) .cw-dot { background: var(--muted) !important; }
-.cw-katfilter .cw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.cwk-zahl { font-size: 11px; font-weight: 700; color: var(--muted); }
-.cw-katfilter-alle {
+.cw-katfilter-toggle.aktiv { color: var(--text); border-color: var(--blue); background: var(--blue-light); }
+.cw-katfilter-toggle[aria-expanded="true"] .cwk-pfeil { transform: rotate(180deg); }
+.cwk-pfeil { font-size: 10px; line-height: 1; }
+.cwk-marke {
+  background: var(--blue);
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+/* ⚠️ Die Liste schwebt (absolute), damit sie die Termine darunter nicht
+   wegschiebt. Sie haengt LINKS am Knopf. Mit `right: 0` lief sie am Handy nach
+   LINKS aus dem Bild: der Knopf steht dort dicht hinter der Ueberschrift, seine
+   rechte Kante liegt bei ~183px, und 230px Mindestbreite nach links davon
+   ergaben -47px. Ein solcher Ueberlauf faellt in `scrollWidth` NICHT auf --
+   negative Positionen zaehlen dort nicht mit; gemessen werden muss die linke
+   Kante der Liste selbst. */
+.cw-katfilter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 230px;
+  max-width: min(300px, calc(100vw - 32px));
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 6px;
+}
+.cwk-zeile {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  min-height: 44px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.cwk-zeile:hover { background: var(--blue-light); }
+.cwk-zeile input { width: 17px; height: 17px; flex-shrink: 0; cursor: pointer; }
+/* Aus ist blass UND durchgestrichen: Farbe allein reicht nicht, wer Rot und Gruen
+   schlecht unterscheidet saehe sonst keinen Unterschied zwischen an und aus. */
+.cwk-zeile.aus { color: var(--muted); }
+.cwk-zeile.aus .cwk-name { text-decoration: line-through; }
+.cwk-zeile.aus .cw-dot { background: var(--muted) !important; }
+.cw-katfilter-menu .cw-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.cwk-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.cwk-zahl { font-size: 11px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+.cwk-alle {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
   background: none;
   border: none;
-  padding: 5px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--blue);
-  text-decoration: underline;
-  cursor: pointer;
+  border-top: 1px solid var(--border);
+  padding: 0 8px;
   min-height: 44px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--blue);
+  text-align: left;
+  cursor: pointer;
 }
+.cwk-alle:hover { background: var(--blue-light); }
 
 .calendar-widget-list { display: flex; flex-direction: column; }
 .calendar-widget-item {

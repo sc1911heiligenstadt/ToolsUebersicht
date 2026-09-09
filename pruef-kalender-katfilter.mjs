@@ -32,7 +32,11 @@ function schneideZeile(marke) {
 
 const echterCode = [
   schneideZeile("const KAL_KAT_FILTER_KEY ="),
+  schneideZeile("let kalFilterOffen ="),
   schneide("function ladeKalKatFilter("),
+  schneide("function zeichneKalenderKarteNeu("),
+  schneide("function onCalendarWidgetChange("),
+  schneide("function schliesseKalFilterBeiKlickDaneben("),
   schneide("function speichereKalKatFilter("),
   schneide("function renderSidebarWidget("),
   schneide("async function onCalendarWidgetClick(")
@@ -51,7 +55,14 @@ const sandbox = {
     setItem: (k, v) => { speicher[k] = String(v); }
   },
   document: {
-    getElementById: (id) => (id === "termine-widget-inhalt" ? inhalt : id === "calendar-widget" ? widget : null)
+    getElementById: (id) => (id === "termine-widget-inhalt" ? inhalt : id === "calendar-widget" ? widget : null),
+    // Die Klappliste sucht ihren eigenen Behaelter, um "Klick daneben" von "Klick
+    // darin" zu unterscheiden.
+    querySelector: (sel) => (sel === ".cw-katfilter" ? { contains: (nn) => !!(nn && nn.imFilter) } : null),
+    // Die Karte haengt beim ersten Zeichnen zwei Handler ans Dokument (Klick
+    // daneben, Escape). Hier interessieren sie nicht -- gerufen werden die
+    // Funktionen unten direkt.
+    addEventListener: () => {}
   },
   // --- Stubs: mit dem Filter nicht verwandt ---
   currentUser: { username: "michel" },
@@ -118,9 +129,10 @@ pruefe("alle fuenf oeffentlichen Zeilen", ["t1", "t2", "t3", "t4", "t5"].every((
 pruefe("und die private", zeigt(h, "p1"));
 pruefe("kein 'Alle zeigen'", !h.includes("Alle zeigen"));
 
-console.log("== 2. Knoepfe nur fuer Kategorien, die vorkommen");
-pruefe("Halle hat einen Knopf", h.includes('data-kat="halle"'));
+console.log("== 2. Haken nur fuer Kategorien, die vorkommen");
+pruefe("Halle hat eine Zeile", h.includes('data-kat="halle"'));
 pruefe("die leere Kategorie NICHT", !h.includes('data-kat="ohne-termin"'), h.slice(0, 400));
+pruefe("die Liste startet zugeklappt", h.includes("cw-katfilter-menu") && h.includes(" hidden>"));
 
 console.log("== 3. Eine Kategorie aus");
 h = zeichne(["training"]);
@@ -128,8 +140,12 @@ pruefe("die zwei Trainingstermine fehlen", !zeigt(h, "t2") && !zeigt(h, "t3"));
 pruefe("auch der PRIVATE Trainingstermin fehlt", !zeigt(h, "p1"));
 pruefe("der Rest ist da", zeigt(h, "t1") && zeigt(h, "t4"));
 pruefe("'Alle zeigen' erscheint", h.includes("Alle zeigen"));
-pruefe("der Knopf meldet sich als aus", h.includes('data-kat="training" aria-pressed="false"'));
-pruefe("und zaehlt weiter 3 (2 oeffentlich + 1 privat)", /data-kat="training"[\s\S]{0,400}?cwk-zahl">3</.test(h), h.slice(h.indexOf('data-kat="training"'), h.indexOf('data-kat="training"') + 400));
+pruefe("der Haken bei Training ist raus", h.includes('data-kat="training">'), h.slice(h.indexOf("cw-katfilter-menu"), h.indexOf("cw-katfilter-menu") + 600));
+pruefe("die anderen sind angehakt", h.includes('data-kat="halle" checked'));
+pruefe("die Zeile ist als aus gekennzeichnet", h.includes('class="cwk-zeile aus"'));
+pruefe("am Knopf steht, wie viele aus sind", h.includes(">1 aus<"));
+const nachTraining = h.slice(h.indexOf('data-kat="training"'));
+pruefe("und zaehlt weiter 3 (2 oeffentlich + 1 privat)", nachTraining.indexOf('cwk-zahl">3<') > -1 && nachTraining.indexOf('cwk-zahl">3<') < nachTraining.indexOf("</label>"), nachTraining.slice(0, 400));
 
 console.log("== 4. Termin mit geloeschter Kategorie bleibt sichtbar");
 h = zeichne(["halle", "training", "veranstaltung"]);
@@ -144,11 +160,11 @@ pruefe("nicht 'Keine anstehenden Termine'", !h.includes("Keine anstehenden Termi
 console.log("== 6. Gar keine Termine -> der andere Satz");
 h = zeichne([], { oeffentlich: [], privat: [] });
 pruefe("sagt 'Keine anstehenden Termine'", h.includes("Keine anstehenden Termine."), h);
-pruefe("keine Filterleiste", !h.includes("cw-katfilter"));
+pruefe("kein Filterknopf", !h.includes("cw-katfilter"));
 
 console.log("== 7. Nur eine Kategorie vorhanden -> keine Leiste");
 h = zeichne([], { oeffentlich: [reihe("t1", "halle", "Nur Halle")], privat: [] });
-pruefe("Leiste fehlt", !h.includes("cw-katfilter"), h.slice(0, 300));
+pruefe("Knopf fehlt", !h.includes("cw-katfilter"), h.slice(0, 300));
 
 console.log("== 8. Geburtstage stehen weiter da, auch wenn alles gefiltert ist");
 h = zeichne(["halle", "training", "veranstaltung"], { geburtstage: ["Carmine Perriello"], oeffentlich: OEFFENTLICH.filter((r) => r.termin.kategorie !== "gibt-es-nicht-mehr"), privat: [] });
@@ -162,20 +178,40 @@ sandbox.calendarWidgetOpts = {
 };
 const klick = (ziel) => ({
   preventDefault: () => {},
-  target: { closest: (sel) => (sel === "[data-kat-alle]" ? (ziel === "alle" ? {} : null) : sel === ".cw-katfilter-btn" ? (ziel !== "alle" ? { dataset: { kat: ziel } } : null) : null) }
+  imFilter: true,
+  target: { closest: (sel) => (sel === ".cw-katfilter-toggle" ? (ziel === "toggle" ? {} : null) : sel === "[data-kat-alle]" ? (ziel === "alle" ? {} : null) : null) }
 });
+// Ein Haken, wie ihn der Browser meldet: das <input> traegt data-kat und den
+// neuen Zustand in .checked.
+const haken = (kat, angehakt) => ({ target: { closest: (sel) => (sel === "input[data-kat]" ? { dataset: { kat }, checked: angehakt } : null) } });
 neuGezeichnet = 0;
-sandbox.onCalendarWidgetClick(klick("halle"));
+sandbox.onCalendarWidgetChange(haken("halle", false));
 pruefe("Halle ist aus", sandbox.kalKatAus.has("halle"));
 pruefe("im Speicher steht sie", JSON.parse(speicher["tu-kal-kat-ausgeblendet"] || "[]").includes("halle"), speicher["tu-kal-kat-ausgeblendet"]);
 pruefe("die Karte wurde neu gezeichnet", neuGezeichnet === 1, neuGezeichnet);
 pruefe("und zeigt t1 nicht mehr", !zeigt(inhalt.innerHTML, "t1"));
-sandbox.onCalendarWidgetClick(klick("halle"));
-pruefe("nochmal klicken holt sie zurueck", !sandbox.kalKatAus.has("halle") && zeigt(inhalt.innerHTML, "t1"));
-sandbox.onCalendarWidgetClick(klick("training"));
+sandbox.onCalendarWidgetChange(haken("halle", true));
+pruefe("Haken zurueck holt sie wieder", !sandbox.kalKatAus.has("halle") && zeigt(inhalt.innerHTML, "t1"));
+sandbox.onCalendarWidgetChange(haken("training", false));
 sandbox.onCalendarWidgetClick(klick("alle"));
 pruefe("'Alle zeigen' raeumt den Filter", sandbox.kalKatAus.size === 0);
 pruefe("und schreibt das weg", JSON.parse(speicher["tu-kal-kat-ausgeblendet"] || "[]").length === 0, speicher["tu-kal-kat-ausgeblendet"]);
+
+console.log("== 9b. Auf- und Zuklappen");
+pruefe("startet zu", inhalt.innerHTML.includes(" hidden>"));
+sandbox.onCalendarWidgetClick(klick("toggle"));
+pruefe("Knopf macht auf", !inhalt.innerHTML.includes(" hidden>") && inhalt.innerHTML.includes('aria-expanded="true"'));
+// Der Kern: ein Haken darf die Liste NICHT zuklappen.
+sandbox.onCalendarWidgetChange(haken("training", false));
+pruefe("ein Haken laesst sie offen", !inhalt.innerHTML.includes(" hidden>"));
+sandbox.schliesseKalFilterBeiKlickDaneben({ target: { irgendwo: true } });
+pruefe("Klick daneben macht zu", inhalt.innerHTML.includes(" hidden>"));
+sandbox.onCalendarWidgetClick(klick("toggle"));
+sandbox.schliesseKalFilterBeiKlickDaneben({ target: { imFilter: true } });
+pruefe("Klick IN der Liste macht nicht zu", !inhalt.innerHTML.includes(" hidden>"));
+sandbox.onCalendarWidgetClick(klick("toggle"));
+pruefe("Knopf macht wieder zu", inhalt.innerHTML.includes(" hidden>"));
+sandbox.onCalendarWidgetClick(klick("alle"));
 
 console.log("== 10. Gemerkter Filter wird gelesen, kaputte Werte kippen nichts");
 speicher["tu-kal-kat-ausgeblendet"] = JSON.stringify(["veranstaltung"]);

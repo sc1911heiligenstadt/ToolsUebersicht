@@ -679,9 +679,10 @@ const APP_CHANGELOG = [
       {
         title: "Karte „Nächste Termine“: nach Kategorie filtern",
         items: [
-          "Über der Terminliste steht jetzt je Kategorie ein Knopf — „Halle gesperrt“, „Training“, „Veranstaltung“. Ein Druck darauf blendet diese Kategorie aus, ein zweiter holt sie zurück.",
-          "Knöpfe gibt es nur für Kategorien, zu denen auch wirklich ein Termin ansteht. Die Zahl daneben sagt, wie viele es sind, und ändert sich beim Filtern nicht mit.",
-          "Ist etwas ausgeblendet, erscheint daneben „Alle zeigen“. Geburtstage bleiben immer stehen.",
+          "Neben der Überschrift „Nächste Termine“ steht jetzt der Knopf „Kategorien“. Ein Druck klappt eine Liste auf: je Kategorie ein Haken. Haken raus heißt, diese Kategorie verschwindet aus der Karte.",
+          "Haken gibt es nur für Kategorien, zu denen auch wirklich ein Termin ansteht. Die Zahl daneben sagt, wie viele es sind, und ändert sich beim Filtern nicht mit.",
+          "Am Knopf steht, wie viele Kategorien gerade aus sind. Unten in der Liste steht „Alle zeigen“. Geburtstage bleiben immer stehen.",
+          "Die Liste bleibt beim Anhaken offen — man wählt meist mehrere hintereinander. Zu geht sie mit einem Klick daneben, mit Escape oder mit dem Knopf.",
           "Die Auswahl bleibt in deinem Browser und gilt nur für dich. Sie ist unabhängig vom Filter im Vereinskalender selbst — hier filterst du die Karte, dort die ganze Liste."
         ]
       }

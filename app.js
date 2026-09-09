@@ -3280,6 +3280,10 @@ async function loadSidebarWidget() {
 // freischalten muss.
 const KAL_KAT_FILTER_KEY = "tu-kal-kat-ausgeblendet";
 let kalKatAus = ladeKalKatFilter();
+// Ob die Klappliste offen ist. Eigener Merker, kein DOM-Zustand: die Karte wird
+// bei jedem Haken komplett neu gezeichnet, und die Liste soll dabei OFFEN
+// bleiben -- man haekelt meist mehrere Kategorien hintereinander an.
+let kalFilterOffen = false;
 
 function ladeKalKatFilter() {
   try {
@@ -3287,6 +3291,38 @@ function ladeKalKatFilter() {
     return new Set(Array.isArray(roh) ? roh.filter((x) => typeof x === "string") : []);
   } catch (_) { return new Set(); }
 }
+// Neu zeichnen mit den GEMERKTEN opts -- dieselben Daten, nur ein anderer Filter
+// darueber. Kein neuer Rundlauf zum Worker: der Filter ist eine Sicht, keine Frage
+// an den Server.
+function zeichneKalenderKarteNeu() {
+  const w = document.getElementById("calendar-widget");
+  if (w && calendarWidgetOpts) renderSidebarWidget(w, calendarWidgetOpts);
+}
+
+// Haken an/aus. Eigener change-Handler statt eines Klick-Handlers: so kommt auch
+// die Leertaste an, mit der ein Haken per Tastatur gesetzt wird.
+function onCalendarWidgetChange(e) {
+  const box = e.target.closest("input[data-kat]");
+  if (!box) return;
+  const id = box.dataset.kat;
+  if (box.checked) kalKatAus.delete(id); else kalKatAus.add(id);
+  speichereKalKatFilter();
+  zeichneKalenderKarteNeu();
+}
+
+// Zumachen, wenn woanders hingeklickt wird.
+// ⚠️ Muss in der CAPTURE-Phase am Dokument haengen. In der Bubble-Phase liefe er
+// NACH onCalendarWidgetClick; das hat dann schon neu gezeichnet, e.target haengt
+// nicht mehr im Dokument, und contains() saehe jeden Klick als "daneben" -- die
+// Liste ginge im selben Klick wieder zu, mit dem man sie aufmacht.
+function schliesseKalFilterBeiKlickDaneben(e) {
+  if (!kalFilterOffen) return;
+  const el = document.querySelector(".cw-katfilter");
+  if (el && el.contains(e.target)) return;
+  kalFilterOffen = false;
+  zeichneKalenderKarteNeu();
+}
+
 function speichereKalKatFilter() {
   try { localStorage.setItem(KAL_KAT_FILTER_KEY, JSON.stringify(Array.from(kalKatAus))); }
   catch (_) { /* privates Fenster o.ae. -- gilt dann nur bis zum Neuladen */ }
@@ -3392,23 +3428,39 @@ function renderSidebarWidget(widget, opts) {
     `;
   }
 
-  // Die Filterleiste. Erst ab zwei vorhandenen Kategorien -- mit einer waere sie
-  // ein Knopf, der entweder alles oder nichts zeigt. Die Zahl am Knopf zaehlt OHNE
-  // den Filter, sonst stuende hinter jeder ausgeblendeten Kategorie eine 0 und
-  // niemand saehe, was ihm entgeht.
+  // Der Kategorie-Filter als KLAPPLISTE neben der Ueberschrift (Michel-Vorgabe
+  // 09.09.2026, wie in der Vereinskalender-App): eine Reihe von Knoepfen nahm in
+  // der schmalen Karte zwei Zeilen ein -- mehr Platz als zwei Termine.
+  //
+  // Erst ab zwei vorhandenen Kategorien; mit einer waere es ein Filter, der
+  // entweder alles oder nichts zeigt. Die Zahl je Zeile zaehlt OHNE den Filter,
+  // sonst stuende hinter jeder ausgeblendeten Kategorie eine 0 und niemand saehe,
+  // was ihm entgeht.
   let katFilterHtml = "";
   if (showCalendar && katVorhanden.length >= 2) {
-    const knoepfe = katVorhanden.map((k) => {
+    const zeilen = katVorhanden.map((k) => {
       const an = !kalKatAus.has(k.id);
       const anzahl = alleRows.filter((r) => r.termin.kategorie === k.id).length;
-      return `<button type="button" class="cw-katfilter-btn${an ? " an" : ""}"
-          data-kat="${escapeHtml(k.id)}" aria-pressed="${an ? "true" : "false"}"
-          title="${escapeHtml(k.name || "")} ${an ? "ausblenden" : "wieder einblenden"}"><span class="cw-dot" style="background:${escapeHtml(k.farbe)}"></span><span class="cwk-name">${escapeHtml(k.name || "")}</span><span class="cwk-zahl">${anzahl}</span></button>`;
+      return `<label class="cwk-zeile${an ? "" : " aus"}">
+          <input type="checkbox" data-kat="${escapeHtml(k.id)}"${an ? " checked" : ""}>
+          <span class="cw-dot" style="background:${escapeHtml(k.farbe)}"></span>
+          <span class="cwk-name">${escapeHtml(k.name || "")}</span>
+          <span class="cwk-zahl">${anzahl}</span>
+        </label>`;
     }).join("");
     const alle = kalKatAus.size
-      ? `<button type="button" class="cw-katfilter-alle" data-kat-alle="1">Alle zeigen</button>`
+      ? `<button type="button" class="cwk-alle" data-kat-alle="1">Alle zeigen</button>`
       : "";
-    katFilterHtml = `<div class="cw-katfilter" role="group" aria-label="Termine nach Kategorie filtern">${knoepfe}${alle}</div>`;
+    // Am Knopf steht, WIE VIELE aus sind, nicht nur DASS gefiltert wird: ein
+    // blosses "Filter aktiv" laesst offen, wie viel man gerade nicht sieht.
+    const ausGezaehlt = katVorhanden.filter((k) => kalKatAus.has(k.id)).length;
+    const marke = ausGezaehlt ? `<span class="cwk-marke">${ausGezaehlt} aus</span>` : "";
+    katFilterHtml = `<div class="cw-katfilter">
+        <button type="button" class="cw-katfilter-toggle${ausGezaehlt ? " aktiv" : ""}"
+          aria-expanded="${kalFilterOffen ? "true" : "false"}"
+          title="Termine nach Kategorie filtern">Kategorien${marke}<span class="cwk-pfeil" aria-hidden="true">▾</span></button>
+        <div class="cw-katfilter-menu" role="group" aria-label="Termine nach Kategorie filtern"${kalFilterOffen ? "" : " hidden"}>${zeilen}${alle}</div>
+      </div>`;
   }
 
   let calendarHtml = "";
@@ -3432,8 +3484,10 @@ function renderSidebarWidget(widget, opts) {
     // Steht der Ablaufplan darueber, braucht diese Ueberschrift den Abstand der
     // Unterueberschrift -- sonst klebt sie an der Ablauf-Zeile.
     calendarHtml = `
-      <h2${ablaufHtml ? ' class="calendar-widget-sub-heading"' : ""}><a class="cw-heading-link" href="${escapeHtml(url)}">📅 Nächste Termine</a></h2>
-      ${katFilterHtml}
+      <div class="cw-kopf">
+        <h2${ablaufHtml ? ' class="calendar-widget-sub-heading"' : ""}><a class="cw-heading-link" href="${escapeHtml(url)}">📅 Nächste Termine</a></h2>
+        ${katFilterHtml}
+      </div>
       <div class="calendar-widget-list">${rows}</div>
       ${privateSection}
     `;
@@ -3481,6 +3535,11 @@ function renderSidebarWidget(widget, opts) {
   calendarWidgetOpts = opts;
   if (!widget.dataset.voteBound) {
     widget.addEventListener("click", onCalendarWidgetClick);
+    widget.addEventListener("change", onCalendarWidgetChange);
+    document.addEventListener("click", schliesseKalFilterBeiKlickDaneben, true);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && kalFilterOffen) { kalFilterOffen = false; zeichneKalenderKarteNeu(); }
+    });
     widget.dataset.voteBound = "1";
   }
 }
@@ -3504,16 +3563,17 @@ async function onCalendarWidgetClick(e) {
   // Handler haengt am Behaelter (die Karte wird bei jedem Zeichnen neu gebaut,
   // einzelne Handler waeren danach weg). Neu gezeichnet wird mit den GEMERKTEN
   // opts -- die Daten sind dieselben, nur der Filter darueber ist ein anderer.
-  const katAlle = e.target.closest("[data-kat-alle]");
-  const katBtn = e.target.closest(".cw-katfilter-btn");
-  if (katAlle || katBtn) {
+  if (e.target.closest(".cw-katfilter-toggle")) {
     e.preventDefault();
-    if (katAlle) kalKatAus.clear();
-    else if (kalKatAus.has(katBtn.dataset.kat)) kalKatAus.delete(katBtn.dataset.kat);
-    else kalKatAus.add(katBtn.dataset.kat);
+    kalFilterOffen = !kalFilterOffen;
+    zeichneKalenderKarteNeu();
+    return;
+  }
+  if (e.target.closest("[data-kat-alle]")) {
+    e.preventDefault();
+    kalKatAus.clear();
     speichereKalKatFilter();
-    const w = document.getElementById("calendar-widget");
-    if (w && calendarWidgetOpts) renderSidebarWidget(w, calendarWidgetOpts);
+    zeichneKalenderKarteNeu();
     return;
   }
 
