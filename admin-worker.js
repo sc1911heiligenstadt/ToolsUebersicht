@@ -28398,6 +28398,10 @@ async function handleUmErinnern(request, body, env, authHeader, corsHeaders, exe
     await umMutiere(authHeader, (d) => {
       const frisch = umHolen(d, body.id);
       frisch.erinnertAm = new Date().toISOString();
+      // ⚠️ Auch von Hand gilt als "fuer dieses Enddatum erinnert". Sonst legte
+      // der naechtliche Lauf im Erinnerungsfenster eine zweite Erinnerung
+      // hinterher, obwohl gerade eben eine rausging.
+      if (frisch.endeAm) frisch.erinnertFuer = frisch.endeAm;
       return {};
     });
 
@@ -28445,9 +28449,21 @@ async function umTaeglicherLauf(env, authHeader, execCtx) {
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
 
   const zuSchliessen = doc.umfragen.filter((u) => u.status === "offen" && u.endeAm && u.endeAm < heute);
+  // ⚠️ FENSTER, kein Stichtag. Vorher stand hier `u.endeAm === morgen` — faellt
+  // der Lauf an genau diesem einen Tag aus (Deploy, Stoerung, ein Fehler in
+  // einem der Vorgaenger-Laeufe), war die Erinnerung FUER IMMER weg und die
+  // Umfrage schloss am naechsten Tag still mit weniger Antworten. Das Schliessen
+  // eine Zeile darueber macht es laengst richtig (`< heute` holt versaeumte Tage
+  // nach), nur das Erinnern nicht (Bugjagd 09.09.2026, Fund 5).
+  //
+  // ⚠️ Der Riegel ist `erinnertFuer`, NICHT mehr "heute schon erinnert". Sonst
+  // brächte das Fenster eine zweite Erinnerung: einmal am Vortag, einmal am
+  // Endtag selbst. So bleibt es bei genau einer je Enddatum — und wer das
+  // Enddatum verlaengert, loest bewusst eine neue aus.
   const zuErinnern = doc.umfragen.filter((u) =>
-    u.status === "offen" && u.intern && u.endeAm === morgen &&
-    String(u.erinnertAm || "").slice(0, 10) !== heute);
+    u.status === "offen" && u.intern && u.endeAm &&
+    u.endeAm >= heute && u.endeAm <= morgen &&
+    String(u.erinnertFuer || "") !== String(u.endeAm));
 
   for (const u of zuErinnern) {
     try { await umErinnerungVerschicken(u, env, authHeader, execCtx, usersDoc); }
@@ -28470,7 +28486,9 @@ async function umTaeglicherLauf(env, authHeader, execCtx) {
       });
       zuErinnern.forEach((alt) => {
         const u = d.umfragen.find((x) => x && x.id === alt.id);
-        if (u) u.erinnertAm = new Date().toISOString();
+        if (!u) return;
+        u.erinnertAm = new Date().toISOString();   // WANN — fuer die Nachschau
+        u.erinnertFuer = u.endeAm;                 // WOFUER — der Riegel
       });
       d.lauf = {
         zuletztAm: new Date().toISOString(),
