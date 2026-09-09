@@ -1923,15 +1923,48 @@ main { flex: 1; min-width: 0; }
 .tool-grid.als-liste .tool-card:hover { transform: none; background: var(--blue-light); box-shadow: var(--shadow); }
 .tool-grid.als-liste .tool-card .tool-icon { font-size: 22px; }
 .tool-grid.als-liste .tool-card h3 { flex: 0 0 auto; }
-/* Einzeilig mit Auslassung: eine umbrechende Beschreibung macht aus der Zeile wieder
-   einen Block, und genau das soll die Liste ja vermeiden. */
+/* Die Beschreibung steht in der Liste NICHT mehr in der Zeile (Michel-Vorgabe
+   2026-09-09): sie war dort einzeilig abgeschnitten und endete bei fast jedem
+   Werkzeug in "...", also mit halbem Satz. Jetzt liegt sie als Sprechblase ueber
+   der Zeile und kommt erst beim Ueberfahren -- und dann vollstaendig, mehrzeilig.
+
+   Sie bleibt im DOM stehen (kein display:none): ein Vorleseprogramm liest sie
+   weiter mit, und die Suche ueber die Kacheltexte greift unveraendert. Nur
+   sichtbar ist sie nicht mehr dauernd.
+
+   position:absolute nimmt sie aus der Zeile -- die Badges rechts haengen an
+   margin-left:auto und stehen deshalb weiter ganz rechts. */
 .tool-grid.als-liste .tool-card p {
-  flex: 1 1 200px;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  position: absolute;
+  left: 16px;
+  top: calc(100% - 6px);
+  z-index: 5;
+  max-width: min(460px, calc(100% - 32px));
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
 }
+/* ⚠️ Auch bei Tastatur-Fokus zeigen: ohne :focus-visible kaeme wer ohne Maus
+   arbeitet nie an den Text. */
+.tool-grid.als-liste .tool-card:hover p,
+.tool-grid.als-liste .tool-card:focus-visible p {
+  opacity: 1;
+  visibility: visible;
+}
+/* Ohne das legte sich die NAECHSTE Zeile ueber die Sprechblase: beide Karten sind
+   positioniert, und dann gewinnt im Stapel die spaetere im Markup. */
+.tool-grid.als-liste .tool-card:hover,
+.tool-grid.als-liste .tool-card:focus-visible { z-index: 5; }
 /* Am Handy reicht die Breite fuer Name UND Beschreibung nicht: gemessen bei 375px
    wurde die Zeile sonst 173px hoch -- kaum weniger als die Kachel (205px), womit die
    Liste ihren Zweck verfehlt. Der Name allein traegt hier, die Beschreibung steht in

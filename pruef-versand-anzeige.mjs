@@ -3,7 +3,11 @@
 import fs from "fs";
 import vm from "vm";
 
-const app = fs.readFileSync("E:/ToolsUebersicht/app.js", "utf8");
+// Zeilenenden vereinheitlichen: die Schnittmarke unten sucht eine Zeile, die
+// genau aus einer schliessenden Klammer besteht -- mit LF geschrieben. Die
+// Datei liegt im Arbeitsverzeichnis aber mit CRLF; ohne das hier bricht der
+// Lauf beim ersten Schnitt ab und misst gar nichts (Fund 2026-09-09).
+const app = fs.readFileSync("E:/ToolsUebersicht/app.js", "utf8").replace(/\r\n/g, "\n");
 
 function schneide(startMarke) {
   const i = app.indexOf(startMarke);

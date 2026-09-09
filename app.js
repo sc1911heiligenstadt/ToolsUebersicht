@@ -1942,7 +1942,7 @@ function renderToolGrid() {
           ? `<div class="badge-status-fail" title="${escapeHtml(dokumenteKachelSignal().titel)}">✗ ${dokumenteKachelSignal().offen}× unterschreiben</div>`
           : ""}
         <h3>${escapeHtml(t.name)}</h3>
-        <p>${escapeHtml(t.description || "")}</p>
+        ${t.description ? `<p>${escapeHtml(t.description)}</p>` : ""}
         ${t.mail || t.push ? '<div class="tool-hinweis-badges">'
           + (t.mail ? '<span class="tool-hinweis-badge" role="img" title="Dieses Werkzeug verschickt E-Mails nach außen" aria-label="Verschickt E-Mails">✉️</span>' : "")
           + (t.push ? '<span class="tool-hinweis-badge" role="img" title="Eine Handlung hier meldet sich als Nachricht auf dem Handy" aria-label="Schickt Nachrichten aufs Handy">🔔</span>' : "")

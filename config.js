@@ -664,6 +664,19 @@ const APP_FUNKTIONEN = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.24",
+    groups: [
+      {
+        title: "Listenansicht: der Erklärtext steht nicht mehr in der Zeile",
+        items: [
+          "In der Listenansicht stand hinter jedem Werkzeugnamen der Erklärtext — abgeschnitten nach einer Zeile, bei fast jedem Werkzeug endete er mitten im Satz mit „…“. Er ist jetzt aus der Zeile raus.",
+          "Wer den Text lesen will, fährt mit der Maus über die Zeile: dann klappt er als Sprechblase auf, vollständig und mehrzeilig.",
+          "Die Kachelansicht bleibt unverändert — dort steht der Text weiter fest unter dem Namen. Am Handy war er in der Liste schon vorher ausgeblendet."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.23",
     groups: [
       {
